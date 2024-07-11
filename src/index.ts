@@ -10,14 +10,14 @@ const {
   CMD = "init.sh",
   HOST = "::",
   PORT = "3000",
-  IP = "127.0.0.1",
-  COMFYUI_PORT = "8188",
+  DIRECT_ADDRESS = "127.0.0.1",
+  COMFYUI_PORT_HOST = "8188",
   STARTUP_CHECK_INTERVAL_S = "1",
   STARTUP_CHECK_MAX_TRIES = "10",
   OUTPUT_DIR = "/opt/ComfyUI/output",
 } = process.env;
 
-const comfyURL = `http://${IP}:${COMFYUI_PORT}`;
+const comfyURL = `http://${DIRECT_ADDRESS}:${COMFYUI_PORT_HOST}`;
 const port = parseInt(PORT, 10);
 const startupCheckInterval = parseInt(STARTUP_CHECK_INTERVAL_S, 10) * 1000;
 const startupCheckMaxTries = parseInt(STARTUP_CHECK_MAX_TRIES, 10);
@@ -47,7 +47,7 @@ async function waitForComfyUIToStart(): Promise<void> {
   while (retries < startupCheckMaxTries) {
     try {
       await pingComfyUI();
-      console.log("Comfy UI started");
+      server.log.info("Comfy UI started");
       return;
     } catch (e) {
       // Ignore
@@ -127,10 +127,12 @@ server.post("/prompt", async (request, reply) => {
           }),
         });
         if (!res.ok) {
-          console.error(`Failed to send image to webhook: ${await res.text()}`);
+          server.log.error(
+            `Failed to send image to webhook: ${await res.text()}`
+          );
         }
       } catch (e: any) {
-        console.error(`Failed to send image to webhook: ${e.message}`);
+        server.log.error(`Failed to send image to webhook: ${e.message}`);
       }
 
       // Remove the file after sending
@@ -196,7 +198,7 @@ server.post("/prompt", async (request, reply) => {
 const commandExecutor = new CommandExecutor();
 
 process.on("SIGINT", async () => {
-  console.log("Received SIGINT, interrupting process");
+  server.log.info("Received SIGINT, interrupting process");
   commandExecutor.interrupt();
   await outputWatcher.stopWatching();
   process.exit(0);
@@ -207,8 +209,8 @@ async function startServer() {
     start = Date.now();
     // Start the command
     commandExecutor.execute(CMD, [], {
-      IP,
-      COMFYUI_PORT,
+      DIRECT_ADDRESS,
+      COMFYUI_PORT_HOST,
       WEB_ENABLE_AUTH: "false",
       CF_QUICK_TUNNELS: "false",
     });
@@ -217,9 +219,9 @@ async function startServer() {
 
     // Start the server
     await server.listen({ port, host: HOST });
-    console.log(`Server listening on ${HOST}:${PORT}`);
+    server.log.info(`Server listening on ${HOST}:${PORT}`);
   } catch (err: any) {
-    console.error(`Failed to start server: ${err.message}`);
+    server.log.error(`Failed to start server: ${err.message}`);
     process.exit(1);
   }
 }
