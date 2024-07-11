@@ -7,7 +7,7 @@ import { version } from "../package.json";
 import { randomUUID } from "crypto";
 
 const {
-  CMD = "./init.sh",
+  CMD = "init.sh",
   HOST = "::",
   PORT = "3000",
   IP = "127.0.0.1",
