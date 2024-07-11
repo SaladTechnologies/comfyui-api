@@ -213,6 +213,7 @@ async function startServer() {
       CF_QUICK_TUNNELS: "false",
     });
     await waitForComfyUIToStart();
+    warm = true;
 
     // Start the server
     await server.listen({ port, host: HOST });
