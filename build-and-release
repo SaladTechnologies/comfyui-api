@@ -1,0 +1,12 @@
+#! /usr/bin/env bash
+
+npm install
+npm run build-binary
+version=$(node -p "require('./package.json').version")
+echo "Version: $version"
+
+gh release create $version \
+  --title "Release $version" \
+  --notes "Release $version"
+
+gh release upload $version ./bin/comfyui-wrapper#Linux_x64 --clobber
