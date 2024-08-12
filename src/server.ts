@@ -10,7 +10,7 @@ import {
   waitForComfyUIToStart,
   launchComfyUI,
   shutdownComfyUI,
-  downloadImage,
+  processImage,
 } from "./utils";
 
 const outputWatcher = new DirectoryWatcher(config.outputDir);
@@ -58,8 +58,6 @@ server.post("/prompt", async (request, reply) => {
 
   let batchSize = 1;
 
-  let imagesRequested = 0;
-
   for (const nodeId in prompt) {
     const node = prompt[nodeId];
     if (node.class_type === "SaveImage") {
@@ -68,31 +66,13 @@ server.post("/prompt", async (request, reply) => {
       batchSize = node.inputs.batch_size;
     } else if (node.class_type === "LoadImage") {
       const imageInput = node.inputs.image;
-      imagesRequested += 1;
-
-      // If image is a url, download it
-      if (imageInput.startsWith("http")) {
-        const downloadPath = path.join(
-          config.inputDir,
-          `${id}-${imagesRequested}`
-        );
-        await downloadImage(imageInput, downloadPath, server.log);
-        node.inputs.image = downloadPath;
-      } else {
-        // Assume it's a base64 encoded image
-        try {
-          const base64Data = Buffer.from(imageInput, "base64");
-          const downloadPath = path.join(
-            config.inputDir,
-            `${id}-${imagesRequested}.png`
-          );
-          await fsPromises.writeFile(downloadPath, base64Data);
-          node.inputs.image = downloadPath;
-        } catch (e) {
-          return reply.code(400).send({
-            error: `Failed to parse base64 encoded image: prompt.${nodeId}.inputs.image`,
-          });
-        }
+      try {
+        node.inputs.image = await processImage(imageInput, server.log);
+      } catch (e: any) {
+        return reply.code(400).send({
+          error: e.message,
+          location: `prompt.${nodeId}.inputs.image`,
+        });
       }
     }
   }

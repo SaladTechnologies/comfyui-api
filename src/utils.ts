@@ -2,7 +2,10 @@ import config from "./config";
 import { FastifyBaseLogger } from "fastify";
 import { CommandExecutor } from "./commands";
 import fs from "fs";
+import fsPromises from "fs/promises";
 import { Readable } from "stream";
+import path from "path";
+import { randomUUID } from "crypto";
 
 const commandExecutor = new CommandExecutor();
 
@@ -98,5 +101,26 @@ export async function downloadImage(
     log.info(`Image downloaded and saved to ${outputPath}`);
   } catch (error) {
     log.error("Error downloading image:", error);
+  }
+}
+
+export async function processImage(
+  imageInput: string,
+  log: FastifyBaseLogger
+): Promise<string> {
+  const localFilePath = path.join(config.inputDir, `${randomUUID()}.png`);
+  // If image is a url, download it
+  if (imageInput.startsWith("http")) {
+    await downloadImage(imageInput, localFilePath, log);
+    return localFilePath;
+  } else {
+    // Assume it's a base64 encoded image
+    try {
+      const base64Data = Buffer.from(imageInput, "base64");
+      await fsPromises.writeFile(localFilePath, base64Data);
+      return localFilePath;
+    } catch (e: any) {
+      throw new Error(`Failed to parse base64 encoded image: ${e.message}`);
+    }
   }
 }
