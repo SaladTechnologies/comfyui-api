@@ -1,5 +1,4 @@
 import Fastify from "fastify";
-// import { CommandExecutor } from "./commands";
 import { DirectoryWatcher } from "./watcher";
 import fsPromises from "fs/promises";
 import path from "path";
