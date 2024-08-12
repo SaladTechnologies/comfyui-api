@@ -18,6 +18,7 @@ const {
   STARTUP_CHECK_MAX_TRIES = "10",
   OUTPUT_DIR = "/opt/ComfyUI/output",
   INPUT_DIR = "/opt/ComfyUI/input",
+  WARMUP_PROMPT_FILE,
 } = process.env;
 
 const comfyURL = `http://${DIRECT_ADDRESS}:${COMFYUI_PORT_HOST}`;
@@ -64,6 +65,21 @@ async function waitForComfyUIToStart(): Promise<void> {
       (startupCheckInterval / 1000) * startupCheckMaxTries
     } seconds`
   );
+}
+
+async function warmupComfyUI(): Promise<void> {
+  if (WARMUP_PROMPT_FILE && fs.existsSync(WARMUP_PROMPT_FILE)) {
+    const prompt = JSON.parse(
+      await fsPromises.readFile(WARMUP_PROMPT_FILE, { encoding: "utf-8" })
+    );
+    await fetch(`${comfyURL}/prompt`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ prompt }),
+    });
+  }
 }
 
 let warm = false;
@@ -237,6 +253,7 @@ server.post("/prompt", async (request, reply) => {
             fsPromises.unlink(filepath);
 
             if (images.length === batchSize) {
+              outputWatcher.removePrefixAction(id);
               resolve();
             }
           }
@@ -282,6 +299,7 @@ async function startServer() {
       CF_QUICK_TUNNELS: "false",
     });
     await waitForComfyUIToStart();
+    await warmupComfyUI();
     warm = true;
 
     // Start the server
