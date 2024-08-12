@@ -1,10 +1,12 @@
 import Fastify from "fastify";
 import { CommandExecutor } from "./commands";
 import { DirectoryWatcher } from "./watcher";
-import fs from "fs/promises";
+import fsPromises from "fs/promises";
+import fs from "fs";
 import path from "path";
 import { version } from "../package.json";
 import { randomUUID } from "crypto";
+import { Readable } from "stream";
 
 const {
   CMD = "init.sh",
@@ -15,6 +17,7 @@ const {
   STARTUP_CHECK_INTERVAL_S = "1",
   STARTUP_CHECK_MAX_TRIES = "10",
   OUTPUT_DIR = "/opt/ComfyUI/output",
+  INPUT_DIR = "/opt/ComfyUI/input",
 } = process.env;
 
 const comfyURL = `http://${DIRECT_ADDRESS}:${COMFYUI_PORT_HOST}`;
@@ -90,6 +93,41 @@ type ComfyNode = {
   class_type: string;
 };
 
+async function downloadImage(
+  imageUrl: string,
+  outputPath: string
+): Promise<void> {
+  try {
+    // Fetch the image
+    const response = await fetch(imageUrl);
+
+    if (!response.ok) {
+      throw new Error(`Error downloading image: ${response.statusText}`);
+    }
+
+    // Get the response as a readable stream
+    const body = response.body;
+    if (!body) {
+      throw new Error("Response body is null");
+    }
+
+    // Create a writable stream to save the file
+    const fileStream = fs.createWriteStream(outputPath);
+
+    // Pipe the response to the file
+    await new Promise((resolve, reject) => {
+      Readable.fromWeb(body as any)
+        .pipe(fileStream)
+        .on("finish", resolve)
+        .on("error", reject);
+    });
+
+    server.log.info(`Image downloaded and saved to ${outputPath}`);
+  } catch (error) {
+    server.log.error("Error downloading image:", error);
+  }
+}
+
 server.post("/prompt", async (request, reply) => {
   let { prompt, id, webhook } = request.body as PromptRequest;
   if (!prompt) {
@@ -101,18 +139,47 @@ server.post("/prompt", async (request, reply) => {
 
   let batchSize = 1;
 
+  let imagesRequested = 0;
+
   for (const nodeId in prompt) {
     const node = prompt[nodeId];
     if (node.class_type === "SaveImage") {
       node.inputs.filename_prefix = id;
     } else if (node.inputs.batch_size) {
       batchSize = node.inputs.batch_size;
+    } else if (node.class_type === "LoadImage") {
+      const imageInput = node.inputs.image;
+      imagesRequested += 1;
+
+      // If image is a url, download it
+      if (imageInput.startsWith("http")) {
+        const downloadPath = path.join(INPUT_DIR, `${id}-${imagesRequested}`);
+        await downloadImage(imageInput, downloadPath);
+        node.inputs.image = downloadPath;
+      } else {
+        // Assume it's a base64 encoded image
+        try {
+          const base64Data = Buffer.from(imageInput, "base64");
+          const downloadPath = path.join(
+            INPUT_DIR,
+            `${id}-${imagesRequested}.png`
+          );
+          await fsPromises.writeFile(downloadPath, base64Data);
+          node.inputs.image = downloadPath;
+        } catch (e) {
+          return reply.code(400).send({
+            error: `Failed to parse base64 encoded image: prompt.${nodeId}.inputs.image`,
+          });
+        }
+      }
     }
   }
 
   if (webhook) {
     outputWatcher.addPrefixAction(id, batchSize, async (filepath: string) => {
-      const base64File = await fs.readFile(filepath, { encoding: "base64" });
+      const base64File = await fsPromises.readFile(filepath, {
+        encoding: "base64",
+      });
       try {
         const res = await fetch(webhook, {
           method: "POST",
@@ -136,7 +203,7 @@ server.post("/prompt", async (request, reply) => {
       }
 
       // Remove the file after sending
-      fs.unlink(filepath);
+      fsPromises.unlink(filepath);
     });
 
     const resp = await fetch(`${comfyURL}/prompt`, {
@@ -161,13 +228,13 @@ server.post("/prompt", async (request, reply) => {
           id,
           batchSize,
           async (filepath: string) => {
-            const base64File = await fs.readFile(filepath, {
+            const base64File = await fsPromises.readFile(filepath, {
               encoding: "base64",
             });
             images.push(base64File);
 
             // Remove the file after reading
-            fs.unlink(filepath);
+            fsPromises.unlink(filepath);
 
             if (images.length === batchSize) {
               resolve();
