@@ -1,32 +1,20 @@
 import Fastify from "fastify";
-import { CommandExecutor } from "./commands";
+// import { CommandExecutor } from "./commands";
 import { DirectoryWatcher } from "./watcher";
 import fsPromises from "fs/promises";
-import fs from "fs";
 import path from "path";
 import { version } from "../package.json";
 import { randomUUID } from "crypto";
-import { Readable } from "stream";
+import config from "./config";
+import {
+  warmupComfyUI,
+  waitForComfyUIToStart,
+  launchComfyUI,
+  shutdownComfyUI,
+  downloadImage,
+} from "./utils";
 
-const {
-  CMD = "init.sh",
-  HOST = "::",
-  PORT = "3000",
-  DIRECT_ADDRESS = "127.0.0.1",
-  COMFYUI_PORT_HOST = "8188",
-  STARTUP_CHECK_INTERVAL_S = "1",
-  STARTUP_CHECK_MAX_TRIES = "10",
-  OUTPUT_DIR = "/opt/ComfyUI/output",
-  INPUT_DIR = "/opt/ComfyUI/input",
-  WARMUP_PROMPT_FILE,
-} = process.env;
-
-const comfyURL = `http://${DIRECT_ADDRESS}:${COMFYUI_PORT_HOST}`;
-const port = parseInt(PORT, 10);
-const startupCheckInterval = parseInt(STARTUP_CHECK_INTERVAL_S, 10) * 1000;
-const startupCheckMaxTries = parseInt(STARTUP_CHECK_MAX_TRIES, 10);
-
-const outputWatcher = new DirectoryWatcher(OUTPUT_DIR);
+const outputWatcher = new DirectoryWatcher(config.outputDir);
 
 let start: number;
 
@@ -34,53 +22,6 @@ const server = Fastify({
   bodyLimit: 45 * 1024 * 1024, // 45MB
   logger: true,
 });
-
-async function pingComfyUI(): Promise<void> {
-  const res = await fetch(comfyURL);
-  if (!res.ok) {
-    throw new Error(`Failed to ping Comfy UI: ${await res.text()}`);
-  }
-}
-
-async function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function waitForComfyUIToStart(): Promise<void> {
-  let retries = 0;
-  while (retries < startupCheckMaxTries) {
-    try {
-      await pingComfyUI();
-      server.log.info("Comfy UI started");
-      return;
-    } catch (e) {
-      // Ignore
-    }
-    retries++;
-    await sleep(startupCheckInterval);
-  }
-
-  throw new Error(
-    `Comfy UI did not start after ${
-      (startupCheckInterval / 1000) * startupCheckMaxTries
-    } seconds`
-  );
-}
-
-async function warmupComfyUI(): Promise<void> {
-  if (WARMUP_PROMPT_FILE && fs.existsSync(WARMUP_PROMPT_FILE)) {
-    const prompt = JSON.parse(
-      await fsPromises.readFile(WARMUP_PROMPT_FILE, { encoding: "utf-8" })
-    );
-    await fetch(`${comfyURL}/prompt`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ prompt }),
-    });
-  }
-}
 
 let warm = false;
 server.get("/health", async (request, reply) => {
@@ -109,41 +50,6 @@ type ComfyNode = {
   class_type: string;
 };
 
-async function downloadImage(
-  imageUrl: string,
-  outputPath: string
-): Promise<void> {
-  try {
-    // Fetch the image
-    const response = await fetch(imageUrl);
-
-    if (!response.ok) {
-      throw new Error(`Error downloading image: ${response.statusText}`);
-    }
-
-    // Get the response as a readable stream
-    const body = response.body;
-    if (!body) {
-      throw new Error("Response body is null");
-    }
-
-    // Create a writable stream to save the file
-    const fileStream = fs.createWriteStream(outputPath);
-
-    // Pipe the response to the file
-    await new Promise((resolve, reject) => {
-      Readable.fromWeb(body as any)
-        .pipe(fileStream)
-        .on("finish", resolve)
-        .on("error", reject);
-    });
-
-    server.log.info(`Image downloaded and saved to ${outputPath}`);
-  } catch (error) {
-    server.log.error("Error downloading image:", error);
-  }
-}
-
 server.post("/prompt", async (request, reply) => {
   let { prompt, id, webhook } = request.body as PromptRequest;
   if (!prompt) {
@@ -169,15 +75,18 @@ server.post("/prompt", async (request, reply) => {
 
       // If image is a url, download it
       if (imageInput.startsWith("http")) {
-        const downloadPath = path.join(INPUT_DIR, `${id}-${imagesRequested}`);
-        await downloadImage(imageInput, downloadPath);
+        const downloadPath = path.join(
+          config.inputDir,
+          `${id}-${imagesRequested}`
+        );
+        await downloadImage(imageInput, downloadPath, server.log);
         node.inputs.image = downloadPath;
       } else {
         // Assume it's a base64 encoded image
         try {
           const base64Data = Buffer.from(imageInput, "base64");
           const downloadPath = path.join(
-            INPUT_DIR,
+            config.inputDir,
             `${id}-${imagesRequested}.png`
           );
           await fsPromises.writeFile(downloadPath, base64Data);
@@ -222,7 +131,7 @@ server.post("/prompt", async (request, reply) => {
       fsPromises.unlink(filepath);
     });
 
-    const resp = await fetch(`${comfyURL}/prompt`, {
+    const resp = await fetch(`${config.comfyURL}/prompt`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -262,7 +171,7 @@ server.post("/prompt", async (request, reply) => {
     }
 
     const finished = waitForImagesToGenerate();
-    const resp = await fetch(`${comfyURL}/prompt`, {
+    const resp = await fetch(`${config.comfyURL}/prompt`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -279,11 +188,9 @@ server.post("/prompt", async (request, reply) => {
   }
 });
 
-const commandExecutor = new CommandExecutor();
-
 process.on("SIGINT", async () => {
   server.log.info("Received SIGINT, interrupting process");
-  commandExecutor.interrupt();
+  shutdownComfyUI();
   await outputWatcher.stopWatching();
   process.exit(0);
 });
@@ -292,19 +199,16 @@ async function startServer() {
   try {
     start = Date.now();
     // Start the command
-    commandExecutor.execute(CMD, [], {
-      DIRECT_ADDRESS,
-      COMFYUI_PORT_HOST,
-      WEB_ENABLE_AUTH: "false",
-      CF_QUICK_TUNNELS: "false",
-    });
-    await waitForComfyUIToStart();
+    launchComfyUI();
+    await waitForComfyUIToStart(server.log);
     await warmupComfyUI();
     warm = true;
+    const warmupTime = Date.now() - start;
+    server.log.info(`Warmup took ${warmupTime / 1000}s`);
 
     // Start the server
-    await server.listen({ port, host: HOST });
-    server.log.info(`Server listening on ${HOST}:${PORT}`);
+    await server.listen({ port: config.wrapperPort, host: config.wrapperHost });
+    // server.log.info(`Server listening on ${config.wrapperHost}:${PORT}`);
   } catch (err: any) {
     server.log.error(`Failed to start server: ${err.message}`);
     process.exit(1);
