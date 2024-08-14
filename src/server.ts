@@ -178,14 +178,13 @@ export async function start() {
     // Start the command
     launchComfyUI();
     await waitForComfyUIToStart(server.log);
+
+    // Start the server
+    await server.listen({ port: config.wrapperPort, host: config.wrapperHost });
     await warmupComfyUI();
     warm = true;
     const warmupTime = Date.now() - start;
     server.log.info(`Warmup took ${warmupTime / 1000}s`);
-
-    // Start the server
-    await server.listen({ port: config.wrapperPort, host: config.wrapperHost });
-    // server.log.info(`Server listening on ${config.wrapperHost}:${PORT}`);
   } catch (err: any) {
     server.log.error(`Failed to start server: ${err.message}`);
     process.exit(1);

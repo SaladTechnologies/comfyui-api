@@ -58,7 +58,7 @@ export async function waitForComfyUIToStart(
 
 export async function warmupComfyUI(): Promise<void> {
   if (config.warmupPrompt) {
-    await fetch(`${config.comfyURL}/prompt`, {
+    await fetch(`http://localhost:${config.wrapperPort}/prompt`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
