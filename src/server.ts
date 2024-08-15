@@ -25,11 +25,10 @@ import {
   PromptResponseSchema,
   PromptRequest,
   Workflow,
-  WorkflowRequestSchema,
-  WorkflowRequest,
 } from "./types";
 import { workflows } from "./workflows";
 import { z } from "zod";
+import { randomUUID } from "crypto";
 
 const outputWatcher = new DirectoryWatcher(config.outputDir);
 
@@ -223,55 +222,53 @@ server.after(() => {
     }
   );
 
-  app.post<{
-    Params: { base_model: string; workflow_id: string };
-    Body: WorkflowRequest;
-  }>(
-    "/workflow/:base_model/:workflow_id",
-    {
-      schema: {
-        body: WorkflowRequestSchema,
-        params: z.object({
-          base_model: z.string(),
-          workflow_id: z.string(),
-        }),
-      },
-    },
-    async (request, reply) => {
-      const { base_model, workflow_id } = request.params;
-      if (!(workflows as any)[base_model]) {
-        return reply.code(404).send({ error: "Base model not found" });
-      }
+  for (const baseModel in workflows) {
+    for (const workflowId in workflows[baseModel]) {
+      const workflow = workflows[baseModel][workflowId] as Workflow;
+      server.log.info(`Registering workflow ${baseModel}/${workflowId}`);
+      const BodySchema = z.object({
+        id: z
+          .string()
+          .optional()
+          .default(() => randomUUID()),
+        input: workflow.RequestSchema,
+        webhook: z.string().optional(),
+      });
 
-      if (!(workflows as any)[base_model][workflow_id]) {
-        return reply.code(404).send({ error: "Workflow not found" });
-      }
+      type BodyType = z.infer<typeof BodySchema>;
 
-      const workflow = (workflows as any)[base_model][workflow_id] as Workflow;
-
-      const { id, workflow: input, webhook } = request.body;
-
-      const { success, data, error } = workflow.RequestSchema.safeParse(input);
-      if (!success) {
-        app.log.error(`Failed to validate input: ${JSON.stringify(data)}`);
-        return reply.code(400).send({ error: error.errors });
-      }
-
-      const prompt = workflow.generateWorkflow(data);
-
-      const resp = await fetch(
-        `http://localhost:${config.wrapperPort}/prompt`,
+      app.post<{
+        Body: BodyType;
+      }>(
+        `/workflow/${baseModel}/${workflowId}`,
         {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
+          schema: {
+            body: BodySchema,
+            response: {
+              200: PromptResponseSchema,
+              202: PromptResponseSchema,
+            },
           },
-          body: JSON.stringify({ prompt, id, webhook }),
+        },
+        async (request, reply) => {
+          const { id, input, webhook } = request.body;
+          const prompt = workflow.generateWorkflow(input);
+
+          const resp = await fetch(
+            `http://localhost:${config.wrapperPort}/prompt`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ prompt, id, webhook }),
+            }
+          );
+          return reply.code(resp.status).send(await resp.json());
         }
       );
-      return reply.code(resp.status).send(await resp.json());
     }
-  );
+  }
 });
 
 let warm = false;
