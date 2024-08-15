@@ -2,7 +2,7 @@ import { z } from "zod";
 import { ComfyNode, Workflow } from "../../types";
 
 const RequestSchema = z.object({
-  positivePrompt: z.string(),
+  prompt: z.string(),
   width: z.number().int().min(256).max(1024).optional().default(1024),
   height: z.number().int().min(256).max(1024).optional().default(1024),
   seed: z
@@ -25,7 +25,7 @@ export function generateWorkflow(input: Input): Record<string, ComfyNode> {
   return {
     "6": {
       inputs: {
-        text: input.positivePrompt,
+        text: input.prompt,
         clip: ["30", 1],
       },
       class_type: "CLIPTextEncode",

@@ -197,7 +197,7 @@ app.post<{
   }
 );
 
-server.post<{
+app.post<{
   Params: { base_model: string; workflow_id: string };
   Body: WorkflowRequest;
 }>(
@@ -227,6 +227,7 @@ server.post<{
 
     const { success, data, error } = workflow.RequestSchema.safeParse(input);
     if (!success) {
+      app.log.error(`Failed to validate input: ${JSON.stringify(data)}`);
       return reply.code(400).send({ error: error.errors });
     }
 

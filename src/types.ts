@@ -52,7 +52,7 @@ export const WorkflowRequestSchema = z.object({
     .string()
     .optional()
     .default(() => randomUUID()),
-  workflow: z.object({}),
+  workflow: z.record(z.any()),
   webhook: z.string().optional(),
 });
 
