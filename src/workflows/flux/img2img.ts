@@ -15,10 +15,13 @@ const RequestSchema = z.object({
     .number()
     .int()
     .optional()
-    .default(() => Math.floor(Math.random() * 100000)),
-  steps: z.number().int().min(1).max(10).optional().default(4),
-  sampler: z.enum(["euler"]).optional().default("euler"), // This may need to be expanded with more options
-  scheduler: z.enum(["simple"]).optional().default("simple"), // This may need to be expanded with more options
+    .default(() => Math.floor(Math.random() * 1000000000000000)),
+  steps: z.number().int().min(1).max(10).optional().default(2),
+  sampler: z.enum(["euler"]).optional().default("euler"),
+  scheduler: z.enum(["simple"]).optional().default("simple"),
+  denoise: z.number().min(0).max(1).optional().default(0.8),
+  cfg: z.number().min(1).max(30).optional().default(1),
+  image: z.string(),
   checkpoint,
 });
 
@@ -80,14 +83,14 @@ function generateWorkflow(input: InputType): Record<string, ComfyNode> {
       inputs: {
         seed: input.seed,
         steps: input.steps,
-        cfg: 1.0,
+        cfg: input.cfg,
         sampler_name: input.sampler,
         scheduler: input.scheduler,
-        denoise: 1,
+        denoise: input.denoise,
         model: ["30", 0],
         positive: ["6", 0],
         negative: ["33", 0],
-        latent_image: ["27", 0],
+        latent_image: ["38", 0],
       },
       class_type: "KSampler",
       _meta: {
@@ -102,6 +105,41 @@ function generateWorkflow(input: InputType): Record<string, ComfyNode> {
       class_type: "CLIPTextEncode",
       _meta: {
         title: "CLIP Text Encode (Negative Prompt)",
+      },
+    },
+    "37": {
+      inputs: {
+        image: input.image,
+        upload: "image",
+      },
+      class_type: "LoadImage",
+      _meta: {
+        title: "Load Image",
+      },
+    },
+    "38": {
+      inputs: {
+        pixels: ["40", 0],
+        vae: ["30", 2],
+      },
+      class_type: "VAEEncode",
+      _meta: {
+        title: "VAE Encode",
+      },
+    },
+    "40": {
+      inputs: {
+        width: input.width,
+        height: input.height,
+        interpolation: "nearest",
+        method: "fill / crop",
+        condition: "always",
+        multiple_of: 8,
+        image: ["37", 0],
+      },
+      class_type: "ImageResize+",
+      _meta: {
+        title: "🔧 Image Resize",
       },
     },
   };

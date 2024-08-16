@@ -10,6 +10,7 @@ const {
   STARTUP_CHECK_MAX_TRIES = "10",
   OUTPUT_DIR = "/opt/ComfyUI/output",
   INPUT_DIR = "/opt/ComfyUI/input",
+  CKPT_DIR = "/opt/ComfyUI/models/checkpoints",
   WARMUP_PROMPT_FILE,
 } = process.env;
 
@@ -18,17 +19,27 @@ const port = parseInt(PORT, 10);
 const startupCheckInterval = parseInt(STARTUP_CHECK_INTERVAL_S, 10) * 1000;
 const startupCheckMaxTries = parseInt(STARTUP_CHECK_MAX_TRIES, 10);
 
-let warmupPrompt: string | undefined;
+let warmupPrompt: any | undefined;
+let warmupCkpt: string | undefined;
 if (WARMUP_PROMPT_FILE) {
   assert(fs.existsSync(WARMUP_PROMPT_FILE), "Warmup prompt file not found");
   try {
     warmupPrompt = JSON.parse(
       fs.readFileSync(WARMUP_PROMPT_FILE, { encoding: "utf-8" })
     );
+    for (const nodeId in warmupPrompt) {
+      const node = warmupPrompt[nodeId];
+      if (node.class_type === "CheckpointLoaderSimple") {
+        warmupCkpt = node.inputs.ckpt_name;
+        break;
+      }
+    }
   } catch (e: any) {
     throw new Error(`Failed to parse warmup prompt: ${e.message}`);
   }
 }
+
+const allCheckpoints = fs.readdirSync(CKPT_DIR);
 
 const config = {
   comfyLaunchCmd: CMD,
@@ -42,6 +53,8 @@ const config = {
   outputDir: OUTPUT_DIR,
   inputDir: INPUT_DIR,
   warmupPrompt,
+  warmupCkpt,
+  checkpoints: allCheckpoints,
 };
 
 export default config;

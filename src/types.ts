@@ -1,5 +1,6 @@
-import { z } from "zod";
+import { string, z } from "zod";
 import { randomUUID } from "crypto";
+import config from "./config";
 
 export const ComfyNodeSchema = z.object({
   inputs: z.any(),
@@ -42,10 +43,10 @@ export const WorkflowSchema = z.object({
   generateWorkflow: z.function(),
 });
 
-export type Workflow = {
+export interface Workflow {
   RequestSchema: z.ZodObject<any, any>;
   generateWorkflow: (input: any) => Record<string, ComfyNode>;
-};
+}
 
 export const WorkflowRequestSchema = z.object({
   id: z
@@ -57,3 +58,7 @@ export const WorkflowRequestSchema = z.object({
 });
 
 export type WorkflowRequest = z.infer<typeof WorkflowRequestSchema>;
+
+export const AvailableCheckpoints = z.enum(
+  config.checkpoints as unknown as readonly [string, ...string[]]
+);

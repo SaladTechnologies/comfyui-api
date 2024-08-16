@@ -264,7 +264,14 @@ server.after(() => {
               body: JSON.stringify({ prompt, id, webhook }),
             }
           );
-          return reply.code(resp.status).send(await resp.json());
+          const body = await resp.json();
+          if (!resp.ok) {
+            return reply.code(resp.status).send(body);
+          }
+
+          body.prompt = prompt;
+
+          return reply.code(resp.status).send(body);
         }
       );
     }
