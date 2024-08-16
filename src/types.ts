@@ -53,11 +53,19 @@ export const WorkflowRequestSchema = z.object({
     .string()
     .optional()
     .default(() => randomUUID()),
-  workflow: z.record(z.any()),
+  input: z.record(z.any()),
   webhook: z.string().optional(),
 });
 
 export type WorkflowRequest = z.infer<typeof WorkflowRequestSchema>;
+
+export const WorkflowResponseSchema = z.object({
+  id: z.string(),
+  prompt: z.record(z.any()),
+  images: z.array(z.string().base64()).optional(),
+  webhook: z.string().optional(),
+  status: z.enum(["ok"]).optional(),
+});
 
 export const AvailableCheckpoints = z.enum(
   config.checkpoints as unknown as readonly [string, ...string[]]

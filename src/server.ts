@@ -25,6 +25,7 @@ import {
   PromptResponseSchema,
   PromptRequest,
   Workflow,
+  WorkflowResponseSchema,
 } from "./types";
 import { workflows } from "./workflows";
 import { z } from "zod";
@@ -245,8 +246,8 @@ server.after(() => {
           schema: {
             body: BodySchema,
             response: {
-              200: PromptResponseSchema,
-              202: PromptResponseSchema,
+              200: WorkflowResponseSchema,
+              202: WorkflowResponseSchema,
             },
           },
         },
