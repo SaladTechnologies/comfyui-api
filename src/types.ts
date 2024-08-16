@@ -66,7 +66,3 @@ export const WorkflowResponseSchema = z.object({
   webhook: z.string().optional(),
   status: z.enum(["ok"]).optional(),
 });
-
-export const AvailableCheckpoints = z.enum(
-  config.checkpoints as unknown as readonly [string, ...string[]]
-);

@@ -27,7 +27,7 @@ import {
   Workflow,
   WorkflowResponseSchema,
 } from "./types";
-import { workflows } from "./workflows";
+import workflows from "./workflows";
 import { z } from "zod";
 import { randomUUID } from "crypto";
 

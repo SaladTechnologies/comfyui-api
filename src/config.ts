@@ -1,5 +1,7 @@
 import assert from "node:assert";
 import fs from "node:fs";
+import path from "node:path";
+import { z } from "zod";
 const {
   CMD = "init.sh",
   HOST = "::",
@@ -10,11 +12,13 @@ const {
   STARTUP_CHECK_MAX_TRIES = "10",
   OUTPUT_DIR = "/opt/ComfyUI/output",
   INPUT_DIR = "/opt/ComfyUI/input",
-  CKPT_DIR = "/opt/ComfyUI/models/checkpoints",
+  MODEL_DIR = "/opt/ComfyUI/models",
   WARMUP_PROMPT_FILE,
+  WORKFLOW_MODELS = "all",
 } = process.env;
 
 const comfyURL = `http://${DIRECT_ADDRESS}:${COMFYUI_PORT_HOST}`;
+const selfURL = `http://localhost:${PORT}`;
 const port = parseInt(PORT, 10);
 const startupCheckInterval = parseInt(STARTUP_CHECK_INTERVAL_S, 10) * 1000;
 const startupCheckMaxTries = parseInt(STARTUP_CHECK_MAX_TRIES, 10);
@@ -39,12 +43,11 @@ if (WARMUP_PROMPT_FILE) {
   }
 }
 
-const allCheckpoints = fs.readdirSync(CKPT_DIR);
-
 const config = {
   comfyLaunchCmd: CMD,
   wrapperHost: HOST,
   wrapperPort: port,
+  selfURL,
   comfyHost: DIRECT_ADDRESS,
   comfyPort: COMFYUI_PORT_HOST,
   comfyURL,
@@ -54,7 +57,28 @@ const config = {
   inputDir: INPUT_DIR,
   warmupPrompt,
   warmupCkpt,
-  checkpoints: allCheckpoints,
+  models: {} as Record<
+    string,
+    {
+      dir: string;
+      all: string[];
+      enum: z.ZodEnum<[string, ...string[]]>;
+    }
+  >,
+  workflowModels: WORKFLOW_MODELS,
 };
+
+const model_dirs = fs.readdirSync(MODEL_DIR);
+for (const model_dir of model_dirs) {
+  const model_path = path.join(MODEL_DIR, model_dir);
+  if (fs.statSync(model_path).isDirectory()) {
+    const all = fs.readdirSync(model_path);
+    config.models[model_dir] = {
+      dir: model_path,
+      all,
+      enum: z.enum(all as [string, ...string[]]),
+    };
+  }
+}
 
 export default config;

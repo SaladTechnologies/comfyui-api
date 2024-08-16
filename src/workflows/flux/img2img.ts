@@ -1,28 +1,95 @@
 import { z } from "zod";
-import { ComfyNode, Workflow, AvailableCheckpoints } from "../../types";
+import { ComfyNode, Workflow } from "../../types";
 import config from "../../config";
 
-let checkpoint: any = AvailableCheckpoints.optional();
+let checkpoint: any = config.models.checkpoints.enum.optional();
 if (config.warmupCkpt) {
-  checkpoint = AvailableCheckpoints.default(config.warmupCkpt);
+  checkpoint = checkpoint.default(config.warmupCkpt);
 }
 
 const RequestSchema = z.object({
-  prompt: z.string(),
-  width: z.number().int().min(256).max(1024).optional().default(1024),
-  height: z.number().int().min(256).max(1024).optional().default(1024),
+  prompt: z.string().describe("The positive prompt for image generation"),
+  negative_prompt: z
+    .string()
+    .optional()
+    .describe("The negative prompt for image generation"),
+  width: z
+    .number()
+    .int()
+    .min(256)
+    .max(2048)
+    .optional()
+    .default(1024)
+    .describe("Width of the generated image"),
+  height: z
+    .number()
+    .int()
+    .min(256)
+    .max(2048)
+    .optional()
+    .default(1024)
+    .describe("Height of the generated image"),
   seed: z
     .number()
     .int()
     .optional()
-    .default(() => Math.floor(Math.random() * 1000000000000000)),
-  steps: z.number().int().min(1).max(10).optional().default(2),
-  sampler: z.enum(["euler"]).optional().default("euler"),
-  scheduler: z.enum(["simple"]).optional().default("simple"),
-  denoise: z.number().min(0).max(1).optional().default(0.8),
-  cfg: z.number().min(1).max(30).optional().default(1),
-  image: z.string(),
+    .default(() => Math.floor(Math.random() * 1000000000000000))
+    .describe("Seed for random number generation"),
+  steps: z
+    .number()
+    .int()
+    .min(1)
+    .max(100)
+    .optional()
+    .default(4)
+    .describe("Number of sampling steps"),
+  cfg_scale: z
+    .number()
+    .min(0)
+    .max(20)
+    .optional()
+    .default(1)
+    .describe("Classifier-free guidance scale"),
+  sampler_name: z
+    .enum(["euler"])
+    .optional()
+    .default("euler")
+    .describe("Name of the sampler to use"),
+  scheduler: z
+    .enum(["simple"])
+    .optional()
+    .default("simple")
+    .describe("Type of scheduler to use"),
+  denoise: z
+    .number()
+    .min(0)
+    .max(1)
+    .optional()
+    .default(0.8)
+    .describe("Denoising strength"),
   checkpoint,
+  image: z.string().describe("Input image for img2img"),
+  interpolation: z
+    .enum(["nearest"])
+    .optional()
+    .default("nearest")
+    .describe("Interpolation method for image resizing"),
+  resize_method: z
+    .enum(["fill / crop"])
+    .optional()
+    .default("fill / crop")
+    .describe("Method for resizing the image"),
+  resize_condition: z
+    .enum(["always"])
+    .optional()
+    .default("always")
+    .describe("Condition for when to resize the image"),
+  multiple_of: z
+    .number()
+    .int()
+    .optional()
+    .default(8)
+    .describe("Ensure image dimensions are multiples of this value"),
 });
 
 type InputType = z.infer<typeof RequestSchema>;
@@ -51,23 +118,12 @@ function generateWorkflow(input: InputType): Record<string, ComfyNode> {
     },
     "9": {
       inputs: {
-        filename_prefix: "",
+        filename_prefix: "ComfyUI",
         images: ["8", 0],
       },
       class_type: "SaveImage",
       _meta: {
         title: "Save Image",
-      },
-    },
-    "27": {
-      inputs: {
-        width: input.width,
-        height: input.height,
-        batch_size: 1,
-      },
-      class_type: "EmptySD3LatentImage",
-      _meta: {
-        title: "EmptySD3LatentImage",
       },
     },
     "30": {
@@ -83,8 +139,8 @@ function generateWorkflow(input: InputType): Record<string, ComfyNode> {
       inputs: {
         seed: input.seed,
         steps: input.steps,
-        cfg: input.cfg,
-        sampler_name: input.sampler,
+        cfg: input.cfg_scale,
+        sampler_name: input.sampler_name,
         scheduler: input.scheduler,
         denoise: input.denoise,
         model: ["30", 0],
@@ -99,7 +155,7 @@ function generateWorkflow(input: InputType): Record<string, ComfyNode> {
     },
     "33": {
       inputs: {
-        text: "",
+        text: input.negative_prompt,
         clip: ["30", 1],
       },
       class_type: "CLIPTextEncode",
@@ -131,10 +187,10 @@ function generateWorkflow(input: InputType): Record<string, ComfyNode> {
       inputs: {
         width: input.width,
         height: input.height,
-        interpolation: "nearest",
-        method: "fill / crop",
-        condition: "always",
-        multiple_of: 8,
+        interpolation: input.interpolation,
+        method: input.resize_method,
+        condition: input.resize_condition,
+        multiple_of: input.multiple_of,
         image: ["37", 0],
       },
       class_type: "ImageResize+",

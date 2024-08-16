@@ -1,24 +1,72 @@
 import { z } from "zod";
-import { ComfyNode, Workflow, AvailableCheckpoints } from "../../types";
+import { ComfyNode, Workflow } from "../../types";
 import config from "../../config";
 
-let checkpoint: any = AvailableCheckpoints.optional();
+let checkpoint: any = config.models.checkpoints.enum.optional();
 if (config.warmupCkpt) {
-  checkpoint = AvailableCheckpoints.default(config.warmupCkpt);
+  checkpoint = checkpoint.default(config.warmupCkpt);
 }
 
 const RequestSchema = z.object({
-  prompt: z.string(),
-  width: z.number().int().min(256).max(1024).optional().default(1024),
-  height: z.number().int().min(256).max(1024).optional().default(1024),
+  prompt: z.string().describe("The positive prompt for image generation"),
+  negative_prompt: z
+    .string()
+    .optional()
+    .describe("The negative prompt for image generation"),
+  width: z
+    .number()
+    .int()
+    .min(256)
+    .max(2048)
+    .optional()
+    .default(1024)
+    .describe("Width of the generated image"),
+  height: z
+    .number()
+    .int()
+    .min(256)
+    .max(2048)
+    .optional()
+    .default(1024)
+    .describe("Height of the generated image"),
   seed: z
     .number()
     .int()
     .optional()
-    .default(() => Math.floor(Math.random() * 100000)),
-  steps: z.number().int().min(1).max(10).optional().default(4),
-  sampler: z.enum(["euler"]).optional().default("euler"), // This may need to be expanded with more options
-  scheduler: z.enum(["simple"]).optional().default("simple"), // This may need to be expanded with more options
+    .default(() => Math.floor(Math.random() * 1000000000000000))
+    .describe("Seed for random number generation"),
+  steps: z
+    .number()
+    .int()
+    .min(1)
+    .max(100)
+    .optional()
+    .default(4)
+    .describe("Number of sampling steps"),
+  cfg_scale: z
+    .number()
+    .min(0)
+    .max(20)
+    .optional()
+    .default(1)
+    .describe("Classifier-free guidance scale"),
+  sampler_name: z
+    .enum(["euler"])
+    .optional()
+    .default("euler")
+    .describe("Name of the sampler to use"),
+  scheduler: z
+    .enum(["simple"])
+    .optional()
+    .default("simple")
+    .describe("Type of scheduler to use"),
+  denoise: z
+    .number()
+    .min(0)
+    .max(1)
+    .optional()
+    .default(1)
+    .describe("Denoising strength"),
   checkpoint,
 });
 
@@ -48,7 +96,7 @@ function generateWorkflow(input: InputType): Record<string, ComfyNode> {
     },
     "9": {
       inputs: {
-        filename_prefix: "",
+        filename_prefix: "Flux",
         images: ["8", 0],
       },
       class_type: "SaveImage",
@@ -80,10 +128,10 @@ function generateWorkflow(input: InputType): Record<string, ComfyNode> {
       inputs: {
         seed: input.seed,
         steps: input.steps,
-        cfg: 1.0,
-        sampler_name: input.sampler,
+        cfg: input.cfg_scale,
+        sampler_name: input.sampler_name,
         scheduler: input.scheduler,
-        denoise: 1,
+        denoise: input.denoise,
         model: ["30", 0],
         positive: ["6", 0],
         negative: ["33", 0],
@@ -96,7 +144,7 @@ function generateWorkflow(input: InputType): Record<string, ComfyNode> {
     },
     "33": {
       inputs: {
-        text: "",
+        text: input.negative_prompt || "",
         clip: ["30", 1],
       },
       class_type: "CLIPTextEncode",
