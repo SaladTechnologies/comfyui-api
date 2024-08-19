@@ -12,6 +12,7 @@ const RequestSchema = z.object({
   negative_prompt: z
     .string()
     .optional()
+    .default("text, watermark")
     .describe("The negative prompt for image generation"),
   width: z
     .number()
@@ -19,7 +20,7 @@ const RequestSchema = z.object({
     .min(256)
     .max(2048)
     .optional()
-    .default(512)
+    .default(1024)
     .describe("Width of the generated image"),
   height: z
     .number()
@@ -27,7 +28,7 @@ const RequestSchema = z.object({
     .min(256)
     .max(2048)
     .optional()
-    .default(512)
+    .default(1024)
     .describe("Height of the generated image"),
   seed: z
     .number()
@@ -74,31 +75,13 @@ type InputType = z.infer<typeof RequestSchema>;
 
 function generateWorkflow(input: InputType): Record<string, ComfyNode> {
   return {
-    "3": {
-      inputs: {
-        seed: input.seed,
-        steps: input.steps,
-        cfg: input.cfg_scale,
-        sampler_name: input.sampler_name,
-        scheduler: input.scheduler,
-        denoise: input.denoise,
-        model: ["4", 0],
-        positive: ["6", 0],
-        negative: ["7", 0],
-        latent_image: ["5", 0],
-      },
-      class_type: "KSampler",
-      _meta: {
-        title: "KSampler",
-      },
-    },
     "4": {
       inputs: {
         ckpt_name: input.checkpoint,
       },
       class_type: "CheckpointLoaderSimple",
       _meta: {
-        title: "Load Checkpoint",
+        title: "Load Checkpoint - BASE",
       },
     },
     "5": {
@@ -132,9 +115,9 @@ function generateWorkflow(input: InputType): Record<string, ComfyNode> {
         title: "CLIP Text Encode (Prompt)",
       },
     },
-    "8": {
+    "17": {
       inputs: {
-        samples: ["3", 0],
+        samples: ["49", 0],
         vae: ["4", 2],
       },
       class_type: "VAEDecode",
@@ -142,14 +125,32 @@ function generateWorkflow(input: InputType): Record<string, ComfyNode> {
         title: "VAE Decode",
       },
     },
-    "9": {
+    "19": {
       inputs: {
         filename_prefix: "ComfyUI",
-        images: ["8", 0],
+        images: ["17", 0],
       },
       class_type: "SaveImage",
       _meta: {
         title: "Save Image",
+      },
+    },
+    "49": {
+      inputs: {
+        seed: input.seed,
+        steps: input.steps,
+        cfg: input.cfg_scale,
+        sampler_name: input.sampler_name,
+        scheduler: input.scheduler,
+        denoise: input.denoise,
+        model: ["4", 0],
+        positive: ["6", 0],
+        negative: ["7", 0],
+        latent_image: ["5", 0],
+      },
+      class_type: "KSampler",
+      _meta: {
+        title: "KSampler",
       },
     },
   };

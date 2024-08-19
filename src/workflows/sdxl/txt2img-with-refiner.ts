@@ -12,6 +12,7 @@ const RequestSchema = z.object({
   negative_prompt: z
     .string()
     .optional()
+    .default("text, watermark")
     .describe("The negative prompt for image generation"),
   width: z
     .number()
@@ -19,7 +20,7 @@ const RequestSchema = z.object({
     .min(256)
     .max(2048)
     .optional()
-    .default(512)
+    .default(1024)
     .describe("Width of the generated image"),
   height: z
     .number()
@@ -27,13 +28,13 @@ const RequestSchema = z.object({
     .min(256)
     .max(2048)
     .optional()
-    .default(512)
+    .default(1024)
     .describe("Height of the generated image"),
   seed: z
     .number()
     .int()
     .optional()
-    .default(() => Math.floor(Math.random() * 100000000000))
+    .default(() => Math.floor(Math.random() * 1000000000000000))
     .describe("Seed for random number generation"),
   steps: z
     .number()
@@ -41,7 +42,7 @@ const RequestSchema = z.object({
     .min(1)
     .max(100)
     .optional()
-    .default(20)
+    .default(25)
     .describe("Number of sampling steps"),
   cfg_scale: z
     .number()
@@ -60,45 +61,49 @@ const RequestSchema = z.object({
     .optional()
     .default("normal")
     .describe("Type of scheduler to use"),
-  denoise: z
+  base_start_step: z
     .number()
+    .int()
     .min(0)
-    .max(1)
+    .max(100)
     .optional()
-    .default(1)
-    .describe("Denoising strength"),
+    .default(0)
+    .describe("Start step for base model sampling"),
+  base_end_step: z
+    .number()
+    .int()
+    .min(0)
+    .max(100)
+    .optional()
+    .default(20)
+    .describe("End step for base model sampling"),
+  refiner_start_step: z
+    .number()
+    .int()
+    .min(0)
+    .max(100)
+    .optional()
+    .default(20)
+    .describe("Start step for refiner model sampling"),
   checkpoint,
+  refiner_checkpoint: z
+    .string()
+    .optional()
+    .default("sd_xl_refiner_1.0.safetensors")
+    .describe("Checkpoint for the refiner model"),
 });
 
 type InputType = z.infer<typeof RequestSchema>;
 
 function generateWorkflow(input: InputType): Record<string, ComfyNode> {
   return {
-    "3": {
-      inputs: {
-        seed: input.seed,
-        steps: input.steps,
-        cfg: input.cfg_scale,
-        sampler_name: input.sampler_name,
-        scheduler: input.scheduler,
-        denoise: input.denoise,
-        model: ["4", 0],
-        positive: ["6", 0],
-        negative: ["7", 0],
-        latent_image: ["5", 0],
-      },
-      class_type: "KSampler",
-      _meta: {
-        title: "KSampler",
-      },
-    },
     "4": {
       inputs: {
         ckpt_name: input.checkpoint,
       },
       class_type: "CheckpointLoaderSimple",
       _meta: {
-        title: "Load Checkpoint",
+        title: "Load Checkpoint - BASE",
       },
     },
     "5": {
@@ -132,20 +137,91 @@ function generateWorkflow(input: InputType): Record<string, ComfyNode> {
         title: "CLIP Text Encode (Prompt)",
       },
     },
-    "8": {
+    "10": {
       inputs: {
-        samples: ["3", 0],
-        vae: ["4", 2],
+        add_noise: "enable",
+        noise_seed: input.seed,
+        steps: input.steps,
+        cfg: input.cfg_scale,
+        sampler_name: input.sampler_name,
+        scheduler: input.scheduler,
+        start_at_step: input.base_start_step,
+        end_at_step: input.base_end_step,
+        return_with_leftover_noise: "enable",
+        model: ["4", 0],
+        positive: ["6", 0],
+        negative: ["7", 0],
+        latent_image: ["5", 0],
+      },
+      class_type: "KSamplerAdvanced",
+      _meta: {
+        title: "KSampler (Advanced) - BASE",
+      },
+    },
+    "11": {
+      inputs: {
+        add_noise: "disable",
+        noise_seed: 0,
+        steps: input.steps,
+        cfg: input.cfg_scale,
+        sampler_name: input.sampler_name,
+        scheduler: input.scheduler,
+        start_at_step: input.refiner_start_step,
+        end_at_step: 10000,
+        return_with_leftover_noise: "disable",
+        model: ["12", 0],
+        positive: ["15", 0],
+        negative: ["16", 0],
+        latent_image: ["10", 0],
+      },
+      class_type: "KSamplerAdvanced",
+      _meta: {
+        title: "KSampler (Advanced) - REFINER",
+      },
+    },
+    "12": {
+      inputs: {
+        ckpt_name: input.refiner_checkpoint,
+      },
+      class_type: "CheckpointLoaderSimple",
+      _meta: {
+        title: "Load Checkpoint - REFINER",
+      },
+    },
+    "15": {
+      inputs: {
+        text: input.prompt,
+        clip: ["12", 1],
+      },
+      class_type: "CLIPTextEncode",
+      _meta: {
+        title: "CLIP Text Encode (Prompt)",
+      },
+    },
+    "16": {
+      inputs: {
+        text: input.negative_prompt,
+        clip: ["12", 1],
+      },
+      class_type: "CLIPTextEncode",
+      _meta: {
+        title: "CLIP Text Encode (Prompt)",
+      },
+    },
+    "17": {
+      inputs: {
+        samples: ["11", 0],
+        vae: ["12", 2],
       },
       class_type: "VAEDecode",
       _meta: {
         title: "VAE Decode",
       },
     },
-    "9": {
+    "19": {
       inputs: {
         filename_prefix: "ComfyUI",
-        images: ["8", 0],
+        images: ["17", 0],
       },
       class_type: "SaveImage",
       _meta: {
