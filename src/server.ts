@@ -1,9 +1,16 @@
 import Fastify from "fastify";
+import fastifySwagger from "@fastify/swagger";
+import fastifySwaggerUI from "@fastify/swagger-ui";
+import {
+  jsonSchemaTransform,
+  serializerCompiler,
+  validatorCompiler,
+  ZodTypeProvider,
+} from "fastify-type-provider-zod";
 import { DirectoryWatcher } from "./watcher";
 import fsPromises from "fs/promises";
 import path from "path";
 import { version } from "../package.json";
-import { randomUUID } from "crypto";
 import config from "./config";
 import {
   warmupComfyUI,
@@ -12,6 +19,17 @@ import {
   shutdownComfyUI,
   processImage,
 } from "./utils";
+import {
+  PromptRequestSchema,
+  PromptErrorResponseSchema,
+  PromptResponseSchema,
+  PromptRequest,
+  Workflow,
+  WorkflowResponseSchema,
+} from "./types";
+import workflows from "./workflows";
+import { z } from "zod";
+import { randomUUID } from "crypto";
 
 const outputWatcher = new DirectoryWatcher(config.outputDir);
 
@@ -19,113 +37,100 @@ const server = Fastify({
   bodyLimit: 45 * 1024 * 1024, // 45MB
   logger: true,
 });
+server.setValidatorCompiler(validatorCompiler);
+server.setSerializerCompiler(serializerCompiler);
 
-let warm = false;
-server.get("/health", async (request, reply) => {
-  // 200 if ready, 500 if not
-  if (warm) {
-    return reply.code(200).send({ version, status: "healthy" });
-  }
-  return reply.code(500).send({ version, status: "not healthy" });
-});
-
-server.get("/ready", async (request, reply) => {
-  if (warm) {
-    return reply.code(200).send({ version, status: "ready" });
-  }
-  return reply.code(500).send({ version, status: "not ready" });
-});
-
-type PromptRequest = {
-  prompt: Record<string, ComfyNode>;
-  id: string;
-  webhook: string;
-};
-
-type ComfyNode = {
-  inputs: any;
-  class_type: string;
-};
-
-server.post("/prompt", async (request, reply) => {
-  let { prompt, id, webhook } = request.body as PromptRequest;
-  if (!prompt) {
-    return reply.code(400).send({ error: "prompt is required" });
-  }
-  if (!id) {
-    id = randomUUID();
-  }
-
-  let batchSize = 1;
-
-  for (const nodeId in prompt) {
-    const node = prompt[nodeId];
-    if (node.class_type === "SaveImage") {
-      node.inputs.filename_prefix = id;
-    } else if (node.inputs.batch_size) {
-      batchSize = node.inputs.batch_size;
-    } else if (node.class_type === "LoadImage") {
-      const imageInput = node.inputs.image;
-      try {
-        node.inputs.image = await processImage(imageInput, server.log);
-      } catch (e: any) {
-        return reply.code(400).send({
-          error: e.message,
-          location: `prompt.${nodeId}.inputs.image`,
-        });
-      }
-    }
-  }
-
-  if (webhook) {
-    outputWatcher.addPrefixAction(id, batchSize, async (filepath: string) => {
-      const base64File = await fsPromises.readFile(filepath, {
-        encoding: "base64",
-      });
-      try {
-        const res = await fetch(webhook, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            image: base64File,
-            id,
-            filename: path.basename(filepath),
-            prompt,
-          }),
-        });
-        if (!res.ok) {
-          server.log.error(
-            `Failed to send image to webhook: ${await res.text()}`
-          );
-        }
-      } catch (e: any) {
-        server.log.error(`Failed to send image to webhook: ${e.message}`);
-      }
-
-      // Remove the file after sending
-      fsPromises.unlink(filepath);
-    });
-
-    const resp = await fetch(`${config.comfyURL}/prompt`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
+server.register(fastifySwagger, {
+  openapi: {
+    openapi: "3.0.0",
+    info: {
+      title: "Comfy Wrapper API",
+      version,
+    },
+    servers: [
+      {
+        url: `http://localhost:${config.wrapperPort}`,
+        description: "Local server",
       },
-      body: JSON.stringify({ prompt }),
-    });
+    ],
+  },
+  transform: jsonSchemaTransform,
+});
+server.register(fastifySwaggerUI, {
+  routePrefix: "/docs",
+});
 
-    if (!resp.ok) {
-      outputWatcher.removePrefixAction(id);
-      return reply.code(resp.status).send(await resp.text());
+server.after(() => {
+  const app = server.withTypeProvider<ZodTypeProvider>();
+  app.route({
+    method: "GET",
+    url: "/health",
+    schema: {
+      response: {
+        200: z.object({
+          version: z.string(),
+          status: z.literal("healthy"),
+        }),
+        500: z.object({
+          version: z.string(),
+          status: z.literal("not healthy"),
+        }),
+      },
+    },
+    handler: async (request, reply) => {
+      // 200 if ready, 500 if not
+      if (warm) {
+        return reply.code(200).send({ version, status: "healthy" });
+      }
+      return reply.code(500).send({ version, status: "not healthy" });
+    },
+  });
+
+  app.get("/ready", async (request, reply) => {
+    if (warm) {
+      return reply.code(200).send({ version, status: "ready" });
     }
-    return reply.code(202).send({ status: "ok", id, webhook });
-  } else {
-    // Wait for the file and return it
-    const images: string[] = [];
-    function waitForImagesToGenerate(): Promise<void> {
-      return new Promise((resolve) => {
+    return reply.code(500).send({ version, status: "not ready" });
+  });
+
+  app.post<{
+    Body: PromptRequest;
+  }>(
+    "/prompt",
+    {
+      schema: {
+        body: PromptRequestSchema,
+        response: {
+          200: PromptResponseSchema,
+          202: PromptResponseSchema,
+          400: PromptErrorResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      let { prompt, id, webhook } = request.body;
+      let batchSize = 1;
+
+      for (const nodeId in prompt) {
+        const node = prompt[nodeId];
+        if (node.class_type === "SaveImage") {
+          node.inputs.filename_prefix = id;
+        } else if (node.inputs.batch_size) {
+          batchSize = node.inputs.batch_size;
+        } else if (node.class_type === "LoadImage") {
+          const imageInput = node.inputs.image;
+          try {
+            node.inputs.image = await processImage(imageInput, app.log);
+          } catch (e: any) {
+            return reply.code(400).send({
+              error: e.message,
+              location: `prompt.${nodeId}.inputs.image`,
+            });
+          }
+        }
+      }
+
+      if (webhook) {
         outputWatcher.addPrefixAction(
           id,
           batchSize,
@@ -133,37 +138,148 @@ server.post("/prompt", async (request, reply) => {
             const base64File = await fsPromises.readFile(filepath, {
               encoding: "base64",
             });
-            images.push(base64File);
-
-            // Remove the file after reading
-            fsPromises.unlink(filepath);
-
-            if (images.length === batchSize) {
-              outputWatcher.removePrefixAction(id);
-              resolve();
+            try {
+              const res = await fetch(webhook, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  image: base64File,
+                  id,
+                  filename: path.basename(filepath),
+                  prompt,
+                }),
+              });
+              if (!res.ok) {
+                app.log.error(
+                  `Failed to send image to webhook: ${await res.text()}`
+                );
+              }
+            } catch (e: any) {
+              app.log.error(`Failed to send image to webhook: ${e.message}`);
             }
+
+            // Remove the file after sending
+            fsPromises.unlink(filepath);
           }
         );
+
+        const resp = await fetch(`${config.comfyURL}/prompt`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ prompt }),
+        });
+
+        if (!resp.ok) {
+          outputWatcher.removePrefixAction(id);
+          return reply.code(resp.status).send({ error: await resp.text() });
+        }
+        return reply.code(202).send({ status: "ok", id, webhook, prompt });
+      } else {
+        // Wait for the file and return it
+        const images: string[] = [];
+        function waitForImagesToGenerate(): Promise<void> {
+          return new Promise((resolve) => {
+            outputWatcher.addPrefixAction(
+              id,
+              batchSize,
+              async (filepath: string) => {
+                const base64File = await fsPromises.readFile(filepath, {
+                  encoding: "base64",
+                });
+                images.push(base64File);
+
+                // Remove the file after reading
+                fsPromises.unlink(filepath);
+
+                if (images.length === batchSize) {
+                  outputWatcher.removePrefixAction(id);
+                  resolve();
+                }
+              }
+            );
+          });
+        }
+
+        const finished = waitForImagesToGenerate();
+        const resp = await fetch(`${config.comfyURL}/prompt`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ prompt }),
+        });
+        if (!resp.ok) {
+          outputWatcher.removePrefixAction(id);
+          return reply.code(resp.status).send({ error: await resp.text() });
+        }
+        await finished;
+
+        return reply.send({ id, prompt, images });
+      }
+    }
+  );
+
+  for (const baseModel in workflows) {
+    for (const workflowId in workflows[baseModel]) {
+      const workflow = workflows[baseModel][workflowId] as Workflow;
+      server.log.info(`Registering workflow ${baseModel}/${workflowId}`);
+      const BodySchema = z.object({
+        id: z
+          .string()
+          .optional()
+          .default(() => randomUUID()),
+        input: workflow.RequestSchema,
+        webhook: z.string().optional(),
       });
-    }
 
-    const finished = waitForImagesToGenerate();
-    const resp = await fetch(`${config.comfyURL}/prompt`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ prompt }),
-    });
-    if (!resp.ok) {
-      outputWatcher.removePrefixAction(id);
-      return reply.code(resp.status).send(await resp.text());
-    }
-    await finished;
+      type BodyType = z.infer<typeof BodySchema>;
 
-    return reply.send({ id, prompt, images });
+      app.post<{
+        Body: BodyType;
+      }>(
+        `/workflow/${baseModel}/${workflowId}`,
+        {
+          schema: {
+            body: BodySchema,
+            response: {
+              200: WorkflowResponseSchema,
+              202: WorkflowResponseSchema,
+            },
+          },
+        },
+        async (request, reply) => {
+          const { id, input, webhook } = request.body;
+          const prompt = workflow.generateWorkflow(input);
+
+          const resp = await fetch(
+            `http://localhost:${config.wrapperPort}/prompt`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ prompt, id, webhook }),
+            }
+          );
+          const body = await resp.json();
+          if (!resp.ok) {
+            return reply.code(resp.status).send(body);
+          }
+
+          body.prompt = prompt;
+
+          return reply.code(resp.status).send(body);
+        }
+      );
+    }
   }
 });
+
+let warm = false;
 
 process.on("SIGINT", async () => {
   server.log.info("Received SIGINT, interrupting process");
@@ -178,6 +294,9 @@ export async function start() {
     // Start the command
     launchComfyUI();
     await waitForComfyUIToStart(server.log);
+
+    await server.ready();
+    server.swagger();
 
     // Start the server
     await server.listen({ port: config.wrapperPort, host: config.wrapperHost });
