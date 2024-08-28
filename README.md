@@ -10,9 +10,15 @@ RUN chmod +x comfyui-wrapper
 CMD ["./comfyui-wrapper"]
 ```
 
-The server will be available on port 3000 by default, but this can be customized with the `PORT` environment variable.
+The server will be available on port `3000` by default, but this can be customized with the `PORT` environment variable.
 
 The server hosts swagger docs at `/docs`, which can be used to interact with the API.
+
+## Probes
+
+The server has two probes, `/health` and `/ready`. 
+- The `/health` probe will return a 200 status code once the warmup workflow has complete.
+- The `/ready` probe will also return a 200 status code once the warmup workflow has completed, and the server is ready to accept requests.
 
 ## Application Configuration Guide
 
@@ -54,7 +60,8 @@ To specify stable diffusion 1.5 and stable diffusion xl workflows, you can set `
 
 ## Generating New Workflow Template Endpoints
 
-Since the ComfyUI prompt format is a little obtuse, it's common to wrap the workflow endpoints with a more user-friendly interface. This can be done by following the pattern established in the `src/workflows` directory.
+Since the ComfyUI prompt format is a little obtuse, it's common to wrap the workflow endpoints with a more user-friendly interface.
+This can be done by following the pattern established in the `src/workflows` directory.
 
 ```
 .
@@ -87,7 +94,7 @@ The JSON files are for reference, and are not bundled into the final artifact.
 Finally, the new workflow templates must be imported and added to the `workflows` object in `src/workflows/index.ts`.
 From here they will be automatically added to the server, and have swagger docs generated.
 
-Producing these workflow templates can be fully automated using claude.
+Producing these workflow templates can be fully automated using [Claude 3.5 Sonnet](https://www.anthropic.com/).
 A script is provided to do this, `generateWorkflow.ts`.
 
 ```bash
