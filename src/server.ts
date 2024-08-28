@@ -40,6 +40,19 @@ const server = Fastify({
 server.setValidatorCompiler(validatorCompiler);
 server.setSerializerCompiler(serializerCompiler);
 
+const modelSchema: any = {};
+for (const modelType in config.models) {
+  modelSchema[modelType] = z.string().array();
+}
+
+const ModelResponseSchema = z.object(modelSchema);
+type ModelResponse = z.infer<typeof ModelResponseSchema>;
+
+const modelResponse: ModelResponse = {};
+for (const modelType in config.models) {
+  modelResponse[modelType] = config.models[modelType].all;
+}
+
 server.register(fastifySwagger, {
   openapi: {
     openapi: "3.0.0",
@@ -47,12 +60,6 @@ server.register(fastifySwagger, {
       title: "Comfy Wrapper API",
       version,
     },
-    servers: [
-      {
-        url: `http://localhost:${config.wrapperPort}`,
-        description: "Local server",
-      },
-    ],
   },
   transform: jsonSchemaTransform,
 });
@@ -62,36 +69,68 @@ server.register(fastifySwaggerUI, {
 
 server.after(() => {
   const app = server.withTypeProvider<ZodTypeProvider>();
-  app.route({
-    method: "GET",
-    url: "/health",
-    schema: {
-      response: {
-        200: z.object({
-          version: z.string(),
-          status: z.literal("healthy"),
-        }),
-        500: z.object({
-          version: z.string(),
-          status: z.literal("not healthy"),
-        }),
+  app.get(
+    "/health",
+    {
+      schema: {
+        response: {
+          200: z.object({
+            version: z.literal(version),
+            status: z.literal("healthy"),
+          }),
+          500: z.object({
+            version: z.literal(version),
+            status: z.literal("not healthy"),
+          }),
+        },
       },
     },
-    handler: async (request, reply) => {
+    async (request, reply) => {
       // 200 if ready, 500 if not
       if (warm) {
         return reply.code(200).send({ version, status: "healthy" });
       }
       return reply.code(500).send({ version, status: "not healthy" });
-    },
-  });
-
-  app.get("/ready", async (request, reply) => {
-    if (warm) {
-      return reply.code(200).send({ version, status: "ready" });
     }
-    return reply.code(500).send({ version, status: "not ready" });
-  });
+  );
+
+  app.get(
+    "/ready",
+    {
+      schema: {
+        response: {
+          200: z.object({
+            version: z.literal(version),
+            status: z.literal("ready"),
+          }),
+          500: z.object({
+            version: z.literal(version),
+            status: z.literal("not ready"),
+          }),
+        },
+      },
+    },
+    async (request, reply) => {
+      if (warm) {
+        return reply.code(200).send({ version, status: "ready" });
+      }
+      return reply.code(500).send({ version, status: "not ready" });
+    }
+  );
+
+  app.get(
+    "/models",
+    {
+      schema: {
+        response: {
+          200: ModelResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      return modelResponse;
+    }
+  );
 
   app.post<{
     Body: PromptRequest;

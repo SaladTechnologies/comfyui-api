@@ -72,7 +72,9 @@ const model_dirs = fs.readdirSync(MODEL_DIR);
 for (const model_dir of model_dirs) {
   const model_path = path.join(MODEL_DIR, model_dir);
   if (fs.statSync(model_path).isDirectory()) {
-    const all = fs.readdirSync(model_path);
+    const all = fs
+      .readdirSync(model_path)
+      .filter((f) => !(f.startsWith("put_") && f.endsWith("_here")));
     config.models[model_dir] = {
       dir: model_path,
       all,
