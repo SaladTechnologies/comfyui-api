@@ -309,6 +309,7 @@ server.after(() => {
             return reply.code(resp.status).send(body);
           }
 
+          body.input = input;
           body.prompt = prompt;
 
           return reply.code(resp.status).send(body);

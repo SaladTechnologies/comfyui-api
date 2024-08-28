@@ -9,10 +9,6 @@ if (config.warmupCkpt) {
 
 const RequestSchema = z.object({
   prompt: z.string().describe("The positive prompt for image generation"),
-  negative_prompt: z
-    .string()
-    .optional()
-    .describe("The negative prompt for image generation"),
   width: z
     .number()
     .int()
@@ -155,7 +151,7 @@ function generateWorkflow(input: InputType): Record<string, ComfyNode> {
     },
     "33": {
       inputs: {
-        text: input.negative_prompt,
+        text: "",
         clip: ["30", 1],
       },
       class_type: "CLIPTextEncode",

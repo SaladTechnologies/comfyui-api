@@ -61,7 +61,8 @@ export type WorkflowRequest = z.infer<typeof WorkflowRequestSchema>;
 
 export const WorkflowResponseSchema = z.object({
   id: z.string(),
-  prompt: z.record(z.any()),
+  input: z.record(z.any()),
+  prompt: z.record(ComfyNodeSchema),
   images: z.array(z.string().base64()).optional(),
   webhook: z.string().optional(),
   status: z.enum(["ok"]).optional(),
