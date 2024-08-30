@@ -1,12 +1,12 @@
 {
   "name": "comfyui-wrapper",
-  "version": "1.3.1",
+  "version": "1.3.2",
   "description": "Wraps comfyui to make it easier to use as a web service",
   "main": "dist/src/index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "tsc",
-    "build-binary": "tsc && pkg -t node18-linux-x64 --out-path bin ."
+    "build-binary": "tsc && pkg -t node18-linux-x64 --out-path bin . && cp src/*.py bin/"
   },
   "author": "Shawn Rushefsky",
   "license": "MIT",

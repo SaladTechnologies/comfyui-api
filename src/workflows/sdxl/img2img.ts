@@ -50,13 +50,11 @@ const RequestSchema = z.object({
     .optional()
     .default(5.5)
     .describe("Classifier-free guidance scale"),
-  sampler_name: z
-    .enum(["dpmpp_2m_sde_gpu"])
+  sampler_name: config.samplers
     .optional()
     .default("dpmpp_2m_sde_gpu")
     .describe("Name of the sampler to use"),
-  scheduler: z
-    .enum(["exponential"])
+  scheduler: config.schedulers
     .optional()
     .default("exponential")
     .describe("Type of scheduler to use"),

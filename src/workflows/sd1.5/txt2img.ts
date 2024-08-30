@@ -50,13 +50,11 @@ const RequestSchema = z.object({
     .optional()
     .default(8)
     .describe("Classifier-free guidance scale"),
-  sampler_name: z
-    .enum(["euler"])
+  sampler_name: config.samplers
     .optional()
     .default("euler")
     .describe("Name of the sampler to use"),
-  scheduler: z
-    .enum(["normal"])
+  scheduler: config.schedulers
     .optional()
     .default("normal")
     .describe("Type of scheduler to use"),

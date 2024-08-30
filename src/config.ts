@@ -1,6 +1,7 @@
 import assert from "node:assert";
 import fs from "node:fs";
 import path from "node:path";
+import { execSync } from "child_process";
 import { z } from "zod";
 const {
   CMD = "init.sh",
@@ -43,6 +44,52 @@ if (WARMUP_PROMPT_FILE) {
   }
 }
 
+interface ComfyDescription {
+  samplers: string[];
+  schedulers: string[];
+}
+
+function getComfyUIDescription(): ComfyDescription {
+  const pythonCode = `
+import comfy.samplers
+import json
+
+comfy_description = {
+    "samplers": comfy.samplers.KSampler.SAMPLERS,
+    "schedulers": comfy.samplers.KSampler.SCHEDULERS,
+}
+
+print(json.dumps(comfy_description, indent=2))
+`;
+
+  const tempFilePath = path.join("/opt/ComfyUI", "temp_comfy_description.py");
+
+  try {
+    // Write the Python code to a temporary file
+    fs.writeFileSync(tempFilePath, pythonCode);
+
+    // Execute the Python script synchronously
+    const output = execSync(`python ${tempFilePath}`, {
+      cwd: "/opt/ComfyUI",
+      encoding: "utf-8",
+    });
+
+    // Parse and return the JSON output
+    return JSON.parse(output) as ComfyDescription;
+  } catch (error: any) {
+    throw new Error(`Failed to get ComfyUI description: ${error.message}`);
+  } finally {
+    // Clean up the temporary file
+    try {
+      fs.unlinkSync(tempFilePath);
+    } catch (unlinkError: any) {
+      console.error(`Failed to delete temporary file: ${unlinkError.message}`);
+    }
+  }
+}
+
+const comfyDescription = getComfyUIDescription();
+
 const config = {
   comfyLaunchCmd: CMD,
   wrapperHost: HOST,
@@ -57,6 +104,8 @@ const config = {
   inputDir: INPUT_DIR,
   warmupPrompt,
   warmupCkpt,
+  samplers: z.enum(comfyDescription.samplers as [string, ...string[]]),
+  schedulers: z.enum(comfyDescription.schedulers as [string, ...string[]]),
   models: {} as Record<
     string,
     {
