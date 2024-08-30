@@ -49,7 +49,32 @@ interface ComfyDescription {
   schedulers: string[];
 }
 
+function getPythonCommand(): string {
+  let pythonCommand = execSync(
+    "source /opt/ai-dock/etc/environment.sh && which python3",
+    {
+      encoding: "utf-8",
+    }
+  ).trim();
+  if (!pythonCommand) {
+    pythonCommand = execSync(
+      "source /opt/ai-dock/etc/environment.sh && which python",
+      {
+        encoding: "utf-8",
+      }
+    ).trim();
+  }
+  if (!pythonCommand) {
+    throw new Error("Python not found");
+  }
+  return pythonCommand;
+}
+
 function getComfyUIDescription(): ComfyDescription {
+  const temptComfyFilePath = path.join(
+    "/opt/ComfyUI",
+    "temp_comfy_description.json"
+  );
   const pythonCode = `
 import comfy.samplers
 import json
@@ -59,23 +84,32 @@ comfy_description = {
     "schedulers": comfy.samplers.KSampler.SCHEDULERS,
 }
 
-print(json.dumps(comfy_description, indent=2))
+with open("${temptComfyFilePath}", "w") as f:
+    json.dump(comfy_description, f)
 `;
 
   const tempFilePath = path.join("/opt/ComfyUI", "temp_comfy_description.py");
+  const command = `
+  source /opt/ai-dock/etc/environment.sh \
+  && source /opt/ai-dock/bin/venv-set.sh comfyui \
+  && source "$COMFYUI_VENV/bin/activate" \
+  && python ${tempFilePath}`;
 
   try {
     // Write the Python code to a temporary file
     fs.writeFileSync(tempFilePath, pythonCode);
 
     // Execute the Python script synchronously
-    const output = execSync(`python ${tempFilePath}`, {
+    execSync(command, {
       cwd: "/opt/ComfyUI",
       encoding: "utf-8",
+      shell: process.env.SHELL,
+      env: {
+        ...process.env,
+      },
     });
-
-    // Parse and return the JSON output
-    return JSON.parse(output) as ComfyDescription;
+    const output = fs.readFileSync(temptComfyFilePath, { encoding: "utf-8" });
+    return JSON.parse(output.trim()) as ComfyDescription;
   } catch (error: any) {
     throw new Error(`Failed to get ComfyUI description: ${error.message}`);
   } finally {

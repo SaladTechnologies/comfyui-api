@@ -3,6 +3,8 @@ import { FastifyBaseLogger } from "fastify";
 import { CommandExecutor } from "./commands";
 import fs from "fs";
 import fsPromises from "fs/promises";
+import { spawn } from "child_process";
+import * as readline from "readline";
 import { Readable } from "stream";
 import path from "path";
 import { randomUUID } from "crypto";

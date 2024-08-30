@@ -65,6 +65,9 @@ server.register(fastifySwagger, {
 });
 server.register(fastifySwaggerUI, {
   routePrefix: "/docs",
+  uiConfig: {
+    deepLinking: true,
+  },
 });
 
 server.after(() => {
@@ -340,6 +343,9 @@ export async function start() {
 
     // Start the server
     await server.listen({ port: config.wrapperPort, host: config.wrapperHost });
+    server.log.info(
+      `ComfyUI API ${version} listening on ${server.server.address}`
+    );
     await warmupComfyUI();
     warm = true;
     const warmupTime = Date.now() - start;

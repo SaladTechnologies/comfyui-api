@@ -6,7 +6,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "tsc",
-    "build-binary": "tsc && pkg -t node18-linux-x64 --out-path bin . && cp src/*.py bin/"
+    "build-binary": "tsc && pkg -t node18-linux-x64 --out-path bin ."
   },
   "author": "Shawn Rushefsky",
   "license": "MIT",
