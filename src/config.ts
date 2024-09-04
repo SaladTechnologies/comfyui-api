@@ -16,7 +16,10 @@ const {
   MODEL_DIR = "/opt/ComfyUI/models",
   WARMUP_PROMPT_FILE,
   WORKFLOW_MODELS = "all",
+  WORKFLOW_DIR = "/workflows",
 } = process.env;
+
+fs.mkdirSync(WORKFLOW_DIR, { recursive: true });
 
 const comfyURL = `http://${DIRECT_ADDRESS}:${COMFYUI_PORT_HOST}`;
 const selfURL = `http://localhost:${PORT}`;
@@ -47,27 +50,6 @@ if (WARMUP_PROMPT_FILE) {
 interface ComfyDescription {
   samplers: string[];
   schedulers: string[];
-}
-
-function getPythonCommand(): string {
-  let pythonCommand = execSync(
-    "source /opt/ai-dock/etc/environment.sh && which python3",
-    {
-      encoding: "utf-8",
-    }
-  ).trim();
-  if (!pythonCommand) {
-    pythonCommand = execSync(
-      "source /opt/ai-dock/etc/environment.sh && which python",
-      {
-        encoding: "utf-8",
-      }
-    ).trim();
-  }
-  if (!pythonCommand) {
-    throw new Error("Python not found");
-  }
-  return pythonCommand;
 }
 
 function getComfyUIDescription(): ComfyDescription {
@@ -136,6 +118,7 @@ const config = {
   startupCheckMaxTries,
   outputDir: OUTPUT_DIR,
   inputDir: INPUT_DIR,
+  workflowDir: WORKFLOW_DIR,
   warmupPrompt,
   warmupCkpt,
   samplers: z.enum(comfyDescription.samplers as [string, ...string[]]),

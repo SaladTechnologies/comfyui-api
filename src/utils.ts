@@ -3,11 +3,10 @@ import { FastifyBaseLogger } from "fastify";
 import { CommandExecutor } from "./commands";
 import fs from "fs";
 import fsPromises from "fs/promises";
-import { spawn } from "child_process";
-import * as readline from "readline";
 import { Readable } from "stream";
 import path from "path";
 import { randomUUID } from "crypto";
+import { ZodObject, ZodRawShape, ZodTypeAny, ZodDefault } from "zod";
 
 const commandExecutor = new CommandExecutor();
 
@@ -125,4 +124,94 @@ export async function processImage(
       throw new Error(`Failed to parse base64 encoded image: ${e.message}`);
     }
   }
+}
+
+export function zodToMarkdownTable(schema: ZodObject<ZodRawShape>): string {
+  const shape = schema.shape;
+  let markdownTable = "| Field | Type | Description | Default |\n|-|-|-|-|\n";
+
+  for (const [key, value] of Object.entries(shape)) {
+    const fieldName = key;
+    const { type: fieldType, isOptional } = getZodTypeName(value);
+    const fieldDescription = getZodDescription(value);
+    const defaultValue = getZodDefault(value);
+
+    markdownTable += `| ${fieldName} | ${fieldType}${
+      isOptional ? "" : ""
+    } | ${fieldDescription} | ${defaultValue || "**Required**"} |\n`;
+  }
+
+  return markdownTable;
+}
+
+function getZodTypeName(zodType: ZodTypeAny): {
+  type: string;
+  isOptional: boolean;
+} {
+  let currentType = zodType;
+  let isOptional = false;
+
+  while (currentType instanceof ZodDefault) {
+    currentType = currentType._def.innerType;
+  }
+
+  if (currentType._def.typeName === "ZodOptional") {
+    isOptional = true;
+    currentType = currentType._def.innerType;
+  }
+
+  let type: string;
+  switch (currentType._def.typeName) {
+    case "ZodString":
+      type = "string";
+      break;
+    case "ZodNumber":
+      type = "number";
+      break;
+    case "ZodBoolean":
+      type = "boolean";
+      break;
+    case "ZodArray":
+      type = `${getZodTypeName(currentType._def.type).type}[]`;
+      break;
+    case "ZodObject":
+      type = "object";
+      break;
+    case "ZodEnum":
+      type = `enum (${(currentType._def.values as string[])
+        .map((val: string) => `\`${val}\``)
+        .join(", ")})`;
+      break;
+    case "ZodUnion":
+      type = currentType._def.options
+        .map((opt: any) => getZodTypeName(opt).type)
+        .join(", ");
+      break;
+    case "ZodLiteral":
+      type = `literal (${JSON.stringify(currentType._def.value)})`;
+      break;
+    default:
+      type = currentType._def.typeName.replace("Zod", "").toLowerCase();
+  }
+
+  return { type, isOptional };
+}
+
+function getZodDescription(zodType: ZodTypeAny): string {
+  let currentType: ZodTypeAny | undefined = zodType;
+  while (currentType) {
+    if (currentType.description) {
+      return currentType.description;
+    }
+    currentType = currentType._def.innerType;
+  }
+  return "";
+}
+
+function getZodDefault(zodType: ZodTypeAny): string {
+  if (zodType instanceof ZodDefault) {
+    const defaultValue = zodType._def.defaultValue();
+    return JSON.stringify(defaultValue);
+  }
+  return "-";
 }
