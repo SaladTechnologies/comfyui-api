@@ -50,57 +50,177 @@ This application uses environment variables for configuration. Below are the ava
 
 Models are automatically detected from the `MODEL_DIR`. Each subdirectory in `MODEL_DIR` is considered a model category. The application creates an enumeration of all files in each category, which can be used for validation in the application.
 
-### Workflow Models
-
-The `WORKFLOW_MODELS` variable determines which workflow endpoints are available.
-By default, it's set to "all", including all base model categories
-If you want to only include models from a specific base model category, specify them in a comma separated list.
-The available options are `sd1.5`, `sdxl`, and `flux`.
-To specify stable diffusion 1.5 and stable diffusion xl workflows, you can set `WORKFLOW_MODELS` to `sd1.5,sdxl`.
-
 ## Generating New Workflow Template Endpoints
 
 Since the ComfyUI prompt format is a little obtuse, it's common to wrap the workflow endpoints with a more user-friendly interface.
-This can be done by following the pattern established in the `src/workflows` directory.
 
+This can be done by adding conforming `.js` or `.ts` files to the `/workflows` directory in your dockerfile.
+
+Here is an example text-to-image workflow file.
+
+```typescript
+import { z } from "zod";
+import { ComfyNode, Workflow } from "../types";
+import config from "../config";
+
+let checkpoint: any = config.models.checkpoints.enum.optional();
+if (config.warmupCkpt) {
+  checkpoint = checkpoint.default(config.warmupCkpt);
+}
+
+const RequestSchema = z.object({
+  prompt: z.string().describe("The positive prompt for image generation"),
+  negative_prompt: z
+    .string()
+    .optional()
+    .default("text, watermark")
+    .describe("The negative prompt for image generation"),
+  width: z
+    .number()
+    .int()
+    .min(256)
+    .max(2048)
+    .optional()
+    .default(512)
+    .describe("Width of the generated image"),
+  height: z
+    .number()
+    .int()
+    .min(256)
+    .max(2048)
+    .optional()
+    .default(512)
+    .describe("Height of the generated image"),
+  seed: z
+    .number()
+    .int()
+    .optional()
+    .default(() => Math.floor(Math.random() * 100000000000))
+    .describe("Seed for random number generation"),
+  steps: z
+    .number()
+    .int()
+    .min(1)
+    .max(100)
+    .optional()
+    .default(20)
+    .describe("Number of sampling steps"),
+  cfg_scale: z
+    .number()
+    .min(0)
+    .max(20)
+    .optional()
+    .default(8)
+    .describe("Classifier-free guidance scale"),
+  sampler_name: config.samplers
+    .optional()
+    .default("euler")
+    .describe("Name of the sampler to use"),
+  scheduler: config.schedulers
+    .optional()
+    .default("normal")
+    .describe("Type of scheduler to use"),
+  denoise: z
+    .number()
+    .min(0)
+    .max(1)
+    .optional()
+    .default(1)
+    .describe("Denoising strength"),
+  checkpoint,
+});
+
+type InputType = z.infer<typeof RequestSchema>;
+
+function generateWorkflow(input: InputType): Record<string, ComfyNode> {
+  return {
+    "3": {
+      inputs: {
+        seed: input.seed,
+        steps: input.steps,
+        cfg: input.cfg_scale,
+        sampler_name: input.sampler_name,
+        scheduler: input.scheduler,
+        denoise: input.denoise,
+        model: ["4", 0],
+        positive: ["6", 0],
+        negative: ["7", 0],
+        latent_image: ["5", 0],
+      },
+      class_type: "KSampler",
+      _meta: {
+        title: "KSampler",
+      },
+    },
+    "4": {
+      inputs: {
+        ckpt_name: input.checkpoint,
+      },
+      class_type: "CheckpointLoaderSimple",
+      _meta: {
+        title: "Load Checkpoint",
+      },
+    },
+    "5": {
+      inputs: {
+        width: input.width,
+        height: input.height,
+        batch_size: 1,
+      },
+      class_type: "EmptyLatentImage",
+      _meta: {
+        title: "Empty Latent Image",
+      },
+    },
+    "6": {
+      inputs: {
+        text: input.prompt,
+        clip: ["4", 1],
+      },
+      class_type: "CLIPTextEncode",
+      _meta: {
+        title: "CLIP Text Encode (Prompt)",
+      },
+    },
+    "7": {
+      inputs: {
+        text: input.negative_prompt,
+        clip: ["4", 1],
+      },
+      class_type: "CLIPTextEncode",
+      _meta: {
+        title: "CLIP Text Encode (Prompt)",
+      },
+    },
+    "8": {
+      inputs: {
+        samples: ["3", 0],
+        vae: ["4", 2],
+      },
+      class_type: "VAEDecode",
+      _meta: {
+        title: "VAE Decode",
+      },
+    },
+    "9": {
+      inputs: {
+        filename_prefix: "ComfyUI",
+        images: ["8", 0],
+      },
+      class_type: "SaveImage",
+      _meta: {
+        title: "Save Image",
+      },
+    },
+  };
+}
+
+const workflow: Workflow = {
+  RequestSchema,
+  generateWorkflow,
+};
+
+export default workflow;
 ```
-.
-├── flux
-│   ├── img2img.json
-│   ├── img2img.ts
-│   ├── txt2img.json
-│   └── txt2img.ts
-├── index.ts
-├── sd1.5
-│   ├── img2img.json
-│   ├── img2img.ts
-│   ├── txt2img.json
-│   └── txt2img.ts
-└── sdxl
-    ├── img2img.json
-    ├── img2img.ts
-    ├── txt2img-with-refiner.json
-    ├── txt2img-with-refiner.ts
-    ├── txt2img.json
-    └── txt2img.ts
 
-3 directories, 15 files
-```
-
-Within the top level "workflows" directory, there are subdirectories for each base model category.
-Within each base model category, there are JSON and TypeScript files for each workflow template.
-The JSON files contain the original prompt format, and the TypeScript files contain the logic for converting a simpler input into the original prompt format.
-The JSON files are for reference, and are not bundled into the final artifact.
-Finally, the new workflow templates must be imported and added to the `workflows` object in `src/workflows/index.ts`.
-From here they will be automatically added to the server, and have swagger docs generated.
-
-Producing these workflow templates can be fully automated using [Claude 3.5 Sonnet](https://www.anthropic.com/).
-A script is provided to do this, `generateWorkflow.ts`.
-
-```bash
-# First, compile the typescript
-npm run build
-
-# Then, run the script
-node dist/generateWorkflow.js <inputJson> <outputTS>
-```
+Note your file MUST export a `Workflow` object, which contains a `RequestSchema` and a `generateWorkflow` function. The `RequestSchema` is a zod schema that describes the input to the workflow, and the `generateWorkflow` function takes the input and returns a ComfyUI API-format prompt.
