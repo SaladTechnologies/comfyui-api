@@ -18,14 +18,16 @@ import {
   launchComfyUI,
   shutdownComfyUI,
   processImage,
+  zodToMarkdownTable,
 } from "./utils";
 import {
   PromptRequestSchema,
   PromptErrorResponseSchema,
   PromptResponseSchema,
   PromptRequest,
-  Workflow,
   WorkflowResponseSchema,
+  WorkflowTree,
+  isWorkflow,
 } from "./types";
 import workflows from "./workflows";
 import { z } from "zod";
@@ -265,61 +267,127 @@ server.after(() => {
     }
   );
 
-  for (const baseModel in workflows) {
-    for (const workflowId in workflows[baseModel]) {
-      const workflow = workflows[baseModel][workflowId] as Workflow;
-      server.log.info(`Registering workflow ${baseModel}/${workflowId}`);
-      const BodySchema = z.object({
-        id: z
-          .string()
-          .optional()
-          .default(() => randomUUID()),
-        input: workflow.RequestSchema,
-        webhook: z.string().optional(),
-      });
+  // Recursively build the route tree from workflows
+  const walk = (tree: WorkflowTree, route = "/workflow") => {
+    for (const key in tree) {
+      const node = tree[key];
+      if (isWorkflow(node)) {
+        const BodySchema = z.object({
+          id: z
+            .string()
+            .optional()
+            .default(() => randomUUID()),
+          input: node.RequestSchema,
+          webhook: z.string().optional(),
+        });
 
-      type BodyType = z.infer<typeof BodySchema>;
+        type BodyType = z.infer<typeof BodySchema>;
 
-      app.post<{
-        Body: BodyType;
-      }>(
-        `/workflow/${baseModel}/${workflowId}`,
-        {
-          schema: {
-            body: BodySchema,
-            response: {
-              200: WorkflowResponseSchema,
-              202: WorkflowResponseSchema,
+        const description = zodToMarkdownTable(node.RequestSchema);
+
+        app.post<{
+          Body: BodyType;
+        }>(
+          `${route}/${key}`,
+          {
+            schema: {
+              description,
+              body: BodySchema,
+              response: {
+                200: WorkflowResponseSchema,
+                202: WorkflowResponseSchema,
+              },
             },
           },
-        },
-        async (request, reply) => {
-          const { id, input, webhook } = request.body;
-          const prompt = workflow.generateWorkflow(input);
+          async (request, reply) => {
+            const { id, input, webhook } = request.body;
+            const prompt = node.generateWorkflow(input);
 
-          const resp = await fetch(
-            `http://localhost:${config.wrapperPort}/prompt`,
-            {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({ prompt, id, webhook }),
+            const resp = await fetch(
+              `http://localhost:${config.wrapperPort}/prompt`,
+              {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ prompt, id, webhook }),
+              }
+            );
+            const body = await resp.json();
+            if (!resp.ok) {
+              return reply.code(resp.status).send(body);
             }
-          );
-          const body = await resp.json();
-          if (!resp.ok) {
+
+            body.input = input;
+            body.prompt = prompt;
+
             return reply.code(resp.status).send(body);
           }
+        );
 
-          body.input = input;
-          body.prompt = prompt;
-
-          return reply.code(resp.status).send(body);
-        }
-      );
+        server.log.info(`Registered workflow ${route}/${key}`);
+      } else {
+        walk(node as WorkflowTree, `${route}/${key}`);
+      }
     }
-  }
+  };
+  walk(workflows);
+
+  // for (const baseModel in workflows) {
+  //   for (const workflowId in workflows[baseModel]) {
+  //     const workflow = workflows[baseModel][workflowId] as Workflow;
+  //     server.log.info(`Registering workflow ${baseModel}/${workflowId}`);
+  //     const BodySchema = z.object({
+  //       id: z
+  //         .string()
+  //         .optional()
+  //         .default(() => randomUUID()),
+  //       input: workflow.RequestSchema,
+  //       webhook: z.string().optional(),
+  //     });
+
+  //     type BodyType = z.infer<typeof BodySchema>;
+
+  //     app.post<{
+  //       Body: BodyType;
+  //     }>(
+  //       `/workflow/${baseModel}/${workflowId}`,
+  //       {
+  //         schema: {
+  //           body: BodySchema,
+  //           response: {
+  //             200: WorkflowResponseSchema,
+  //             202: WorkflowResponseSchema,
+  //           },
+  //         },
+  //       },
+  //       async (request, reply) => {
+  //         const { id, input, webhook } = request.body;
+  //         const prompt = workflow.generateWorkflow(input);
+
+  //         const resp = await fetch(
+  //           `http://localhost:${config.wrapperPort}/prompt`,
+  //           {
+  //             method: "POST",
+  //             headers: {
+  //               "Content-Type": "application/json",
+  //             },
+  //             body: JSON.stringify({ prompt, id, webhook }),
+  //           }
+  //         );
+  //         const body = await resp.json();
+  //         if (!resp.ok) {
+  //           return reply.code(resp.status).send(body);
+  //         }
+
+  //         body.input = input;
+  //         body.prompt = prompt;
+
+  //         return reply.code(resp.status).send(body);
+  //       }
+  //     );
+  //   }
+  // }
 });
 
 let warm = false;
@@ -343,9 +411,7 @@ export async function start() {
 
     // Start the server
     await server.listen({ port: config.wrapperPort, host: config.wrapperHost });
-    server.log.info(
-      `ComfyUI API ${version} listening on ${server.server.address}`
-    );
+    server.log.info(`ComfyUI API ${version} started.`);
     await warmupComfyUI();
     warm = true;
     const warmupTime = Date.now() - start;

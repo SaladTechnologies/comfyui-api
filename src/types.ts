@@ -48,6 +48,14 @@ export interface Workflow {
   generateWorkflow: (input: any) => Record<string, ComfyNode>;
 }
 
+export function isWorkflow(obj: any): obj is Workflow {
+  return "RequestSchema" in obj && "generateWorkflow" in obj;
+}
+
+export interface WorkflowTree {
+  [key: string]: WorkflowTree | Workflow;
+}
+
 export const WorkflowRequestSchema = z.object({
   id: z
     .string()
