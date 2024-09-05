@@ -20,42 +20,79 @@ The server has two probes, `/health` and `/ready`.
 - The `/health` probe will return a 200 status code once the warmup workflow has complete.
 - The `/ready` probe will also return a 200 status code once the warmup workflow has completed, and the server is ready to accept requests.
 
-## Application Configuration Guide
+Here's a markdown guide to configuring the application based on the provided config.ts file:
 
-This application uses environment variables for configuration. Below are the available options and their default values:
+## API Configuration Guide
+
+This guide provides an overview of how to configure the application using environment variables.
 
 ### Environment Variables
 
-- `CMD`: Command to launch ComfyUI (default: "init.sh")
-- `HOST`: Host to bind the wrapper server (default: "::")
-- `PORT`: Port for the wrapper server (default: "3000")
-- `DIRECT_ADDRESS`: Direct address for internal communication (default: "127.0.0.1")
-- `COMFYUI_PORT_HOST`: Port for ComfyUI (default: "8188")
-- `STARTUP_CHECK_INTERVAL_S`: Interval in seconds between startup checks (default: "1")
-- `STARTUP_CHECK_MAX_TRIES`: Maximum number of startup check attempts (default: "10")
-- `OUTPUT_DIR`: Directory for output files (default: "/opt/ComfyUI/output")
-- `INPUT_DIR`: Directory for input files (default: "/opt/ComfyUI/input")
-- `MODEL_DIR`: Directory for model files (default: "/opt/ComfyUI/models")
-- `WARMUP_PROMPT_FILE`: Path to a JSON file containing a warmup prompt (optional)
-- `WORKFLOW_MODELS`: Specify which models to include in workflows (default: "all")
+The following table lists the available environment variables and their default values:
+
+| Variable | Default Value | Description |
+|----------|---------------|-------------|
+| CMD | "init.sh" | Command to launch ComfyUI |
+| HOST | "::" | Wrapper host address |
+| PORT | "3000" | Wrapper port number |
+| DIRECT_ADDRESS | "127.0.0.1" | Direct address for ComfyUI |
+| COMFYUI_PORT_HOST | "8188" | ComfyUI port number |
+| STARTUP_CHECK_INTERVAL_S | "1" | Interval in seconds between startup checks |
+| STARTUP_CHECK_MAX_TRIES | "10" | Maximum number of startup check attempts |
+| OUTPUT_DIR | "/opt/ComfyUI/output" | Directory for output files |
+| INPUT_DIR | "/opt/ComfyUI/input" | Directory for input files |
+| MODEL_DIR | "/opt/ComfyUI/models" | Directory for model files |
+| WARMUP_PROMPT_FILE | (not set) | Path to warmup prompt file (optional) |
+| WORKFLOW_MODELS | "all" | Workflow models configuration |
+| WORKFLOW_DIR | "/workflows" | Directory for workflow files |
 
 ### Configuration Details
 
-1. The application will use `http://${DIRECT_ADDRESS}:${COMFYUI_PORT_HOST}` to communicate with ComfyUI.
-2. The wrapper server will be accessible at `http://localhost:${PORT}`.
-3. If `WARMUP_PROMPT_FILE` is specified, it must exist and contain valid JSON. The application will attempt to extract the checkpoint name from this file.
-4. The `MODEL_DIR` is scanned for subdirectories. Each subdirectory is treated as a model category, and its contents are listed as available models.
+1. **ComfyUI Settings**:
+   - The application uses the `CMD` environment variable to specify the command for launching ComfyUI.
+   - ComfyUI is accessed at `http://${DIRECT_ADDRESS}:${COMFYUI_PORT_HOST}`.
 
-### Model Configuration
+2. **Wrapper Settings**:
+   - The wrapper API listens on `HOST:PORT`.
+   - It can be accessed at `http://localhost:${PORT}`.
+   - Use an IPv6 address for `HOST` when deploying on Salad. This is the default behavior.
 
-Models are automatically detected from the `MODEL_DIR`. Each subdirectory in `MODEL_DIR` is considered a model category. The application creates an enumeration of all files in each category, which can be used for validation in the application.
+3. **Startup Checks**:
+   - The application performs startup checks at intervals specified by `STARTUP_CHECK_INTERVAL_S`.
+   - It will attempt up to `STARTUP_CHECK_MAX_TRIES` before giving up.
 
-## Generating New Workflow Template Endpoints
+4. **Directories**:
+   - Output files are stored in `OUTPUT_DIR`.
+   - Input files are read from `INPUT_DIR`.
+   - Model files are located in `MODEL_DIR`.
+   - Workflow files are stored in `WORKFLOW_DIR`. See [below](#generating-new-workflow-endpoints) for more information.
+
+5. **Warmup Prompt**:
+   - If `WARMUP_PROMPT_FILE` is set, the application will load and parse a warmup prompt from this file.
+   - The checkpoint used in this prompt can be used as the default for workflow models.
+
+6. **Models**:
+   - The application scans the `MODEL_DIR` for subdirectories and creates configurations for each model type found.
+   - Each model type will have its directory path, list of available models, and a Zod enum for validation.
+   - The model names are exposed via the `GET /models` endpoint, and via the config object throughout the application.
+
+7. **ComfyUI Description**:
+   - The application retrieves available samplers and schedulers from ComfyUI.
+   - This information is used to create Zod enums for validation.
+
+### Additional Notes
+
+- The application uses Zod for runtime type checking and validation of configuration values.
+- The configuration includes setup for both the wrapper application and ComfyUI itself.
+
+Remember to set these environment variables according to your specific deployment needs before running the application.
+
+## Generating New Workflow Endpoints
 
 Since the ComfyUI prompt format is a little obtuse, it's common to wrap the workflow endpoints with a more user-friendly interface.
 
 This can be done by adding conforming `.js` or `.ts` files to the `/workflows` directory in your dockerfile.
-You can see some examples in [`src/workflows`](./src/workflows/).
+You can see some examples in [`./workflows`](./workflows/).
 Typescript files will be automatically transpiled to javascript files, so you can use either.
 
 Here is an example text-to-image workflow file.

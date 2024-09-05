@@ -27,6 +27,9 @@ const port = parseInt(PORT, 10);
 const startupCheckInterval = parseInt(STARTUP_CHECK_INTERVAL_S, 10) * 1000;
 const startupCheckMaxTries = parseInt(STARTUP_CHECK_MAX_TRIES, 10);
 
+// The parent directory of model_dir
+const comfyDir = path.join(MODEL_DIR, "..");
+
 let warmupPrompt: any | undefined;
 let warmupCkpt: string | undefined;
 if (WARMUP_PROMPT_FILE) {
@@ -53,10 +56,7 @@ interface ComfyDescription {
 }
 
 function getComfyUIDescription(): ComfyDescription {
-  const temptComfyFilePath = path.join(
-    "/opt/ComfyUI",
-    "temp_comfy_description.json"
-  );
+  const temptComfyFilePath = path.join(comfyDir, "temp_comfy_description.json");
   const pythonCode = `
 import comfy.samplers
 import json
@@ -70,7 +70,7 @@ with open("${temptComfyFilePath}", "w") as f:
     json.dump(comfy_description, f)
 `;
 
-  const tempFilePath = path.join("/opt/ComfyUI", "temp_comfy_description.py");
+  const tempFilePath = path.join(comfyDir, "temp_comfy_description.py");
   const command = `
   source /opt/ai-dock/etc/environment.sh \
   && source /opt/ai-dock/bin/venv-set.sh comfyui \
@@ -83,7 +83,7 @@ with open("${temptComfyFilePath}", "w") as f:
 
     // Execute the Python script synchronously
     execSync(command, {
-      cwd: "/opt/ComfyUI",
+      cwd: comfyDir,
       encoding: "utf-8",
       shell: process.env.SHELL,
       env: {
