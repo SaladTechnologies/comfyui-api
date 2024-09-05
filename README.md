@@ -14,6 +14,17 @@ The server will be available on port `3000` by default, but this can be customiz
 
 The server hosts swagger docs at `/docs`, which can be used to interact with the API.
 
+## Features
+
+- **Full Power Of ComfyUI**: The server supports the full ComfyUI /prompt API, and can be used to execute any ComfyUI workflow.
+- **Stateless API**: The server is stateless, and can be scaled horizontally to handle more requests.
+- **Swagger Docs**: The server hosts swagger docs at `/docs`, which can be used to interact with the API.
+- **Webhook Support**: The server can send completed images to a webhook, which can be used to store images, or to send them to a user.
+- **Warmup Workflow**: The server can be configured to run a warmup workflow on startup, which can be used to load models, and to ensure the server is ready to accept requests.
+- **Probes**: The server has two probes, `/health` and `/ready`, which can be used to check the server's health and readiness to receive traffic.
+- **Dynamic Workflow Endpoints**: Automatically mount new workflow endpoints by adding conforming `.js` or `.ts` files to the `/workflows` directory in your docker image. See [below](#generating-new-workflow-endpoints) for more information.
+- **Works Great with Salad**: The server is designed to work well with Salad, and can be used to host ComfyUI on the Salad platform. It is likely to work well with other platforms as well.
+
 ## Probes
 
 The server has two probes, `/health` and `/ready`. 
@@ -44,7 +55,6 @@ The default values mostly assume this will run on top of an [ai-dock](https://gi
 | INPUT_DIR | "/opt/ComfyUI/input" | Directory for input files |
 | MODEL_DIR | "/opt/ComfyUI/models" | Directory for model files |
 | WARMUP_PROMPT_FILE | (not set) | Path to warmup prompt file (optional) |
-| WORKFLOW_MODELS | "all" | Workflow models configuration |
 | WORKFLOW_DIR | "/workflows" | Directory for workflow files |
 
 ### Configuration Details
