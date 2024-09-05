@@ -62,11 +62,6 @@ Here is an example text-to-image workflow file.
 import { z } from "zod";
 import config from "../config";
 
-interface Workflow {
-  RequestSchema: z.ZodObject<any, any>;
-  generateWorkflow: (input: any) => Record<string, ComfyNode>;
-}
-
 const ComfyNodeSchema = z.object({
   inputs: z.any(),
   class_type: z.string(),
@@ -74,6 +69,11 @@ const ComfyNodeSchema = z.object({
 });
 
 type ComfyNode = z.infer<typeof ComfyNodeSchema>;
+
+interface Workflow {
+  RequestSchema: z.ZodObject<any, any>;
+  generateWorkflow: (input: any) => Record<string, ComfyNode>;
+}
 
 let checkpoint: any = config.models.checkpoints.enum.optional();
 if (config.warmupCkpt) {
