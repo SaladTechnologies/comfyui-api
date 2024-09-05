@@ -9,4 +9,4 @@ gh release create $version \
   --title "Release $version" \
   --notes "Release $version"
 
-gh release upload $version ./bin/comfyui-wrapper#Linux_x64 --clobber
+gh release upload $version ./bin/comfyui-api#Linux_x64 --clobber

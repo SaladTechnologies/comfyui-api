@@ -1,5 +1,5 @@
 {
-  "name": "comfyui-wrapper",
+  "name": "comfyui-api",
   "version": "1.4.0",
   "description": "Wraps comfyui to make it easier to use as a stateless web service",
   "main": "dist/src/index.js",
@@ -18,7 +18,7 @@
     "pkg": "^5.8.1"
   },
   "bin": {
-    "comfyui-wrapper": "dist/src/index.js"
+    "comfyui-api": "dist/src/index.js"
   },
   "dependencies": {
     "@fastify/swagger": "^8.15.0",
