@@ -60,8 +60,20 @@ Here is an example text-to-image workflow file.
 
 ```typescript
 import { z } from "zod";
-import { ComfyNode, Workflow } from "../types";
 import config from "../config";
+
+interface Workflow {
+  RequestSchema: z.ZodObject<any, any>;
+  generateWorkflow: (input: any) => Record<string, ComfyNode>;
+}
+
+const ComfyNodeSchema = z.object({
+  inputs: z.any(),
+  class_type: z.string(),
+  _meta: z.any().optional(),
+});
+
+type ComfyNode = z.infer<typeof ComfyNodeSchema>;
 
 let checkpoint: any = config.models.checkpoints.enum.optional();
 if (config.warmupCkpt) {
