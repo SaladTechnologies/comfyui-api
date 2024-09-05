@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { ComfyNode, Workflow } from "../../types";
-import config from "../../config";
+import { ComfyNode, Workflow } from "../../src/types";
+import config from "../../src/config";
 
 let checkpoint: any = config.models.checkpoints.enum.optional();
 if (config.warmupCkpt) {

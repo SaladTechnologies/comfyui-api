@@ -55,6 +55,8 @@ Models are automatically detected from the `MODEL_DIR`. Each subdirectory in `MO
 Since the ComfyUI prompt format is a little obtuse, it's common to wrap the workflow endpoints with a more user-friendly interface.
 
 This can be done by adding conforming `.js` or `.ts` files to the `/workflows` directory in your dockerfile.
+You can see some examples in [`src/workflows`](./src/workflows/).
+Typescript files will be automatically transpiled to javascript files, so you can use either.
 
 Here is an example text-to-image workflow file.
 
@@ -75,6 +77,7 @@ interface Workflow {
   generateWorkflow: (input: any) => Record<string, ComfyNode>;
 }
 
+// This defaults the checkpoint to whatever was used in the warmup workflow
 let checkpoint: any = config.models.checkpoints.enum.optional();
 if (config.warmupCkpt) {
   checkpoint = checkpoint.default(config.warmupCkpt);
@@ -236,3 +239,22 @@ export default workflow;
 ```
 
 Note your file MUST export a `Workflow` object, which contains a `RequestSchema` and a `generateWorkflow` function. The `RequestSchema` is a zod schema that describes the input to the workflow, and the `generateWorkflow` function takes the input and returns a ComfyUI API-format prompt.
+
+The workflow endpoints will follow whatever directory structure you provide.
+For example, a directory structure like this:
+
+```shell
+/workflows
+└── sdxl
+    ├── img2img.ts
+    ├── txt2img-with-refiner.ts
+    └── txt2img.ts
+```
+
+Would yield the following endpoints:
+- `POST /workflows/sdxl/img2img`
+- `POST /workflows/sdxl/txt2img-with-refiner`
+- `POST /workflows/sdxl/txt2img`
+
+These endpoints will be present in the swagger docs, and can be used to interact with the API.
+If you provide descriptions in your zod schemas, these will be used to create a table of inputs in the swagger docs.
