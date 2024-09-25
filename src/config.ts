@@ -17,6 +17,7 @@ const {
   WARMUP_PROMPT_FILE,
   WORKFLOW_MODELS = "all",
   WORKFLOW_DIR = "/workflows",
+  MARKDOWN_SCHEMA_DESCRIPTIONS = "true",
 } = process.env;
 
 fs.mkdirSync(WORKFLOW_DIR, { recursive: true });
@@ -132,6 +133,7 @@ const config = {
     }
   >,
   workflowModels: WORKFLOW_MODELS,
+  markdownSchemaDescriptions: MARKDOWN_SCHEMA_DESCRIPTIONS === "true",
 };
 
 const model_dirs = fs.readdirSync(MODEL_DIR);

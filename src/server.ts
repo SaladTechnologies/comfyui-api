@@ -78,6 +78,8 @@ server.after(() => {
     "/health",
     {
       schema: {
+        summary: "Health Probe",
+        description: "Check if the server is healthy",
         response: {
           200: z.object({
             version: z.literal(version),
@@ -103,6 +105,8 @@ server.after(() => {
     "/ready",
     {
       schema: {
+        summary: "Readiness Probe",
+        description: "Check if the server is ready to serve traffic",
         response: {
           200: z.object({
             version: z.literal(version),
@@ -127,6 +131,9 @@ server.after(() => {
     "/models",
     {
       schema: {
+        summary: "List Models",
+        description:
+          "List all available models. This is from the contents of the models directory.",
         response: {
           200: ModelResponseSchema,
         },
@@ -143,6 +150,8 @@ server.after(() => {
     "/prompt",
     {
       schema: {
+        summary: "Submit Prompt",
+        description: "Submit an API-formatted ComfyUI prompt.",
         body: PromptRequestSchema,
         response: {
           200: PromptResponseSchema,
@@ -283,7 +292,17 @@ server.after(() => {
 
         type BodyType = z.infer<typeof BodySchema>;
 
-        const description = zodToMarkdownTable(node.RequestSchema);
+        let description = "";
+        if (config.markdownSchemaDescriptions) {
+          description = zodToMarkdownTable(node.RequestSchema);
+        } else if (node.description) {
+          description = node.description;
+        }
+
+        let summary = key;
+        if (node.summary) {
+          summary = node.summary;
+        }
 
         app.post<{
           Body: BodyType;
@@ -291,6 +310,7 @@ server.after(() => {
           `${route}/${key}`,
           {
             schema: {
+              summary,
               description,
               body: BodySchema,
               response: {
@@ -332,62 +352,6 @@ server.after(() => {
     }
   };
   walk(workflows);
-
-  // for (const baseModel in workflows) {
-  //   for (const workflowId in workflows[baseModel]) {
-  //     const workflow = workflows[baseModel][workflowId] as Workflow;
-  //     server.log.info(`Registering workflow ${baseModel}/${workflowId}`);
-  //     const BodySchema = z.object({
-  //       id: z
-  //         .string()
-  //         .optional()
-  //         .default(() => randomUUID()),
-  //       input: workflow.RequestSchema,
-  //       webhook: z.string().optional(),
-  //     });
-
-  //     type BodyType = z.infer<typeof BodySchema>;
-
-  //     app.post<{
-  //       Body: BodyType;
-  //     }>(
-  //       `/workflow/${baseModel}/${workflowId}`,
-  //       {
-  //         schema: {
-  //           body: BodySchema,
-  //           response: {
-  //             200: WorkflowResponseSchema,
-  //             202: WorkflowResponseSchema,
-  //           },
-  //         },
-  //       },
-  //       async (request, reply) => {
-  //         const { id, input, webhook } = request.body;
-  //         const prompt = workflow.generateWorkflow(input);
-
-  //         const resp = await fetch(
-  //           `http://localhost:${config.wrapperPort}/prompt`,
-  //           {
-  //             method: "POST",
-  //             headers: {
-  //               "Content-Type": "application/json",
-  //             },
-  //             body: JSON.stringify({ prompt, id, webhook }),
-  //           }
-  //         );
-  //         const body = await resp.json();
-  //         if (!resp.ok) {
-  //           return reply.code(resp.status).send(body);
-  //         }
-
-  //         body.input = input;
-  //         body.prompt = prompt;
-
-  //         return reply.code(resp.status).send(body);
-  //       }
-  //     );
-  //   }
-  // }
 });
 
 let warm = false;
