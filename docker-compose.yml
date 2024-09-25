@@ -1,0 +1,16 @@
+services:
+  comfyui:
+    image: saladtechnologies/comfyui:comfy0.2.0-api1.4.0-base
+    volumes:
+      - ./bin:/app/bin
+    command: ["./app/bin/comfyui-api"]
+    ports:
+      - "3000:3000"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: [ gpu ]
+              count: all
+

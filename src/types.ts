@@ -46,6 +46,8 @@ export const WorkflowSchema = z.object({
 export interface Workflow {
   RequestSchema: z.ZodObject<any, any>;
   generateWorkflow: (input: any) => Record<string, ComfyNode>;
+  description?: string;
+  summary?: string;
 }
 
 export function isWorkflow(obj: any): obj is Workflow {

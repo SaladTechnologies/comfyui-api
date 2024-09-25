@@ -216,6 +216,8 @@ function generateWorkflow(input: InputType): Record<string, ComfyNode> {
 const workflow: Workflow = {
   RequestSchema,
   generateWorkflow,
+  summary: "Image-to-Image",
+  description: "Text-guided Image-to-Image generation",
 };
 
 export default workflow;
