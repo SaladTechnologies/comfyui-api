@@ -62,6 +62,19 @@ server.register(fastifySwagger, {
       title: "Comfy Wrapper API",
       version,
     },
+    servers: [
+      {
+        url: `{accessDomainName}`,
+        description: "Your server",
+        variables: {
+          accessDomainName: {
+            default: `http://localhost:${config.wrapperPort}`,
+            description:
+              "The domain name of the server, protocol included, port optional",
+          },
+        },
+      },
+    ],
   },
   transform: jsonSchemaTransform,
 });
