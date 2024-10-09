@@ -1,9 +1,9 @@
 services:
   comfyui:
-    image: saladtechnologies/comfyui:comfy0.2.0-api1.4.0-base
+    image: saladtechnologies/comfyui:comfy0.2.2-api1.4.1-base
     volumes:
       - ./bin:/app/bin
-    command: ["./app/bin/comfyui-api"]
+    command: ["/app/bin/comfyui-api"]
     ports:
       - "3000:3000"
     deploy:
