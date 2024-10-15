@@ -30,6 +30,7 @@ The server hosts swagger docs at `/docs`, which can be used to interact with the
 - **Warmup Workflow**: The server can be configured to run a warmup workflow on startup, which can be used to load models, and to ensure the server is ready to accept requests.
 - **Probes**: The server has two probes, `/health` and `/ready`, which can be used to check the server's health and readiness to receive traffic.
 - **Dynamic Workflow Endpoints**: Automatically mount new workflow endpoints by adding conforming `.js` or `.ts` files to the `/workflows` directory in your docker image. See [below](#generating-new-workflow-endpoints) for more information.
+- **Bring Your Own Models And Extensions**: Use any model or extension you want by adding them to the normal ComfyUI directories `/opt/ComfyUI/`.
 - **Works Great with SaladCloud**: The server is designed to work well with SaladCloud, and can be used to host ComfyUI on the Salad platform. It is likely to work well with other platforms as well.
 
 ## Probes
@@ -315,3 +316,14 @@ Would yield the following endpoints:
 
 These endpoints will be present in the swagger docs, and can be used to interact with the API.
 If you provide descriptions in your zod schemas, these will be used to create a table of inputs in the swagger docs.
+
+## Prebuilt Docker Images
+
+There are several prebuilt Docker images using this server.
+They are built from the [SaladCloud Recipes Repo](https://github.com/SaladTechnologies/salad-recipes/), and can be found on [Docker Hub](https://hub.docker.com/r/saladtechnologies/comfyui/tags).
+
+The tag pattern is `saladtechnologies/comfyui:comfy<comfy-version>-api<api-version>-<model|base>` where:
+
+- `<comfy-version>` is the version of ComfyUI used
+- `<api-version>` is the version of the comfyui-api server
+- `<model|base>` is the model used. There is a `base` tag for an image that contains ComfyUI and the comfyui-api server, but no models. There are also tags for specific models, like `sdxl-with-refiner` or `flux-schnell-fp8`.
