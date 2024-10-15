@@ -1,12 +1,18 @@
 # ComfyUI API - A Stateless and Extendable API for ComfyUI
+
 A simple wrapper that facilitates using ComfyUI as a stateless API, either by receiving images in the response, or by sending completed images to a webhook
 
 Download the latest version from the release page, and copy it into your existing ComfyUI dockerfile. Then, you can use it like this:
 
 ```dockerfile
-COPY comfyui-api .
+# Change this to the version you want to use
+ARG api_version=1.4.2
+
+# Download the comfyui-api binary, and make it executable
+ADD https://github.com/SaladTechnologies/comfyui-api/releases/download/${api_version}/comfyui-api .
 RUN chmod +x comfyui-api
 
+# Set CMD to launch the comfyui-api binary. The comfyui-api binary will launch ComfyUI.
 CMD ["./comfyui-api"]
 ```
 
@@ -24,11 +30,12 @@ The server hosts swagger docs at `/docs`, which can be used to interact with the
 - **Warmup Workflow**: The server can be configured to run a warmup workflow on startup, which can be used to load models, and to ensure the server is ready to accept requests.
 - **Probes**: The server has two probes, `/health` and `/ready`, which can be used to check the server's health and readiness to receive traffic.
 - **Dynamic Workflow Endpoints**: Automatically mount new workflow endpoints by adding conforming `.js` or `.ts` files to the `/workflows` directory in your docker image. See [below](#generating-new-workflow-endpoints) for more information.
-- **Works Great with Salad**: The server is designed to work well with Salad, and can be used to host ComfyUI on the Salad platform. It is likely to work well with other platforms as well.
+- **Works Great with SaladCloud**: The server is designed to work well with SaladCloud, and can be used to host ComfyUI on the Salad platform. It is likely to work well with other platforms as well.
 
 ## Probes
 
-The server has two probes, `/health` and `/ready`. 
+The server has two probes, `/health` and `/ready`.
+
 - The `/health` probe will return a 200 status code once the warmup workflow has complete.
 - The `/ready` probe will also return a 200 status code once the warmup workflow has completed, and the server is ready to accept requests.
 
@@ -43,20 +50,20 @@ This guide provides an overview of how to configure the application using enviro
 The following table lists the available environment variables and their default values.
 The default values mostly assume this will run on top of an [ai-dock](https://github.com/ai-dock/comfyui) image, but can be customized as needed.
 
-| Variable | Default Value | Description |
-|----------|---------------|-------------|
-| CMD | "init.sh" | Command to launch ComfyUI |
-| HOST | "::" | Wrapper host address |
-| PORT | "3000" | Wrapper port number |
-| DIRECT_ADDRESS | "127.0.0.1" | Direct address for ComfyUI |
-| COMFYUI_PORT_HOST | "8188" | ComfyUI port number |
-| STARTUP_CHECK_INTERVAL_S | "1" | Interval in seconds between startup checks |
-| STARTUP_CHECK_MAX_TRIES | "10" | Maximum number of startup check attempts |
-| OUTPUT_DIR | "/opt/ComfyUI/output" | Directory for output files |
-| INPUT_DIR | "/opt/ComfyUI/input" | Directory for input files |
-| MODEL_DIR | "/opt/ComfyUI/models" | Directory for model files |
-| WARMUP_PROMPT_FILE | (not set) | Path to warmup prompt file (optional) |
-| WORKFLOW_DIR | "/workflows" | Directory for workflow files |
+| Variable                 | Default Value         | Description                                |
+| ------------------------ | --------------------- | ------------------------------------------ |
+| CMD                      | "init.sh"             | Command to launch ComfyUI                  |
+| HOST                     | "::"                  | Wrapper host address                       |
+| PORT                     | "3000"                | Wrapper port number                        |
+| DIRECT_ADDRESS           | "127.0.0.1"           | Direct address for ComfyUI                 |
+| COMFYUI_PORT_HOST        | "8188"                | ComfyUI port number                        |
+| STARTUP_CHECK_INTERVAL_S | "1"                   | Interval in seconds between startup checks |
+| STARTUP_CHECK_MAX_TRIES  | "10"                  | Maximum number of startup check attempts   |
+| OUTPUT_DIR               | "/opt/ComfyUI/output" | Directory for output files                 |
+| INPUT_DIR                | "/opt/ComfyUI/input"  | Directory for input files                  |
+| MODEL_DIR                | "/opt/ComfyUI/models" | Directory for model files                  |
+| WARMUP_PROMPT_FILE       | (not set)             | Path to warmup prompt file (optional)      |
+| WORKFLOW_DIR             | "/workflows"          | Directory for workflow files               |
 
 ### Configuration Details
 
@@ -301,6 +308,7 @@ For example, a directory structure like this:
 ```
 
 Would yield the following endpoints:
+
 - `POST /workflows/sdxl/img2img`
 - `POST /workflows/sdxl/txt2img-with-refiner`
 - `POST /workflows/sdxl/txt2img`
