@@ -2,6 +2,20 @@
 
 A simple wrapper that facilitates using ComfyUI as a stateless API, either by receiving images in the response, or by sending completed images to a webhook
 
+- [ComfyUI API - A Stateless and Extendable API for ComfyUI](#comfyui-api---a-stateless-and-extendable-api-for-comfyui)
+  - [Download and Usage](#download-and-usage)
+  - [Features](#features)
+  - [Probes](#probes)
+  - [API Configuration Guide](#api-configuration-guide)
+    - [Environment Variables](#environment-variables)
+    - [Configuration Details](#configuration-details)
+    - [Additional Notes](#additional-notes)
+  - [Generating New Workflow Endpoints](#generating-new-workflow-endpoints)
+    - [Automating with Claude 3.5 Sonnet](#automating-with-claude-35-sonnet)
+  - [Prebuilt Docker Images](#prebuilt-docker-images)
+
+## Download and Usage
+
 Download the latest version from the release page, and copy it into your existing ComfyUI dockerfile. Then, you can use it like this:
 
 ```dockerfile
@@ -12,7 +26,7 @@ ARG api_version=1.4.2
 ADD https://github.com/SaladTechnologies/comfyui-api/releases/download/${api_version}/comfyui-api .
 RUN chmod +x comfyui-api
 
-# Set CMD to launch the comfyui-api binary. The comfyui-api binary will launch ComfyUI.
+# Set CMD to launch the comfyui-api binary. The comfyui-api binary will launch ComfyUI as a child process.
 CMD ["./comfyui-api"]
 ```
 
@@ -316,6 +330,24 @@ Would yield the following endpoints:
 
 These endpoints will be present in the swagger docs, and can be used to interact with the API.
 If you provide descriptions in your zod schemas, these will be used to create a table of inputs in the swagger docs.
+
+### Automating with Claude 3.5 Sonnet
+
+> **Note**: This requires having an account with Anthropic, and your anthropic API key in the environment variable `ANTHROPIC_API_KEY`.
+
+Creating these endpoints can be done mostly automatically by [Claude 3.5 Sonnet](https://console.anthropic.com/), given the JSON prompt graph.
+A system prompt to do this is included [here](./claude-endpoint-creation-prompt.txt).
+
+A script that uses this prompt to create endpoints is included [here](./generateWorkflow.ts), though it does need to be compiled into javascript prior to use.
+Once compiled, it is used like this:
+
+```shell
+node generateWorkflow.js <inputFile> <outputFile>
+```
+
+Where `<inputFile>` is the JSON prompt graph, and `<outputFile>` is the output file to write the generated workflow to.
+
+As with all AI-generated code, it is strongly recommended to review the generated code before using it in production.
 
 ## Prebuilt Docker Images
 
