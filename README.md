@@ -13,6 +13,7 @@ A simple wrapper that facilitates using ComfyUI as a stateless API, either by re
   - [Generating New Workflow Endpoints](#generating-new-workflow-endpoints)
     - [Automating with Claude 3.5 Sonnet](#automating-with-claude-35-sonnet)
   - [Prebuilt Docker Images](#prebuilt-docker-images)
+  - [Contributing](#contributing)
 
 ## Download and Usage
 
@@ -41,11 +42,12 @@ The server hosts swagger docs at `/docs`, which can be used to interact with the
 - **Swagger Docs**: The server hosts swagger docs at `/docs`, which can be used to interact with the API.
 - **"Synchronous" Support**: The server will return base64-encoded images directly in the response, if no webhook is provided.
 - **Webhook Support**: The server can send completed images to a webhook, which can be used to store images, or to send them to a user.
-- **Warmup Workflow**: The server can be configured to run a warmup workflow on startup, which can be used to load models, and to ensure the server is ready to accept requests.
+- **Easily Submit Images**: The server can accept images as base64-encoded strings, or as URLs to images. This makes image-to-image workflows much easier to use.
+- **Warmup Workflow**: The server can be configured to run a warmup workflow on startup, which can be used to load and warm up models, and to ensure the server is ready to accept requests.
 - **Probes**: The server has two probes, `/health` and `/ready`, which can be used to check the server's health and readiness to receive traffic.
-- **Dynamic Workflow Endpoints**: Automatically mount new workflow endpoints by adding conforming `.js` or `.ts` files to the `/workflows` directory in your docker image. See [below](#generating-new-workflow-endpoints) for more information.
+- **Dynamic Workflow Endpoints**: Automatically mount new workflow endpoints by adding conforming `.js` or `.ts` files to the `/workflows` directory in your docker image. See [below](#generating-new-workflow-endpoints) for more information. A [Claude 3.5 Sonnet](https://claude.ai) [prompt](./claude-endpoint-creation-prompt.txt) is included to assist in automating this process.
 - **Bring Your Own Models And Extensions**: Use any model or extension you want by adding them to the normal ComfyUI directories `/opt/ComfyUI/`.
-- **Works Great with SaladCloud**: The server is designed to work well with SaladCloud, and can be used to host ComfyUI on the Salad platform. It is likely to work well with other platforms as well.
+- **Works Great with SaladCloud**: The server is designed to work well with SaladCloud, and can be used to host ComfyUI on the SaladCloud platform. It is likely to work well with other platforms as well.
 
 ## Probes
 
@@ -359,3 +361,8 @@ The tag pattern is `saladtechnologies/comfyui:comfy<comfy-version>-api<api-versi
 - `<comfy-version>` is the version of ComfyUI used
 - `<api-version>` is the version of the comfyui-api server
 - `<model|base>` is the model used. There is a `base` tag for an image that contains ComfyUI and the comfyui-api server, but no models. There are also tags for specific models, like `sdxl-with-refiner` or `flux-schnell-fp8`.
+
+## Contributing
+
+Contributions are welcome! Please open an issue or a pull request if you have any suggestions or improvements.
+ComfyUI is a powerful tool with MANY options, and it's likely that not all of them are currently supported by the comfyui-api server. If you find a feature that is missing, please open an issue or a pull request to add it. Let's make productionizing ComfyUI as easy as possible!
