@@ -77,6 +77,7 @@ The default values mostly assume this will run on top of an [ai-dock](https://gi
 | COMFYUI_PORT_HOST        | "8188"                | ComfyUI port number                        |
 | STARTUP_CHECK_INTERVAL_S | "1"                   | Interval in seconds between startup checks |
 | STARTUP_CHECK_MAX_TRIES  | "10"                  | Maximum number of startup check attempts   |
+| COMFY_HOME               | "/opt/ComfyUI"        | ComfyUI home directory                     |
 | OUTPUT_DIR               | "/opt/ComfyUI/output" | Directory for output files                 |
 | INPUT_DIR                | "/opt/ComfyUI/input"  | Directory for input files                  |
 | MODEL_DIR                | "/opt/ComfyUI/models" | Directory for model files                  |
@@ -99,6 +100,7 @@ The default values mostly assume this will run on top of an [ai-dock](https://gi
    - It will attempt up to `STARTUP_CHECK_MAX_TRIES` before giving up.
 
 4. **Directories**:
+   - The application uses the `COMFY_HOME` environment variable to locate the ComfyUI installation.
    - Output files are stored in `OUTPUT_DIR`.
    - Input files are read from `INPUT_DIR`.
    - Model files are located in `MODEL_DIR`.

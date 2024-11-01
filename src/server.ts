@@ -36,7 +36,7 @@ import { randomUUID } from "crypto";
 const outputWatcher = new DirectoryWatcher(config.outputDir);
 
 const server = Fastify({
-  bodyLimit: 45 * 1024 * 1024, // 45MB
+  bodyLimit: 100 * 1024 * 1024, // 45MB
   logger: true,
 });
 server.setValidatorCompiler(validatorCompiler);
@@ -177,10 +177,12 @@ server.after(() => {
       let { prompt, id, webhook } = request.body;
       let batchSize = 1;
 
+      let hasSaveImage = false;
       for (const nodeId in prompt) {
         const node = prompt[nodeId];
         if (node.class_type === "SaveImage") {
           node.inputs.filename_prefix = id;
+          hasSaveImage = true;
         } else if (node.inputs.batch_size) {
           batchSize = node.inputs.batch_size;
         } else if (node.class_type === "LoadImage") {
@@ -194,6 +196,13 @@ server.after(() => {
             });
           }
         }
+      }
+
+      if (!hasSaveImage) {
+        return reply.code(400).send({
+          error: "Prompt must contain a SaveImage node",
+          location: "prompt",
+        });
       }
 
       if (webhook) {
