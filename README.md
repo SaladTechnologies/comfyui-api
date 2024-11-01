@@ -21,7 +21,7 @@ Download the latest version from the release page, and copy it into your existin
 
 ```dockerfile
 # Change this to the version you want to use
-ARG api_version=1.4.2
+ARG api_version=1.5.0
 
 # Download the comfyui-api binary, and make it executable
 ADD https://github.com/SaladTechnologies/comfyui-api/releases/download/${api_version}/comfyui-api .
