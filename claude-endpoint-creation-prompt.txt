@@ -10,12 +10,26 @@ Here is an example output:
 
 ```typescript
 import { z } from "zod";
-import { ComfyNode, Workflow } from "../../src/types";
-import config from "../../src/config";
+import config from "../config";
 
 let checkpoint: any = config.models.checkpoints.enum.optional();
 if (config.warmupCkpt) {
   checkpoint = checkpoint.default(config.warmupCkpt);
+}
+
+const ComfyNodeSchema = z.object({
+  inputs: z.any(),
+  class_type: z.string(),
+  _meta: z.any().optional(),
+});
+
+type ComfyNode = z.infer<typeof ComfyNodeSchema>;
+
+interface Workflow {
+  RequestSchema: z.ZodObject<any, any>;
+  generateWorkflow: (input: any) => Record<string, ComfyNode>;
+  description?: string;
+  summary?: string;
 }
 
 const RequestSchema = z.object({
