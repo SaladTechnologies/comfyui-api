@@ -1,6 +1,5 @@
-import { string, z } from "zod";
+import { z } from "zod";
 import { randomUUID } from "crypto";
-import config from "./config";
 
 export const ComfyNodeSchema = z.object({
   inputs: z.any(),
@@ -10,6 +9,112 @@ export const ComfyNodeSchema = z.object({
 
 export type ComfyNode = z.infer<typeof ComfyNodeSchema>;
 
+export const JPEGOptionsSchema = z.object({
+  quality: z.number().optional().default(80).describe("quality, integer 1-100"),
+  progressive: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe("use progressive (interlace) scan"),
+  chromaSubsampling: z
+    .string()
+    .optional()
+    .default("4:2:0")
+    .describe(
+      "set to '4:4:4' to prevent chroma subsampling otherwise defaults to '4:2:0' chroma subsampling"
+    ),
+  optimizeCoding: z
+    .boolean()
+    .optional()
+    .default(true)
+    .describe("optimize Huffman coding tables"),
+  mozjpeg: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe(
+      "use mozjpeg defaults, equivalent to { trellisQuantisation: true, overshootDeringing: true, optimizeScans: true, quantisationTable: 3 }"
+    ),
+  trellisQuantisation: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe("apply trellis quantisation"),
+  overshootDeringing: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe("apply overshoot deringing"),
+  optimizeScans: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe("optimize progressive scans"),
+  quantisationTable: z
+    .number()
+    .optional()
+    .default(0)
+    .describe("set quantization table (0-8)"),
+});
+
+export type JPEGOptions = z.infer<typeof JPEGOptionsSchema>;
+
+export const WebpOptionsSchema = z.object({
+  quality: z
+    .number()
+    .int()
+    .optional()
+    .default(80)
+    .describe("quality, integer 1-100"),
+  alphaQuality: z
+    .number()
+    .int()
+    .optional()
+    .default(100)
+    .describe("quality of alpha layer, integer 1-100"),
+  lossless: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe("use lossless compression mode"),
+  nearLossless: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe("use near_lossless compression mode"),
+  smartSubsample: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe("use smart_subsample mode"),
+  preset: z
+    .enum(["default", "photo", "picture", "drawing", "icon", "text"])
+    .optional()
+    .default("default")
+    .describe(
+      "named preset for preprocessing/filtering, one of: default, photo, picture, drawing, icon, text"
+    ),
+  effort: z
+    .number()
+    .int()
+    .min(0)
+    .max(6)
+    .optional()
+    .default(4)
+    .describe("CPU effort, between 0 (fastest) and 6 (slowest)"),
+});
+
+export type WebpOptions = z.infer<typeof WebpOptionsSchema>;
+
+export const OutputConversionOptionsSchema = z.object({
+  format: z.enum(["jpeg", "webp"]).describe("output format"),
+  options: z.union([JPEGOptionsSchema, WebpOptionsSchema]).optional(),
+});
+
+export type OutputConversionOptions = z.infer<
+  typeof OutputConversionOptionsSchema
+>;
+
 export const PromptRequestSchema = z.object({
   prompt: z.record(ComfyNodeSchema),
   id: z
@@ -17,6 +122,7 @@ export const PromptRequestSchema = z.object({
     .optional()
     .default(() => randomUUID()),
   webhook: z.string().optional(),
+  convert_output: OutputConversionOptionsSchema.optional(),
 });
 
 export type PromptRequest = z.infer<typeof PromptRequestSchema>;
@@ -26,6 +132,7 @@ export const PromptResponseSchema = z.object({
   prompt: z.record(ComfyNodeSchema),
   images: z.array(z.string().base64()).optional(),
   webhook: z.string().optional(),
+  convert_output: OutputConversionOptionsSchema.optional(),
   status: z.enum(["ok"]).optional(),
 });
 
@@ -65,6 +172,7 @@ export const WorkflowRequestSchema = z.object({
     .default(() => randomUUID()),
   input: z.record(z.any()),
   webhook: z.string().optional(),
+  convert_output: OutputConversionOptionsSchema.optional(),
 });
 
 export type WorkflowRequest = z.infer<typeof WorkflowRequestSchema>;
@@ -75,5 +183,6 @@ export const WorkflowResponseSchema = z.object({
   prompt: z.record(ComfyNodeSchema),
   images: z.array(z.string().base64()).optional(),
   webhook: z.string().optional(),
+  convert_output: OutputConversionOptionsSchema.optional(),
   status: z.enum(["ok"]).optional(),
 });

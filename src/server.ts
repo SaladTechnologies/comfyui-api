@@ -19,6 +19,7 @@ import {
   shutdownComfyUI,
   processImage,
   zodToMarkdownTable,
+  convertImageBuffer,
 } from "./utils";
 import {
   PromptRequestSchema,
@@ -28,6 +29,7 @@ import {
   WorkflowResponseSchema,
   WorkflowTree,
   isWorkflow,
+  OutputConversionOptionsSchema,
 } from "./types";
 import workflows from "./workflows";
 import { z } from "zod";
@@ -174,7 +176,7 @@ server.after(() => {
       },
     },
     async (request, reply) => {
-      let { prompt, id, webhook } = request.body;
+      let { prompt, id, webhook, convert_output } = request.body;
       let batchSize = 1;
 
       let hasSaveImage = false;
@@ -210,9 +212,14 @@ server.after(() => {
           id,
           batchSize,
           async (filepath: string) => {
-            const base64File = await fsPromises.readFile(filepath, {
-              encoding: "base64",
-            });
+            let fileBuffer = await fsPromises.readFile(filepath);
+
+            if (convert_output) {
+              fileBuffer = await convertImageBuffer(fileBuffer, convert_output);
+            }
+
+            const base64File = fileBuffer.toString("base64");
+
             try {
               const res = await fetch(webhook, {
                 method: "POST",
@@ -262,9 +269,16 @@ server.after(() => {
               id,
               batchSize,
               async (filepath: string) => {
-                const base64File = await fsPromises.readFile(filepath, {
-                  encoding: "base64",
-                });
+                let fileBuffer = await fsPromises.readFile(filepath);
+
+                if (convert_output) {
+                  fileBuffer = await convertImageBuffer(
+                    fileBuffer,
+                    convert_output
+                  );
+                }
+
+                const base64File = fileBuffer.toString("base64");
                 images.push(base64File);
 
                 // Remove the file after reading
@@ -310,6 +324,7 @@ server.after(() => {
             .default(() => randomUUID()),
           input: node.RequestSchema,
           webhook: z.string().optional(),
+          convert_output: OutputConversionOptionsSchema.optional(),
         });
 
         type BodyType = z.infer<typeof BodySchema>;
@@ -342,7 +357,7 @@ server.after(() => {
             },
           },
           async (request, reply) => {
-            const { id, input, webhook } = request.body;
+            const { id, input, webhook, convert_output } = request.body;
             const prompt = node.generateWorkflow(input);
 
             const resp = await fetch(
@@ -352,7 +367,7 @@ server.after(() => {
                 headers: {
                   "Content-Type": "application/json",
                 },
-                body: JSON.stringify({ prompt, id, webhook }),
+                body: JSON.stringify({ prompt, id, webhook, convert_output }),
               }
             );
             const body = await resp.json();

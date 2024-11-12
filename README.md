@@ -21,7 +21,7 @@ Download the latest version from the release page, and copy it into your existin
 
 ```dockerfile
 # Change this to the version you want to use
-ARG api_version=1.5.0
+ARG api_version=1.6.0
 
 # Download the comfyui-api binary, and make it executable
 ADD https://github.com/SaladTechnologies/comfyui-api/releases/download/${api_version}/comfyui-api .
@@ -44,11 +44,13 @@ The server hosts swagger docs at `/docs`, which can be used to interact with the
 - **Webhook Support**: The server can send completed images to a webhook, which can be used to store images, or to send them to a user.
 - **Easily Submit Images**: The server can accept images as base64-encoded strings, or as URLs to images. This makes image-to-image workflows much easier to use.
 - **Warmup Workflow**: The server can be configured to run a warmup workflow on startup, which can be used to load and warm up models, and to ensure the server is ready to accept requests.
+- **Return Images In PNG (default), JPEG, or WebP**: The server can return images in PNG, JPEG, or WebP format, via a parameter in the API request. Most options supported by [sharp](https://sharp.pixelplumbing.com/) are supported.
 - **Probes**: The server has two probes, `/health` and `/ready`, which can be used to check the server's health and readiness to receive traffic.
 - **Dynamic Workflow Endpoints**: Automatically mount new workflow endpoints by adding conforming `.js` or `.ts` files to the `/workflows` directory in your docker image. See [below](#generating-new-workflow-endpoints) for more information. A [Claude 3.5 Sonnet](https://claude.ai) [prompt](./claude-endpoint-creation-prompt.txt) is included to assist in automating this process.
 - **Bring Your Own Models And Extensions**: Use any model or extension you want by adding them to the normal ComfyUI directories `/opt/ComfyUI/`.
 - **Works Great with SaladCloud**: The server is designed to work well with SaladCloud, and can be used to host ComfyUI on the SaladCloud platform. It is likely to work well with other platforms as well.
 - **Single Binary**: The server is distributed as a single binary, and can be run with no dependencies.
+- **Friendly License**: The server is distributed under the MIT license, and can be used for any purpose. All of its dependencies are also MIT or Apache 2.0 licensed, except ComfyUI itself, which is GPL-3.0 licensed.
 
 ## Probes
 

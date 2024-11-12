@@ -7,6 +7,8 @@ import { Readable } from "stream";
 import path from "path";
 import { randomUUID } from "crypto";
 import { ZodObject, ZodRawShape, ZodTypeAny, ZodDefault } from "zod";
+import sharp from "sharp";
+import { OutputConversionOptions } from "./types";
 
 const commandExecutor = new CommandExecutor();
 
@@ -214,4 +216,20 @@ function getZodDefault(zodType: ZodTypeAny): string {
     return JSON.stringify(defaultValue);
   }
   return "-";
+}
+
+export async function convertImageBuffer(
+  imageBuffer: Buffer,
+  options: OutputConversionOptions
+) {
+  const { format, options: conversionOptions } = options;
+  let image = sharp(imageBuffer);
+
+  if (format === "webp") {
+    image = image.webp(conversionOptions);
+  } else {
+    image = image.jpeg(conversionOptions);
+  }
+
+  return image.toBuffer();
 }
