@@ -46,7 +46,7 @@ The server hosts swagger docs at `/docs`, which can be used to interact with the
 - **Warmup Workflow**: The server can be configured to run a warmup workflow on startup, which can be used to load and warm up models, and to ensure the server is ready to accept requests.
 - **Return Images In PNG (default), JPEG, or WebP**: The server can return images in PNG, JPEG, or WebP format, via a parameter in the API request. Most options supported by [sharp](https://sharp.pixelplumbing.com/) are supported.
 - **Probes**: The server has two probes, `/health` and `/ready`, which can be used to check the server's health and readiness to receive traffic.
-- **Dynamic Workflow Endpoints**: Automatically mount new workflow endpoints by adding conforming `.js` or `.ts` files to the `/workflows` directory in your docker image. See [below](#generating-new-workflow-endpoints) for more information. A [Claude 3.5 Sonnet](https://claude.ai) [prompt](./claude-endpoint-creation-prompt.txt) is included to assist in automating this process.
+- **Dynamic Workflow Endpoints**: Automatically mount new workflow endpoints by adding conforming `.js` or `.ts` files to the `/workflows` directory in your docker image. See [below](#generating-new-workflow-endpoints) for more information. A [Claude 3.5 Sonnet](https://claude.ai) [prompt](./claude-endpoint-creation-prompt.md) is included to assist in automating this process.
 - **Bring Your Own Models And Extensions**: Use any model or extension you want by adding them to the normal ComfyUI directories `/opt/ComfyUI/`.
 - **Works Great with SaladCloud**: The server is designed to work well with SaladCloud, and can be used to host ComfyUI on the SaladCloud platform. It is likely to work well with other platforms as well.
 - **Single Binary**: The server is distributed as a single binary, and can be run with no dependencies.
@@ -343,13 +343,12 @@ If you provide descriptions in your zod schemas, these will be used to create a 
 > **Note**: This requires having an account with Anthropic, and your anthropic API key in the environment variable `ANTHROPIC_API_KEY`.
 
 Creating these endpoints can be done mostly automatically by [Claude 3.5 Sonnet](https://console.anthropic.com/), given the JSON prompt graph.
-A system prompt to do this is included [here](./claude-endpoint-creation-prompt.txt).
+A system prompt to do this is included [here](./claude-endpoint-creation-prompt.md).
 
-A script that uses this prompt to create endpoints is included [here](./generateWorkflow.ts), though it does need to be compiled into javascript prior to use.
-Once compiled, it is used like this:
+A script that uses this prompt to create endpoints is included [here](./generate-workflow). It requires `jq` and `curl` to be installed.
 
 ```shell
-node generateWorkflow.js <inputFile> <outputFile>
+./generate-workflow <inputFile> <outputFile>
 ```
 
 Where `<inputFile>` is the JSON prompt graph, and `<outputFile>` is the output file to write the generated workflow to.

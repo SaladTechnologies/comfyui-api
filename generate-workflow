@@ -1,0 +1,58 @@
+#! /bin/bash
+
+usage="Usage: $0 <input-prompt-json> <output-typescript-file>"
+
+input_prompt_json=$1
+output_typescript_file=$2
+
+api_url=https://api.anthropic.com/v1/messages
+api_key=$ANTHROPIC_API_KEY
+if [ -z "$api_key" ]; then
+  echo "Please set the ANTHROPIC_API_KEY environment variable"
+  exit 1
+fi
+model_id=claude-3-5-sonnet-20241022
+anthropic_version=2023-06-01
+
+set -f # Disable globbing, there's a * in the input prompt
+system_prompt=$(jq -R -s '{"text": .}' claude-endpoint-creation-prompt.md | jq .text)
+input_prompt=$(jq @json $input_prompt_json)
+
+api_body=$(
+  cat <<EOF
+{
+  "model": "$model_id",
+  "system": $system_prompt,
+  "max_tokens": 8192,
+  "temperature": 0,
+  "messages": [
+    {
+      "role": "user",
+      "content": $input_prompt
+    }
+  ]
+}
+EOF
+)
+
+response=$(
+  curl -s -X POST \
+    -H "x-api-key: $api_key" \
+    -H "Content-Type: application/json" \
+    -H "anthropic-version: $anthropic_version" \
+    -d "$api_body" \
+    $api_url
+)
+
+if [ -z "$(echo $response | jq -r .content[0].text)" ]; then
+  echo "Error: API call failed" >&2
+  echo $response | jq . >&2
+  exit 1
+fi
+
+response_text=$(echo $response | jq -r .content[0].text)
+
+# Drop the first and last lines, which are the ```typescript delimiters
+echo "$response_text" | tail -n +2 | head -n -1 > $output_typescript_file
+
+set +f

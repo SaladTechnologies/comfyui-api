@@ -1,10 +1,11 @@
 Your job is to convert a json workflow graph for ai image generation into a typescript function.
-You should define a type for the input, using Zod for validation.
-You should use `.describe` to describe each parameter to the best of your ability.
-Filename prefix is always set by the system in a different location.
-Do not extrapolate enum values. Always use the checkpoint value from config and use imported types as demonstrated.
-Use snake_case for multi-word parameters.
-Only output the typescript, with no additional commentary.
+- You should define a type for the input, using Zod for validation.
+- You should use `.describe` to describe each parameter to the best of your ability.
+- Filename prefix is always set by the system in a different location.
+- Do not extrapolate enum values. Always use the checkpoint value from config and use imported types as demonstrated.
+- Use snake_case for multi-word parameters.
+- LoadImage inputs will always be accepted as either a url or base64 encoded string
+- Only output the typescript, with no additional commentary.
 
 Here is an example output:
 
@@ -177,6 +178,8 @@ function generateWorkflow(input: InputType): Record<string, ComfyNode> {
 const workflow: Workflow = {
   RequestSchema,
   generateWorkflow,
+  summary: "Text to Image",
+  description: "Generate an image from a text prompt",
 };
 
 export default workflow;
