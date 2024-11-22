@@ -4,6 +4,13 @@ on:
   push:
     branches:
       - main
+    paths-ignore:
+      - ".github/**"
+      - "**.md"
+      - "**.png"
+      - ".gitignore"
+      - "generate-workflow"
+      - "**.yml"
 
 jobs:
   build-and-release:
