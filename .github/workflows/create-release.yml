@@ -77,6 +77,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload ${{ steps.version.outputs.version }} ./bin/comfyui#Linux_x64 --clobber
+          gh release upload ${{ steps.version.outputs.version }} ./bin/comfyui-api#Linux_x64 --clobber
 
 
