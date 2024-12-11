@@ -21,7 +21,7 @@ Download the latest version from the release page, and copy it into your existin
 
 ```dockerfile
 # Change this to the version you want to use
-ARG api_version=1.6.0
+ARG api_version=1.6.1
 
 # Download the comfyui-api binary, and make it executable
 ADD https://github.com/SaladTechnologies/comfyui-api/releases/download/${api_version}/comfyui-api .
@@ -70,21 +70,22 @@ This guide provides an overview of how to configure the application using enviro
 The following table lists the available environment variables and their default values.
 The default values mostly assume this will run on top of an [ai-dock](https://github.com/ai-dock/comfyui) image, but can be customized as needed.
 
-| Variable                 | Default Value         | Description                                |
-| ------------------------ | --------------------- | ------------------------------------------ |
-| CMD                      | "init.sh"             | Command to launch ComfyUI                  |
-| HOST                     | "::"                  | Wrapper host address                       |
-| PORT                     | "3000"                | Wrapper port number                        |
-| DIRECT_ADDRESS           | "127.0.0.1"           | Direct address for ComfyUI                 |
-| COMFYUI_PORT_HOST        | "8188"                | ComfyUI port number                        |
-| STARTUP_CHECK_INTERVAL_S | "1"                   | Interval in seconds between startup checks |
-| STARTUP_CHECK_MAX_TRIES  | "10"                  | Maximum number of startup check attempts   |
-| COMFY_HOME               | "/opt/ComfyUI"        | ComfyUI home directory                     |
-| OUTPUT_DIR               | "/opt/ComfyUI/output" | Directory for output files                 |
-| INPUT_DIR                | "/opt/ComfyUI/input"  | Directory for input files                  |
-| MODEL_DIR                | "/opt/ComfyUI/models" | Directory for model files                  |
-| WARMUP_PROMPT_FILE       | (not set)             | Path to warmup prompt file (optional)      |
-| WORKFLOW_DIR             | "/workflows"          | Directory for workflow files               |
+| Variable                 | Default Value         | Description                                                                                                                                                                                            |
+| ------------------------ | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| CMD                      | "init.sh"             | Command to launch ComfyUI                                                                                                                                                                              |
+| HOST                     | "::"                  | Wrapper host address                                                                                                                                                                                   |
+| PORT                     | "3000"                | Wrapper port number                                                                                                                                                                                    |
+| DIRECT_ADDRESS           | "127.0.0.1"           | Direct address for ComfyUI                                                                                                                                                                             |
+| COMFYUI_PORT_HOST        | "8188"                | ComfyUI port number                                                                                                                                                                                    |
+| STARTUP_CHECK_INTERVAL_S | "1"                   | Interval in seconds between startup checks                                                                                                                                                             |
+| STARTUP_CHECK_MAX_TRIES  | "10"                  | Maximum number of startup check attempts                                                                                                                                                               |
+| COMFY_HOME               | "/opt/ComfyUI"        | ComfyUI home directory                                                                                                                                                                                 |
+| OUTPUT_DIR               | "/opt/ComfyUI/output" | Directory for output files                                                                                                                                                                             |
+| INPUT_DIR                | "/opt/ComfyUI/input"  | Directory for input files                                                                                                                                                                              |
+| MODEL_DIR                | "/opt/ComfyUI/models" | Directory for model files                                                                                                                                                                              |
+| WARMUP_PROMPT_FILE       | (not set)             | Path to warmup prompt file (optional)                                                                                                                                                                  |
+| WORKFLOW_DIR             | "/workflows"          | Directory for workflow files                                                                                                                                                                           |
+| BASE                     | "ai-dock"             | There are different ways to load the comfyui environment for determining config values that vary with the base image. Currently only "ai-dock" has preset values. Set to empty string to not use this. |
 
 ### Configuration Details
 
