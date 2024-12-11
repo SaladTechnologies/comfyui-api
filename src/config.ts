@@ -19,6 +19,7 @@ const {
   WORKFLOW_MODELS = "all",
   WORKFLOW_DIR = "/workflows",
   MARKDOWN_SCHEMA_DESCRIPTIONS = "true",
+  BASE = "ai-dock",
 } = process.env;
 
 fs.mkdirSync(WORKFLOW_DIR, { recursive: true });
@@ -28,6 +29,14 @@ const selfURL = `http://localhost:${PORT}`;
 const port = parseInt(PORT, 10);
 const startupCheckInterval = parseInt(STARTUP_CHECK_INTERVAL_S, 10) * 1000;
 const startupCheckMaxTries = parseInt(STARTUP_CHECK_MAX_TRIES, 10);
+
+// type for {string: string}
+
+const loadEnvCommand: Record<string, string> = {
+  "ai-dock": `source /opt/ai-dock/etc/environment.sh \
+  && source /opt/ai-dock/bin/venv-set.sh comfyui \
+  && source "$COMFYUI_VENV/bin/activate"`,
+};
 
 // The parent directory of model_dir
 const comfyDir = COMFY_HOME;
@@ -73,11 +82,11 @@ with open("${temptComfyFilePath}", "w") as f:
 `;
 
   const tempFilePath = path.join(comfyDir, "temp_comfy_description.py");
-  const command = `
-  source /opt/ai-dock/etc/environment.sh \
-  && source /opt/ai-dock/bin/venv-set.sh comfyui \
-  && source "$COMFYUI_VENV/bin/activate" \
-  && python ${tempFilePath}`;
+  let command = `python ${tempFilePath}`;
+  if (BASE in loadEnvCommand) {
+    command = `${loadEnvCommand[BASE]} \
+    && python ${tempFilePath}`;
+  }
 
   try {
     // Write the Python code to a temporary file
