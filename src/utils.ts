@@ -119,6 +119,14 @@ export async function processImage(
   if (imageInput.startsWith("http")) {
     await downloadImage(imageInput, localFilePath, log);
     return localFilePath;
+  }
+  // If image is already a local path, return it as an absolute path
+  else if (
+    imageInput.startsWith("/") ||
+    imageInput.startsWith("./") ||
+    imageInput.startsWith("../")
+  ) {
+    return path.resolve(imageInput);
   } else {
     // Assume it's a base64 encoded image
     try {
