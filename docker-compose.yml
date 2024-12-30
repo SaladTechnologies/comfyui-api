@@ -1,6 +1,6 @@
 services:
   comfyui:
-    image: saladtechnologies/comfyui:comfy0.2.7-api1.6.0-base
+    image: saladtechnologies/comfyui:comfy0.3.10-api1.6.1-base
     volumes:
       - ./bin:/app/bin
     command: ["/app/bin/comfyui-api"]

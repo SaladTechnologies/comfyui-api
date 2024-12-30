@@ -197,6 +197,8 @@ server.after(() => {
               location: `prompt.${nodeId}.inputs.image`,
             });
           }
+        } else if (node.inputs.frames) {
+          batchSize = node.inputs.frames;
         }
       }
 
