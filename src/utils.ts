@@ -6,7 +6,7 @@ import fsPromises from "fs/promises";
 import { Readable } from "stream";
 import path from "path";
 import { randomUUID } from "crypto";
-import { ZodObject, ZodRawShape, ZodTypeAny, ZodDefault } from "zod";
+import { ZodObject, ZodRawShape, ZodTypeAny, ZodDefault, ostring } from "zod";
 import sharp from "sharp";
 import { OutputConversionOptions } from "./types";
 
@@ -112,9 +112,23 @@ export async function downloadImage(
 
 export async function processImage(
   imageInput: string,
-  log: FastifyBaseLogger
+  log: FastifyBaseLogger,
+  dirWithinInputDir?: string
 ): Promise<string> {
-  const localFilePath = path.join(config.inputDir, `${randomUUID()}.png`);
+  let localFilePath: string;
+  const ext = path.extname(imageInput).split("?")[0];
+  const localFileName = `${randomUUID()}${ext}`;
+  if (dirWithinInputDir) {
+    localFilePath = path.join(
+      config.inputDir,
+      dirWithinInputDir,
+      localFileName
+    );
+    // Create the directory if it doesn't exist
+    await fsPromises.mkdir(path.dirname(localFilePath), { recursive: true });
+  } else {
+    localFilePath = path.join(config.inputDir, localFileName);
+  }
   // If image is a url, download it
   if (imageInput.startsWith("http")) {
     await downloadImage(imageInput, localFilePath, log);

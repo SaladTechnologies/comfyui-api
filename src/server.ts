@@ -177,17 +177,43 @@ server.after(() => {
     },
     async (request, reply) => {
       let { prompt, id, webhook, convert_output } = request.body;
-      let batchSize = 1;
 
+      /**
+       * Here we go through all the nodes in the prompt to validate it,
+       * and also to do some pre-processing.
+       */
+      let batchSize = 0;
       let hasSaveImage = false;
+      const saveNodesWithFilenamePrefix = new Set<string>([
+        "SaveImage",
+        "SaveAnimatedWEBP",
+        "SaveAnimatedPNG",
+      ]);
+      const loadImageNodes = new Set<string>(["LoadImage"]);
+      const loadDirectoryOfImagesNodes = new Set<string>(["VHS_LoadImages"]);
       for (const nodeId in prompt) {
         const node = prompt[nodeId];
-        if (node.class_type === "SaveImage") {
+
+        if (saveNodesWithFilenamePrefix.has(node.class_type)) {
+          /**
+           * If the node is for saving files, we want to set the filename_prefix
+           * to the id of the prompt. This is so that we can associate the output
+           * files with the prompt that generated them.
+           */
           node.inputs.filename_prefix = id;
           hasSaveImage = true;
         } else if (node.inputs.batch_size) {
-          batchSize = node.inputs.batch_size;
-        } else if (node.class_type === "LoadImage") {
+          /**
+           * A few nodes have a batch_size input that we can use to determine
+           * how many images to expect from the output.
+           */
+          batchSize += node.inputs.batch_size;
+        } else if (loadImageNodes.has(node.class_type)) {
+          /**
+           * If the node is for loading an image, the user will have provided
+           * the image as base64 encoded data, or as a url. we need to download
+           * the image if it's a url, and save it to a local file.
+           */
           const imageInput = node.inputs.image;
           try {
             node.inputs.image = await processImage(imageInput, app.log);
@@ -197,19 +223,79 @@ server.after(() => {
               location: `prompt.${nodeId}.inputs.image`,
             });
           }
-        } else if (node.inputs.frames) {
+        } else if (loadDirectoryOfImagesNodes.has(node.class_type)) {
+          /**
+           * If the node is for loading a directory of images, the user will have
+           * provided the local directory as a string or an array of strings. If it's an
+           * array, we need to download each image to a local file, and update the input
+           * to be the local directory.
+           */
+          if (Array.isArray(node.inputs.directory)) {
+            try {
+              /**
+               * We need to download each image to a local file.
+               */
+              await Promise.all(
+                (node.inputs.directory as string[]).map((img) => {
+                  processImage(img, app.log, id);
+                })
+              );
+              node.inputs.directory = id;
+            } catch (e: any) {
+              return reply.code(400).send({
+                error: e.message,
+                location: `prompt.${nodeId}.inputs.directory`,
+                message: "Failed to download images to local directory",
+              });
+            }
+          }
+        } else if (
+          node.class_type === "EmptyMotionData" &&
+          node.inputs.frames
+        ) {
+          /**
+           * If the node is EmptyMotionData, we need to set the batch size to the number
+           * of frames that the user has provided.
+           */
           batchSize = node.inputs.frames;
+        } else if (
+          node.class_type === "VHS_VideoCombine" &&
+          node.inputs.save_output
+        ) {
+          /**
+           * This node only optionally saves the output, so we need to check if the user
+           * has enabled saving the output, and if so, set the filename_prefix to the id
+           * of the prompt.
+           */
+          node.inputs.filename_prefix = id;
+          hasSaveImage = true;
+
+          // Outputs the video file, and a preview image
+          batchSize += 2;
         }
       }
 
       if (!hasSaveImage) {
         return reply.code(400).send({
-          error: "Prompt must contain a SaveImage node",
+          error: `Prompt must contain a a node that saves an image or video. Supported nodes are: ${[
+            ...saveNodesWithFilenamePrefix,
+            "VHS_VideoCombine",
+          ].join(", ")}`,
+          location: "prompt",
+        });
+      }
+
+      if (batchSize === 0) {
+        return reply.code(400).send({
+          error: `Prompt must contain a node that specifies batch_size, frames, or a video output.`,
           location: "prompt",
         });
       }
 
       if (webhook) {
+        /**
+         * If the user has provided a webhook, we set up a watcher to send outputs via webhook.
+         */
         outputWatcher.addPrefixAction(
           id,
           batchSize,
@@ -249,6 +335,9 @@ server.after(() => {
           }
         );
 
+        /**
+         * Send the prompt to ComfyUI, and return a 202 response to the user.
+         */
         const resp = await fetch(`${config.comfyURL}/prompt`, {
           method: "POST",
           headers: {
@@ -263,8 +352,12 @@ server.after(() => {
         }
         return reply.code(202).send({ status: "ok", id, webhook, prompt });
       } else {
-        // Wait for the file and return it
+        /**
+         * If the user has not provided a webhook, we wait for the images to be generated
+         * and then send them back in the response.
+         */
         const images: string[] = [];
+        const filenames: string[] = [];
         function waitForImagesToGenerate(): Promise<void> {
           return new Promise((resolve) => {
             outputWatcher.addPrefixAction(
@@ -272,16 +365,24 @@ server.after(() => {
               batchSize,
               async (filepath: string) => {
                 let fileBuffer = await fsPromises.readFile(filepath);
-
+                let filename = path.basename(filepath);
                 if (convert_output) {
                   fileBuffer = await convertImageBuffer(
                     fileBuffer,
                     convert_output
                   );
+                  /**
+                   * If the user has provided an output format, we need to update the filename
+                   */
+                  filename = filename.replace(
+                    /\.[^/.]+$/,
+                    `.${convert_output.format}`
+                  );
                 }
 
                 const base64File = fileBuffer.toString("base64");
                 images.push(base64File);
+                filenames.push(filename);
 
                 // Remove the file after reading
                 fsPromises.unlink(filepath);
@@ -295,6 +396,9 @@ server.after(() => {
           });
         }
 
+        /**
+         * Send the prompt to ComfyUI, and wait for the images to be generated.
+         */
         const finished = waitForImagesToGenerate();
         const resp = await fetch(`${config.comfyURL}/prompt`, {
           method: "POST",
@@ -309,7 +413,7 @@ server.after(() => {
         }
         await finished;
 
-        return reply.send({ id, prompt, images });
+        return reply.send({ id, prompt, images, filenames });
       }
     }
   );

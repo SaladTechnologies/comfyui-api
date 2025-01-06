@@ -15,7 +15,7 @@ function waitForFileStability(filePath: string): Promise<void> {
           return;
         }
 
-        if (stats.size === lastKnownSize) {
+        if (stats.size === lastKnownSize && stats.size > 0) {
           if (retries >= 3) {
             // Consider the file stable after 3 checks
             resolve();
