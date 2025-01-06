@@ -130,7 +130,7 @@ export type PromptRequest = z.infer<typeof PromptRequestSchema>;
 export const PromptResponseSchema = z.object({
   id: z.string(),
   prompt: z.record(ComfyNodeSchema),
-  images: z.array(z.string().base64()).optional(),
+  images: z.array(z.string()).optional(),
   filenames: z.array(z.string()).optional(),
   webhook: z.string().optional(),
   convert_output: OutputConversionOptionsSchema.optional(),
@@ -182,7 +182,8 @@ export const WorkflowResponseSchema = z.object({
   id: z.string(),
   input: z.record(z.any()),
   prompt: z.record(ComfyNodeSchema),
-  images: z.array(z.string().base64()).optional(),
+  images: z.array(z.string()).optional(),
+  filenames: z.array(z.string()).optional(),
   webhook: z.string().optional(),
   convert_output: OutputConversionOptionsSchema.optional(),
   status: z.enum(["ok"]).optional(),
