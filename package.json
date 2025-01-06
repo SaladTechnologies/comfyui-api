@@ -4,9 +4,10 @@
   "description": "Wraps comfyui to make it easier to use as a stateless web service",
   "main": "dist/src/index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "echo \"I am so sorry I haven't done tests for this yet. Feel free to contribute some!\" && exit 1",
     "build": "tsc",
-    "build-binary": "./build-binary"
+    "build-binary": "./build-binary",
+    "postinstall": "npm install --cpu=wasm32 sharp"
   },
   "author": "Shawn Rushefsky",
   "license": "MIT",
