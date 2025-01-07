@@ -88,7 +88,7 @@
   },
   "49": {
     "inputs": {
-      "seed": 1753570581,
+      "seed": 1234,
       "steps": 20,
       "cfg": 2,
       "sampler_name": "lcm",
@@ -125,9 +125,9 @@
   "52": {
     "inputs": {
       "directory": "poses",
-      "image_load_cap": 100,
+      "image_load_cap": 10,
       "skip_first_images": 0,
-      "select_every_nth": 1
+      "select_every_nth": 3
     },
     "class_type": "VHS_LoadImages",
     "_meta": {
@@ -140,10 +140,6 @@
       "beta_schedule": "autoselect",
       "model": [
         "68",
-        0
-      ],
-      "context_options": [
-        "110",
         0
       ]
     },
@@ -196,12 +192,12 @@
   },
   "92": {
     "inputs": {
-      "frame_rate": 20,
+      "frame_rate": 13,
       "loop_count": 0,
       "filename_prefix": "EasySpriteAnimation_DragonEspral",
       "format": "image/webp",
       "pingpong": false,
-      "save_output": true,
+      "save_output": false,
       "images": [
         "24",
         0
@@ -212,19 +208,17 @@
       "title": "Video Combine 🎥🅥🅗🅢"
     }
   },
-  "110": {
+  "111": {
     "inputs": {
-      "context_length": 16,
-      "context_stride": 1,
-      "context_overlap": 4,
-      "fuse_method": "pyramid",
-      "use_on_equal_length": false,
-      "start_percent": 0,
-      "guarantee_steps": 1
+      "filename_prefix": "ComfyUI",
+      "images": [
+        "24",
+        0
+      ]
     },
-    "class_type": "ADE_StandardUniformContextOptions",
+    "class_type": "SaveImage",
     "_meta": {
-      "title": "Context Options◆Standard Uniform 🎭🅐🅓"
+      "title": "Save Image"
     }
   }
 }

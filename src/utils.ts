@@ -275,7 +275,8 @@ export async function queuePrompt(prompt: ComfyPrompt): Promise<string> {
 }
 
 export async function getPromptOutputs(
-  promptId: string
+  promptId: string,
+  log: FastifyBaseLogger
 ): Promise<Record<string, Buffer> | null> {
   const resp = await fetch(`${config.comfyURL}/history/${promptId}`);
   if (!resp.ok) {
@@ -296,13 +297,25 @@ export async function getPromptOutputs(
           const filename = outputFile.filename;
           const filepath = path.join(config.outputDir, filename);
           fileLoadPromises.push(
-            fsPromises.readFile(filepath).then((data) => {
-              allOutputs[filename] = data;
-            })
+            fsPromises
+              .readFile(filepath)
+              .then((data) => {
+                allOutputs[filename] = data;
+              })
+              .catch((e: any) => {
+                /**
+                 * The most likely reason for this is a node that has an optonal
+                 * output. If the node doesn't produce that output, the file won't
+                 * exist.
+                 */
+                log.warn(`Failed to read file ${filepath}: ${e.message}`);
+              })
           );
         }
       }
     }
+  } else if (status.status_str === "error") {
+    throw new Error("Prompt execution failed");
   } else {
     console.log(JSON.stringify(status, null, 2));
     throw new Error("Prompt is not completed");
@@ -318,7 +331,7 @@ export async function runPromptAndGetOutputs(
   const promptId = await queuePrompt(prompt);
   log.info(`Prompt queued with ID: ${promptId}`);
   while (true) {
-    const outputs = await getPromptOutputs(promptId);
+    const outputs = await getPromptOutputs(promptId, log);
     if (outputs) {
       return outputs;
     }

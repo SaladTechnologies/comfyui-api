@@ -198,13 +198,13 @@ server.after(() => {
            * to the id of the prompt. This is so that we can associate the output
            * files with the prompt that generated them.
            */
+          node.inputs.filename_prefix = id;
           if (
             typeof node.inputs.save_output !== "undefined" &&
             !node.inputs.save_output
           ) {
             continue;
           }
-          node.inputs.filename_prefix = id;
           hasSaveImage = true;
         } else if (loadImageNodes.has(node.class_type)) {
           /**
