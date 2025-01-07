@@ -6,9 +6,9 @@ import fsPromises from "fs/promises";
 import { Readable } from "stream";
 import path from "path";
 import { randomUUID } from "crypto";
-import { ZodObject, ZodRawShape, ZodTypeAny, ZodDefault, ostring } from "zod";
+import { ZodObject, ZodRawShape, ZodTypeAny, ZodDefault } from "zod";
 import sharp from "sharp";
-import { OutputConversionOptions } from "./types";
+import { ComfyPrompt, OutputConversionOptions } from "./types";
 
 const commandExecutor = new CommandExecutor();
 
@@ -257,4 +257,71 @@ export async function convertImageBuffer(
   }
 
   return image.toBuffer();
+}
+
+export async function queuePrompt(prompt: ComfyPrompt): Promise<string> {
+  const resp = await fetch(`${config.comfyURL}/prompt`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ prompt }),
+  });
+  if (!resp.ok) {
+    throw new Error(`Failed to queue prompt: ${await resp.text()}`);
+  }
+  const { prompt_id } = await resp.json();
+  return prompt_id;
+}
+
+export async function getPromptOutputs(
+  promptId: string
+): Promise<Record<string, Buffer> | null> {
+  const resp = await fetch(`${config.comfyURL}/history/${promptId}`);
+  if (!resp.ok) {
+    throw new Error(`Failed to get prompt outputs: ${await resp.text()}`);
+  }
+  const body = await resp.json();
+  const allOutputs: Record<string, Buffer> = {};
+  const fileLoadPromises: Promise<void>[] = [];
+  if (!body[promptId]) {
+    return null;
+  }
+  const { status, outputs } = body[promptId];
+  if (status.completed) {
+    for (const nodeId in outputs) {
+      const node = outputs[nodeId];
+      for (const outputType in node) {
+        for (let outputFile of node[outputType]) {
+          const filename = outputFile.filename;
+          const filepath = path.join(config.outputDir, filename);
+          fileLoadPromises.push(
+            fsPromises.readFile(filepath).then((data) => {
+              allOutputs[filename] = data;
+            })
+          );
+        }
+      }
+    }
+  } else {
+    console.log(JSON.stringify(status, null, 2));
+    throw new Error("Prompt is not completed");
+  }
+  await Promise.all(fileLoadPromises);
+  return allOutputs;
+}
+
+export async function runPromptAndGetOutputs(
+  prompt: ComfyPrompt,
+  log: FastifyBaseLogger
+): Promise<Record<string, Buffer>> {
+  const promptId = await queuePrompt(prompt);
+  log.info(`Prompt queued with ID: ${promptId}`);
+  while (true) {
+    const outputs = await getPromptOutputs(promptId);
+    if (outputs) {
+      return outputs;
+    }
+    await sleep(50);
+  }
 }

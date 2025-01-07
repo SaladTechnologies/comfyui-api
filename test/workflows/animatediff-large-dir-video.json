@@ -125,7 +125,7 @@
   "52": {
     "inputs": {
       "directory": "poses",
-      "image_load_cap": 64,
+      "image_load_cap": 100,
       "skip_first_images": 0,
       "select_every_nth": 1
     },
@@ -140,6 +140,10 @@
       "beta_schedule": "autoselect",
       "model": [
         "68",
+        0
+      ],
+      "context_options": [
+        "110",
         0
       ]
     },
@@ -180,7 +184,10 @@
     "inputs": {
       "width": 512,
       "height": 512,
-      "batch_size": 64
+      "batch_size": [
+        "52",
+        2
+      ]
     },
     "class_type": "EmptyLatentImage",
     "_meta": {
@@ -191,8 +198,8 @@
     "inputs": {
       "frame_rate": 20,
       "loop_count": 0,
-      "filename_prefix": "AnimateDiff_Video_And_Frames",
-      "format": "image/gif",
+      "filename_prefix": "EasySpriteAnimation_DragonEspral",
+      "format": "image/webp",
       "pingpong": false,
       "save_output": true,
       "images": [
@@ -205,17 +212,19 @@
       "title": "Video Combine 🎥🅥🅗🅢"
     }
   },
-  "106": {
+  "110": {
     "inputs": {
-      "filename_prefix": "AnimateDiff_Video_And_Frames",
-      "images": [
-        "24",
-        0
-      ]
+      "context_length": 16,
+      "context_stride": 1,
+      "context_overlap": 4,
+      "fuse_method": "pyramid",
+      "use_on_equal_length": false,
+      "start_percent": 0,
+      "guarantee_steps": 1
     },
-    "class_type": "SaveImage",
+    "class_type": "ADE_StandardUniformContextOptions",
     "_meta": {
-      "title": "Save Image"
+      "title": "Context Options◆Standard Uniform 🎭🅐🅓"
     }
   }
 }

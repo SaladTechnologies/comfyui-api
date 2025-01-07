@@ -9,6 +9,8 @@ export const ComfyNodeSchema = z.object({
 
 export type ComfyNode = z.infer<typeof ComfyNodeSchema>;
 
+export type ComfyPrompt = Record<string, ComfyNode>;
+
 export const JPEGOptionsSchema = z.object({
   quality: z.number().optional().default(80).describe("quality, integer 1-100"),
   progressive: z
@@ -153,7 +155,7 @@ export const WorkflowSchema = z.object({
 
 export interface Workflow {
   RequestSchema: z.ZodObject<any, any>;
-  generateWorkflow: (input: any) => Record<string, ComfyNode>;
+  generateWorkflow: (input: any) => Promise<ComfyPrompt> | ComfyPrompt;
   description?: string;
   summary?: string;
 }

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ComfyNode, Workflow } from "../../src/types";
+import { ComfyPrompt, Workflow } from "../../src/types";
 import config from "../../src/config";
 
 let checkpoint: any = config.models.checkpoints.enum.optional();
@@ -94,7 +94,7 @@ const RequestSchema = z.object({
 
 type InputType = z.infer<typeof RequestSchema>;
 
-function generateWorkflow(input: InputType): Record<string, ComfyNode> {
+function generateWorkflow(input: InputType): ComfyPrompt {
   return {
     "8": {
       inputs: {

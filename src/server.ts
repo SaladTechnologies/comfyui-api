@@ -7,7 +7,6 @@ import {
   validatorCompiler,
   ZodTypeProvider,
 } from "fastify-type-provider-zod";
-import { DirectoryWatcher } from "./watcher";
 import fsPromises from "fs/promises";
 import path from "path";
 import { version } from "../package.json";
@@ -20,6 +19,8 @@ import {
   processImage,
   zodToMarkdownTable,
   convertImageBuffer,
+  queuePrompt,
+  runPromptAndGetOutputs,
 } from "./utils";
 import {
   PromptRequestSchema,
@@ -34,8 +35,6 @@ import {
 import workflows from "./workflows";
 import { z } from "zod";
 import { randomUUID } from "crypto";
-
-const outputWatcher = new DirectoryWatcher(config.outputDir);
 
 const server = Fastify({
   bodyLimit: 100 * 1024 * 1024, // 45MB
@@ -182,32 +181,31 @@ server.after(() => {
        * Here we go through all the nodes in the prompt to validate it,
        * and also to do some pre-processing.
        */
-      let batchSize = 0;
       let hasSaveImage = false;
       const saveNodesWithFilenamePrefix = new Set<string>([
         "SaveImage",
         "SaveAnimatedWEBP",
         "SaveAnimatedPNG",
+        "VHS_VideoCombine",
       ]);
       const loadImageNodes = new Set<string>(["LoadImage"]);
       const loadDirectoryOfImagesNodes = new Set<string>(["VHS_LoadImages"]);
       for (const nodeId in prompt) {
         const node = prompt[nodeId];
-
         if (saveNodesWithFilenamePrefix.has(node.class_type)) {
           /**
            * If the node is for saving files, we want to set the filename_prefix
            * to the id of the prompt. This is so that we can associate the output
            * files with the prompt that generated them.
            */
+          if (
+            typeof node.inputs.save_output !== "undefined" &&
+            !node.inputs.save_output
+          ) {
+            continue;
+          }
           node.inputs.filename_prefix = id;
           hasSaveImage = true;
-        } else if (node.inputs.batch_size) {
-          /**
-           * A few nodes have a batch_size input that we can use to determine
-           * how many images to expect from the output.
-           */
-          batchSize += node.inputs.batch_size;
         } else if (loadImageNodes.has(node.class_type)) {
           /**
            * If the node is for loading an image, the user will have provided
@@ -249,32 +247,8 @@ server.after(() => {
               });
             }
           }
-        } else if (
-          node.class_type === "EmptyMotionData" &&
-          node.inputs.frames
-        ) {
-          /**
-           * If the node is EmptyMotionData, we need to set the batch size to the number
-           * of frames that the user has provided.
-           */
-          batchSize = node.inputs.frames;
-        } else if (
-          node.class_type === "VHS_VideoCombine" &&
-          node.inputs.save_output
-        ) {
-          /**
-           * This node only optionally saves the output, so we need to check if the user
-           * has enabled saving the output, and if so, set the filename_prefix to the id
-           * of the prompt.
-           */
-          node.inputs.filename_prefix = id;
-          hasSaveImage = true;
-
-          // Outputs the video file, and a preview image
-          batchSize += 2;
         }
       }
-
       if (!hasSaveImage) {
         return reply.code(400).send({
           error: `Prompt must contain a a node that saves an image or video. Supported nodes are: ${[
@@ -285,31 +259,34 @@ server.after(() => {
         });
       }
 
-      if (batchSize === 0) {
-        return reply.code(400).send({
-          error: `Prompt must contain a node that specifies batch_size, frames, or a video output.`,
-          location: "prompt",
-        });
-      }
-
       if (webhook) {
         /**
-         * If the user has provided a webhook, we set up a watcher to send outputs via webhook.
+         * Send the prompt to ComfyUI, and return a 202 response to the user.
          */
-        outputWatcher.addPrefixAction(
-          id,
-          batchSize,
-          async (filepath: string) => {
-            let fileBuffer = await fsPromises.readFile(filepath);
+        runPromptAndGetOutputs(prompt, app.log).then(
+          /**
+           * This function does not block returning the 202 response to the user.
+           */
+          async (outputs: Record<string, Buffer>) => {
+            for (const originalFilename in outputs) {
+              let filename = originalFilename;
+              let fileBuffer = outputs[filename];
+              if (convert_output) {
+                fileBuffer = await convertImageBuffer(
+                  fileBuffer,
+                  convert_output
+                );
 
-            if (convert_output) {
-              fileBuffer = await convertImageBuffer(fileBuffer, convert_output);
-            }
-
-            const base64File = fileBuffer.toString("base64");
-
-            try {
-              const res = await fetch(webhook, {
+                /**
+                 * If the user has provided an output format, we need to update the filename
+                 */
+                filename = originalFilename.replace(
+                  /\.[^/.]+$/,
+                  `.${convert_output.format}`
+                );
+              }
+              const base64File = fileBuffer.toString("base64");
+              fetch(webhook, {
                 method: "POST",
                 headers: {
                   "Content-Type": "application/json",
@@ -317,39 +294,18 @@ server.after(() => {
                 body: JSON.stringify({
                   image: base64File,
                   id,
-                  filename: path.basename(filepath),
+                  filename,
                   prompt,
                 }),
+              }).catch((e: any) => {
+                app.log.error(`Failed to send image to webhook: ${e.message}`);
               });
-              if (!res.ok) {
-                app.log.error(
-                  `Failed to send image to webhook: ${await res.text()}`
-                );
-              }
-            } catch (e: any) {
-              app.log.error(`Failed to send image to webhook: ${e.message}`);
-            }
 
-            // Remove the file after sending
-            fsPromises.unlink(filepath);
+              // Remove the file after sending
+              fsPromises.unlink(path.join(config.outputDir, originalFilename));
+            }
           }
         );
-
-        /**
-         * Send the prompt to ComfyUI, and return a 202 response to the user.
-         */
-        const resp = await fetch(`${config.comfyURL}/prompt`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ prompt }),
-        });
-
-        if (!resp.ok) {
-          outputWatcher.removePrefixAction(id);
-          return reply.code(resp.status).send({ error: await resp.text() });
-        }
         return reply.code(202).send({ status: "ok", id, webhook, prompt });
       } else {
         /**
@@ -358,60 +314,33 @@ server.after(() => {
          */
         const images: string[] = [];
         const filenames: string[] = [];
-        function waitForImagesToGenerate(): Promise<void> {
-          return new Promise((resolve) => {
-            outputWatcher.addPrefixAction(
-              id,
-              batchSize,
-              async (filepath: string) => {
-                let fileBuffer = await fsPromises.readFile(filepath);
-                let filename = path.basename(filepath);
-                if (convert_output) {
-                  fileBuffer = await convertImageBuffer(
-                    fileBuffer,
-                    convert_output
-                  );
-                  /**
-                   * If the user has provided an output format, we need to update the filename
-                   */
-                  filename = filename.replace(
-                    /\.[^/.]+$/,
-                    `.${convert_output.format}`
-                  );
-                }
-
-                const base64File = fileBuffer.toString("base64");
-                images.push(base64File);
-                filenames.push(filename);
-
-                // Remove the file after reading
-                fsPromises.unlink(filepath);
-
-                if (images.length === batchSize) {
-                  outputWatcher.removePrefixAction(id);
-                  resolve();
-                }
-              }
-            );
-          });
-        }
 
         /**
          * Send the prompt to ComfyUI, and wait for the images to be generated.
          */
-        const finished = waitForImagesToGenerate();
-        const resp = await fetch(`${config.comfyURL}/prompt`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ prompt }),
-        });
-        if (!resp.ok) {
-          outputWatcher.removePrefixAction(id);
-          return reply.code(resp.status).send({ error: await resp.text() });
+        const allOutputs = await runPromptAndGetOutputs(prompt, app.log);
+        for (const originalFilename in allOutputs) {
+          let fileBuffer = allOutputs[originalFilename];
+          let filename = originalFilename;
+
+          if (convert_output) {
+            fileBuffer = await convertImageBuffer(fileBuffer, convert_output);
+            /**
+             * If the user has provided an output format, we need to update the filename
+             */
+            filename = originalFilename.replace(
+              /\.[^/.]+$/,
+              `.${convert_output.format}`
+            );
+          }
+
+          const base64File = fileBuffer.toString("base64");
+          images.push(base64File);
+          filenames.push(filename);
+
+          // Remove the file after reading
+          fsPromises.unlink(path.join(config.outputDir, originalFilename));
         }
-        await finished;
 
         return reply.send({ id, prompt, images, filenames });
       }
@@ -502,7 +431,6 @@ let warm = false;
 process.on("SIGINT", async () => {
   server.log.info("Received SIGINT, interrupting process");
   shutdownComfyUI();
-  await outputWatcher.stopWatching();
   process.exit(0);
 });
 

@@ -1,4 +1,4 @@
-import animateDiffVideoAndFramesWorkflow from "./workflows/animatediff-video-and-frames.json";
+import animateDiffVideoAndFramesWorkflow from "./workflows/animatediff-large-dir-video.json";
 
 describe("AnimateDiff", () => {
   describe("Return content in response", () => {
