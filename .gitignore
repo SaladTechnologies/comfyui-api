@@ -130,3 +130,7 @@ dist
 .pnp.*
 
 bin/
+
+*.safetensors
+*.ckpt
+*.pth
