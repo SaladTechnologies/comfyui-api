@@ -1,7 +1,16 @@
 import animateDiffVideoAndFramesWorkflow from "./workflows/animatediff-video-and-frames.json";
 
 describe("AnimateDiff", () => {
-  it("returns still frames and a video", () => {});
-  it("returns just a video", () => {});
-  it("returns just still frames", () => {});
+  describe("Return content in response", () => {
+    it("returns still frames and a video", () => {});
+    it("returns just a video", () => {});
+    it("returns just still frames", () => {});
+    it("accepts an array of base64 encoded images in the directory field", () => {});
+  });
+
+  describe("Return content in webhooks", () => {
+    it("returns still frames and a video", () => {});
+    it("returns just a video", () => {});
+    it("returns just still frames", () => {});
+  });
 });
