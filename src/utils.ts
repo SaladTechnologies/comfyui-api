@@ -145,6 +145,13 @@ export async function processImage(
     // Assume it's a base64 encoded image
     try {
       const base64Data = Buffer.from(imageInput, "base64");
+      const image = sharp(base64Data);
+      const metadata = await image.metadata();
+      if (!metadata.format) {
+        throw new Error("Failed to parse image metadata");
+      }
+      localFilePath = `${localFilePath}.${metadata.format}`;
+      log.debug(`Saving decoded image to ${localFilePath}`);
       await fsPromises.writeFile(localFilePath, base64Data);
       return localFilePath;
     } catch (e: any) {

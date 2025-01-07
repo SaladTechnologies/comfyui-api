@@ -37,7 +37,7 @@ import { z } from "zod";
 import { randomUUID } from "crypto";
 
 const server = Fastify({
-  bodyLimit: 100 * 1024 * 1024, // 45MB
+  bodyLimit: 100 * 1024 * 1024, // 100MB
   logger: true,
 });
 server.setValidatorCompiler(validatorCompiler);
@@ -233,12 +233,18 @@ server.after(() => {
               /**
                * We need to download each image to a local file.
                */
-              await Promise.all(
-                (node.inputs.directory as string[]).map((img) => {
-                  processImage(img, app.log, id);
-                })
+              app.log.debug(
+                `Downloading images to local directory for node ${nodeId}`
               );
+              const processPromises: Promise<string>[] = [];
+              for (const b64 of node.inputs.directory) {
+                processPromises.push(processImage(b64, app.log, id));
+              }
+              await Promise.all(processPromises);
               node.inputs.directory = id;
+              app.log.debug(
+                `Saved images to local directory for node ${nodeId}`
+              );
             } catch (e: any) {
               return reply.code(400).send({
                 error: e.message,
