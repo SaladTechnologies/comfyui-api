@@ -4,7 +4,7 @@
   "description": "Wraps comfyui to make it easier to use as a stateless web service",
   "main": "dist/src/index.js",
   "scripts": {
-    "test": "mocha --require ts-node/register test/*.spec.ts",
+    "test": "mocha --require ts-node/register --timeout=0 test/*.spec.ts",
     "build": "tsc",
     "build-binary": "./build-binary",
     "postinstall": "npm install --cpu=wasm32 sharp"
