@@ -134,3 +134,4 @@ bin/
 *.safetensors
 *.ckpt
 *.pth
+test/docker-image/models
