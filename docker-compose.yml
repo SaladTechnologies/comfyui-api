@@ -7,7 +7,9 @@ services:
     command: ["/app/bin/comfyui-api"]
     build:
       context: ./test/docker-image
-      dockerfile: comfy0.3.10.Dockerfile
+      dockerfile: Dockerfile
+      args:
+        - comfy_version=0.3.10
     ports:
       - "3000:3000"
       - "8188:8188"
