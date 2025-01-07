@@ -124,7 +124,7 @@
   },
   "52": {
     "inputs": {
-      "directory": "R",
+      "directory": "poses",
       "image_load_cap": 64,
       "skip_first_images": 0,
       "select_every_nth": 1
@@ -180,7 +180,7 @@
     "inputs": {
       "width": 512,
       "height": 512,
-      "batch_size": 10
+      "batch_size": 64
     },
     "class_type": "EmptyLatentImage",
     "_meta": {
@@ -189,7 +189,7 @@
   },
   "92": {
     "inputs": {
-      "frame_rate": 10,
+      "frame_rate": 20,
       "loop_count": 0,
       "filename_prefix": "AnimateDiff_Video_And_Frames",
       "format": "image/gif",
