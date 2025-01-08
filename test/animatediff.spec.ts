@@ -7,6 +7,18 @@ import path from "path";
 import fs from "fs/promises";
 import { sleep, waitForWebhook, submitPrompt, checkImage } from "./test-utils";
 
+const shortOpts = {
+  width: animateDiffSmallVideo["70"].inputs.width,
+  height: animateDiffSmallVideo["70"].inputs.height,
+  webpFrames: animateDiffSmallVideo["52"].inputs.image_load_cap,
+};
+
+const largeOpts = {
+  width: animateDiffLargeVideo["24"].inputs.width,
+  height: animateDiffLargeVideo["24"].inputs.height,
+  webpFrames: 72,
+};
+
 describe("AnimateDiff", () => {
   describe("Return content in response", () => {
     it("returns still frames and a video", async () => {
@@ -14,7 +26,7 @@ describe("AnimateDiff", () => {
 
       expect(respBody.filenames.length).toEqual(11);
       for (let i = 0; i < respBody.filenames.length; i++) {
-        await checkImage(respBody.filenames[i], respBody.images[i], 10);
+        await checkImage(respBody.filenames[i], respBody.images[i], shortOpts);
       }
     });
 
@@ -25,12 +37,12 @@ describe("AnimateDiff", () => {
       expect(respBody.filenames[0]).toMatchRegex(/\.webp$/);
 
       expect(respBody.images.length).toEqual(1);
-      await checkImage(respBody.filenames[0], respBody.images[0], 10);
+      await checkImage(respBody.filenames[0], respBody.images[0], shortOpts);
     });
 
     it("returns just still frames", async () => {
       const respBody = await submitPrompt(animateDiffSmallFrames);
-      expect(respBody.filenames.length).toEqual(10);
+      expect(respBody.filenames.length).toEqual(shortOpts.webpFrames);
       for (let i = 0; i < respBody.filenames.length; i++) {
         await checkImage(respBody.filenames[i], respBody.images[i]);
       }
@@ -53,7 +65,7 @@ describe("AnimateDiff", () => {
       }
 
       const respBody = await submitPrompt(modifiedPrompt);
-      expect(respBody.filenames.length).toEqual(10);
+      expect(respBody.filenames.length).toEqual(shortOpts.webpFrames);
       for (let i = 0; i < respBody.filenames.length; i++) {
         await checkImage(respBody.filenames[i], respBody.images[i]);
       }
@@ -71,12 +83,12 @@ describe("AnimateDiff", () => {
         submitPrompt(withDiffSeed),
       ]);
 
-      expect(resp1.filenames.length).toEqual(10);
+      expect(resp1.filenames.length).toEqual(shortOpts.webpFrames);
       for (let i = 0; i < resp1.filenames.length; i++) {
         await checkImage(resp1.filenames[i], resp1.images[i]);
       }
 
-      expect(resp2.filenames.length).toEqual(10);
+      expect(resp2.filenames.length).toEqual(shortOpts.webpFrames);
       for (let i = 0; i < resp2.filenames.length; i++) {
         await checkImage(resp2.filenames[i], resp2.images[i]);
       }
@@ -84,9 +96,9 @@ describe("AnimateDiff", () => {
 
     it("handles large numbers of outputs", async () => {
       const respBody = await submitPrompt(animateDiffLargeVideo);
-      expect(respBody.filenames.length).toEqual(73);
+      expect(respBody.filenames.length).toEqual(largeOpts.webpFrames + 1);
       for (let i = 0; i < respBody.filenames.length; i++) {
-        await checkImage(respBody.filenames[i], respBody.images[i], 72);
+        await checkImage(respBody.filenames[i], respBody.images[i], largeOpts);
       }
     });
   });
@@ -97,7 +109,7 @@ describe("AnimateDiff", () => {
       const webhook = await waitForWebhook(async (body) => {
         const { id, filename, image } = body;
         expect(id).toEqual(reqId);
-        await checkImage(filename, image, 10);
+        await checkImage(filename, image, shortOpts);
         numExpected -= 1;
       });
       const respBody = await submitPrompt(animateDiffSmallVideoAndFrames, true);
@@ -113,7 +125,7 @@ describe("AnimateDiff", () => {
       const webhook = await waitForWebhook(async (body) => {
         const { id, filename, image } = body;
         expect(id).toEqual(reqId);
-        await checkImage(filename, image, 10);
+        await checkImage(filename, image, shortOpts);
         numExpected -= 1;
       });
       const respBody = await submitPrompt(animateDiffSmallVideo, true);

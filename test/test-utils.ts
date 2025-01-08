@@ -38,6 +38,9 @@ export async function submitPrompt(
     },
     body: JSON.stringify(body),
   });
+  if (!resp.ok) {
+    console.error(await resp.text());
+  }
   expect(resp.ok).toEqual(true);
   return await resp.json();
 }
@@ -45,15 +48,19 @@ export async function submitPrompt(
 export async function checkImage(
   filename: string,
   imageB64: string,
-  webpFrames = 10
+  options: { width: number; height: number; webpFrames: number } = {
+    width: 512,
+    height: 512,
+    webpFrames: 1,
+  }
 ): Promise<void> {
   const image = sharp(Buffer.from(imageB64, "base64"));
   const metadata = await image.metadata();
-  expect(metadata.width).toEqual(512);
-  expect(metadata.height).toEqual(512);
+  expect(metadata.width).toEqual(options.width);
+  expect(metadata.height).toEqual(options.height);
   if (filename.endsWith(".webp")) {
     expect(metadata.format).toEqual("webp");
-    expect(metadata.pages).toEqual(webpFrames);
+    expect(metadata.pages).toEqual(options.webpFrames);
   } else if (filename.endsWith(".png")) {
     expect(metadata.format).toEqual("png");
   }

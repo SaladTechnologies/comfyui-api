@@ -19,7 +19,6 @@ import {
   processImage,
   zodToMarkdownTable,
   convertImageBuffer,
-  queuePrompt,
   runPromptAndGetOutputs,
 } from "./utils";
 import {
@@ -182,17 +181,11 @@ server.after(() => {
        * and also to do some pre-processing.
        */
       let hasSaveImage = false;
-      const saveNodesWithFilenamePrefix = new Set<string>([
-        "SaveImage",
-        "SaveAnimatedWEBP",
-        "SaveAnimatedPNG",
-        "VHS_VideoCombine",
-      ]);
       const loadImageNodes = new Set<string>(["LoadImage"]);
       const loadDirectoryOfImagesNodes = new Set<string>(["VHS_LoadImages"]);
       for (const nodeId in prompt) {
         const node = prompt[nodeId];
-        if (saveNodesWithFilenamePrefix.has(node.class_type)) {
+        if (node.inputs.filename_prefix) {
           /**
            * If the node is for saving files, we want to set the filename_prefix
            * to the id of the prompt. This is so that we can associate the output
@@ -257,10 +250,8 @@ server.after(() => {
       }
       if (!hasSaveImage) {
         return reply.code(400).send({
-          error: `Prompt must contain a a node that saves an image or video. Supported nodes are: ${[
-            ...saveNodesWithFilenamePrefix,
-            "VHS_VideoCombine",
-          ].join(", ")}`,
+          error:
+            'Prompt must contain a node with a "filename_prefix" input, such as "SaveImage"',
           location: "prompt",
         });
       }

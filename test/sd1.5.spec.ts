@@ -9,7 +9,7 @@ const sd15Txt2ImgBatch4 = JSON.parse(JSON.stringify(sd15Txt2Img));
 sd15Txt2ImgBatch4["5"].inputs.batch_size = 4;
 
 const inputImage = fs
-  .readFileSync(path.join(__dirname, "docker-image", "poses", "B (1).png"))
+  .readFileSync(path.join(__dirname, "input-images", "doodle-girl.png"))
   .toString("base64");
 sd15Img2Img["10"].inputs.image = inputImage;
 

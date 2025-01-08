@@ -302,6 +302,15 @@ export async function getPromptOutputs(
       for (const outputType in node) {
         for (let outputFile of node[outputType]) {
           const filename = outputFile.filename;
+          if (!filename) {
+            /**
+             * Some nodes have fields in the outputs that are not actual files.
+             * For example, the SaveAnimatedWebP node has a field called "animated"
+             * that only container boolean values mapping to the files present in
+             * .images. We can safely ignore these.
+             */
+            continue;
+          }
           const filepath = path.join(config.outputDir, filename);
           fileLoadPromises.push(
             fsPromises

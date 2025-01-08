@@ -1,4 +1,4 @@
-FROM pytorch/pytorch:2.5.0-cuda12.1-cudnn9-runtime
+FROM pytorch/pytorch:2.5.0-cuda12.1-cudnn9-devel
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y \
@@ -36,3 +36,4 @@ RUN comfy node registry-install efficiency-nodes-comfyui
 RUN comfy node registry-install comfyui-advanced-controlnet
 
 COPY poses ${INPUT_DIR}/poses
+ENV STARTUP_CHECK_MAX_TRIES=100
