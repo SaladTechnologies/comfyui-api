@@ -13,7 +13,9 @@ export async function createWebhookListener(
     bodyLimit: 1024 * 1024 * 1024, // 1 GB
   });
   app.post("/webhook", (req, res) => {
-    onReceive(req.body);
+    if (req.body) {
+      onReceive(req.body);
+    }
     res.send({ success: true });
   });
   await app.listen({ port: 1234 });
