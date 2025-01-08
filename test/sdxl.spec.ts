@@ -1,5 +1,6 @@
 import { expect } from "earl";
-
+import path from "path";
+import fs from "fs";
 import {
   sleep,
   createWebhookListener,
@@ -7,20 +8,20 @@ import {
   checkImage,
   waitForServerToStart,
 } from "./test-utils";
-import sd35Txt2Image from "./workflows/sd3.5-txt2img.json";
+import sdxlWithRefinerTxt2Img from "./workflows/sdxl-with-refiner.json";
 
 const txt2imgOpts = {
-  width: sd35Txt2Image["135"].inputs.width,
-  height: sd35Txt2Image["135"].inputs.height,
+  width: sdxlWithRefinerTxt2Img["5"].inputs.width,
+  height: sdxlWithRefinerTxt2Img["5"].inputs.height,
 };
 
-describe("Stable Diffusion 3.5", () => {
+describe("Stable Diffusion XL", () => {
   before(async () => {
     await waitForServerToStart();
   });
   describe("Return content in response", () => {
     it("text2image works with 1 image", async () => {
-      const respBody = await submitPrompt(sd35Txt2Image);
+      const respBody = await submitPrompt(sdxlWithRefinerTxt2Img);
       expect(respBody.filenames.length).toEqual(1);
       expect(respBody.images.length).toEqual(1);
       await checkImage(respBody.filenames[0], respBody.images[0], txt2imgOpts);
@@ -42,7 +43,7 @@ describe("Stable Diffusion 3.5", () => {
        * from the webhook if this value is smaller.
        * */
       await sleep(700);
-      const { id: reqId } = await submitPrompt(sd35Txt2Image, true);
+      const { id: reqId } = await submitPrompt(sdxlWithRefinerTxt2Img, true);
       while (expected > 0) {
         await sleep(100);
       }
