@@ -14,6 +14,7 @@ A simple wrapper that facilitates using ComfyUI as a stateless API, either by re
     - [Automating with Claude 3.5 Sonnet](#automating-with-claude-35-sonnet)
   - [Prebuilt Docker Images](#prebuilt-docker-images)
   - [Contributing](#contributing)
+  - [Testing](#testing)
 
 ## Download and Usage
 
@@ -374,3 +375,40 @@ The tag pattern is `saladtechnologies/comfyui:comfy<comfy-version>-api<api-versi
 
 Contributions are welcome! Please open an issue or a pull request if you have any suggestions or improvements.
 ComfyUI is a powerful tool with MANY options, and it's likely that not all of them are currently supported by the comfyui-api server. If you find a feature that is missing, please open an issue or a pull request to add it. Let's make productionizing ComfyUI as easy as possible!
+
+## Testing
+
+Automated tests for this project require model files to be present in the `./test/docker-image/models` directory. The following models are required:
+
+```text
+./test/docker-image/models
+├── animatediff_models
+│   └── AnimateLCM_sd15_t2v.ckpt
+├── checkpoints
+│   ├── dreamshaper_8.safetensors
+│   ├── flux1-schnell-fp8.safetensors
+│   ├── ltx-video-2b-v0.9.1.safetensors
+│   ├── sd3.5_medium.safetensors
+│   ├── sd_xl_base_1.0.safetensors
+│   └── sd_xl_refiner_1.0.safetensors
+├── clip
+│   ├── clip_g.safetensors
+│   ├── clip_l.safetensors
+│   ├── t5xxl_fp16.safetensors
+│   └── t5xxl_fp8_e4m3fn.safetensors
+├── clip_vision
+│   ├── open_clip_pytorch_model.safetensors
+├── controlnet
+│   ├── openpose-sd1.5-1.1.safetensors
+├── diffusion_models
+│   └── hunyuan_video_t2v_720p_bf16.safetensors
+├── loras
+│   ├── jump_V2.safetensors
+├── text_encoders
+│   ├── clip_l.safetensors
+│   └── llava_llama3_fp8_scaled.safetensors
+├── vae
+│   ├── hunyuan_video_vae_bf16.safetensors
+│   └── vae-ft-mse-840000-ema-pruned.ckpt
+└── vae_approx
+```
