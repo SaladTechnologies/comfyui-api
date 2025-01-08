@@ -20,6 +20,12 @@ export async function createWebhookListener(
   });
   await app.listen({ port: 1234 });
   await app.ready();
+  /**
+   * TODO: There is some kind of race condition here I can't figure out.
+   * comfyui-api logs report that it got no response from the webhook if this
+   * value is smaller.
+   * */
+  await sleep(700);
   return app;
 }
 

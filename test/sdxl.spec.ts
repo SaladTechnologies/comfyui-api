@@ -37,12 +37,6 @@ describe("Stable Diffusion XL", () => {
         expect(id).toEqual(reqId);
         await checkImage(filename, image, txt2imgOpts);
       });
-      /**
-       * TODO: There is some kind of race condition here I can't figure out. It doesn't seem to effect
-       * most other webhook tests, but it does seem to effect this one. comfyui-api logs report that it got no response
-       * from the webhook if this value is smaller.
-       * */
-      await sleep(700);
       const { id: reqId } = await submitPrompt(sdxlWithRefinerTxt2Img, true);
       while (expected > 0) {
         await sleep(100);
