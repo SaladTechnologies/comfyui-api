@@ -15,6 +15,8 @@ A simple wrapper that facilitates using ComfyUI as a stateless API, either by re
   - [Prebuilt Docker Images](#prebuilt-docker-images)
   - [Contributing](#contributing)
   - [Testing](#testing)
+    - [Required Models](#required-models)
+    - [Running Tests](#running-tests)
 
 ## Download and Usage
 
@@ -378,7 +380,13 @@ ComfyUI is a powerful tool with MANY options, and it's likely that not all of th
 
 ## Testing
 
+### Required Models
+
 Automated tests for this project require model files to be present in the `./test/docker-image/models` directory. The following models are required:
+
+**TODO: Add models**
+
+They should be in the correct comfyui directory structure, like so:
 
 ```text
 ./test/docker-image/models
@@ -412,3 +420,23 @@ Automated tests for this project require model files to be present in the `./tes
 │   └── vae-ft-mse-840000-ema-pruned.ckpt
 └── vae_approx
 ```
+
+### Running Tests
+
+In one terminal, start the test server:
+
+```shell
+docker compose up --build
+```
+
+> --build is only needed the first time, or if you make changes to the server code
+
+In another terminal, run the tests:
+
+```shell
+npm test
+```
+
+This will take quite a long time, and requires a minimum of 24gb of RAM.
+I did these tests on my RTX 3080ti Laptop Edition w/ 16gb VRAM, and 24gb WSL RAM.
+It takes about 30 minutes to run all the tests.
