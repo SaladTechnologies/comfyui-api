@@ -5,7 +5,14 @@ import animateDiffSmallVideoAndFrames from "./workflows/animatediff-small-video-
 import animateDiffSmallFrames from "./workflows/animatediff-small-frames.json";
 import path from "path";
 import fs from "fs/promises";
-import { sleep, waitForWebhook, submitPrompt, checkImage } from "./test-utils";
+import {
+  sleep,
+  createWebhookListener,
+  submitPrompt,
+  checkImage,
+  waitForServerToStart,
+} from "./test-utils";
+import { before } from "mocha";
 
 const shortOpts = {
   width: animateDiffSmallVideo["70"].inputs.width,
@@ -20,6 +27,9 @@ const largeOpts = {
 };
 
 describe("AnimateDiff", () => {
+  before(async () => {
+    await waitForServerToStart();
+  });
   describe("Return content in response", () => {
     it("returns still frames and a video", async () => {
       const respBody = await submitPrompt(animateDiffSmallVideoAndFrames);
@@ -106,11 +116,11 @@ describe("AnimateDiff", () => {
   describe("Return content in webhooks", () => {
     it("returns still frames and a video", async () => {
       let numExpected = 11;
-      const webhook = await waitForWebhook(async (body) => {
+      const webhook = await createWebhookListener(async (body) => {
+        numExpected -= 1;
         const { id, filename, image } = body;
         expect(id).toEqual(reqId);
         await checkImage(filename, image, shortOpts);
-        numExpected -= 1;
       });
       const respBody = await submitPrompt(animateDiffSmallVideoAndFrames, true);
       const { id: reqId } = respBody;
@@ -122,11 +132,11 @@ describe("AnimateDiff", () => {
     });
     it("returns just a video", async () => {
       let numExpected = 1;
-      const webhook = await waitForWebhook(async (body) => {
+      const webhook = await createWebhookListener(async (body) => {
+        numExpected -= 1;
         const { id, filename, image } = body;
         expect(id).toEqual(reqId);
         await checkImage(filename, image, shortOpts);
-        numExpected -= 1;
       });
       const respBody = await submitPrompt(animateDiffSmallVideo, true);
       const { id: reqId } = respBody;
@@ -138,11 +148,11 @@ describe("AnimateDiff", () => {
     });
     it("returns just still frames", async () => {
       let numExpected = 10;
-      const webhook = await waitForWebhook(async (body) => {
+      const webhook = await createWebhookListener(async (body) => {
+        numExpected -= 1;
         const { id, filename, image } = body;
         expect(id).toEqual(reqId);
         await checkImage(filename, image);
-        numExpected -= 1;
       });
       const respBody = await submitPrompt(animateDiffSmallFrames, true);
       const { id: reqId } = respBody;

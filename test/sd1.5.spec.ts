@@ -1,7 +1,13 @@
 import { expect } from "earl";
 import path from "path";
 import fs from "fs";
-import { sleep, waitForWebhook, submitPrompt, checkImage } from "./test-utils";
+import {
+  sleep,
+  createWebhookListener,
+  submitPrompt,
+  checkImage,
+  waitForServerToStart,
+} from "./test-utils";
 import sd15Txt2Img from "./workflows/sd1.5-txt2img.json";
 import sd15Img2Img from "./workflows/sd1.5-img2img.json";
 
@@ -14,6 +20,9 @@ const inputImage = fs
 sd15Img2Img["10"].inputs.image = inputImage;
 
 describe("Stable Diffusion 1.5", () => {
+  before(async () => {
+    await waitForServerToStart();
+  });
   describe("Return content in response", () => {
     it("text2image works with 1 image", async () => {
       const respBody = await submitPrompt(sd15Txt2Img);
@@ -35,18 +44,21 @@ describe("Stable Diffusion 1.5", () => {
       const respBody = await submitPrompt(sd15Img2Img);
       expect(respBody.filenames.length).toEqual(1);
       expect(respBody.images.length).toEqual(1);
-      await checkImage(respBody.filenames[0], respBody.images[0]);
+      await checkImage(respBody.filenames[0], respBody.images[0], {
+        width: 768,
+        height: 768,
+      });
     });
   });
 
   describe("Return content in webhook", () => {
     it("text2image works with 1 image", async () => {
       let expected = 1;
-      const webhook = await waitForWebhook((body) => {
+      const webhook = await createWebhookListener(async (body) => {
+        expected--;
         const { id, filename, image } = body;
         expect(id).toEqual(reqId);
-        checkImage(filename, image);
-        expected--;
+        await checkImage(filename, image);
       });
       const { id: reqId } = await submitPrompt(sd15Txt2Img, true);
       while (expected > 0) {
@@ -57,11 +69,11 @@ describe("Stable Diffusion 1.5", () => {
 
     it("text2image works with multiple images", async () => {
       let expected = 4;
-      const webhook = await waitForWebhook((body) => {
+      const webhook = await createWebhookListener(async (body) => {
+        expected--;
         const { id, filename, image } = body;
         expect(id).toEqual(reqId);
-        checkImage(filename, image);
-        expected--;
+        await checkImage(filename, image);
       });
       const { id: reqId } = await submitPrompt(sd15Txt2ImgBatch4, true);
       while (expected > 0) {
@@ -72,11 +84,14 @@ describe("Stable Diffusion 1.5", () => {
 
     it("image2image works with base64 encoded images", async () => {
       let expected = 1;
-      const webhook = await waitForWebhook((body) => {
+      const webhook = await createWebhookListener(async (body) => {
+        expected--;
         const { id, filename, image } = body;
         expect(id).toEqual(reqId);
-        checkImage(filename, image);
-        expected--;
+        await checkImage(filename, image, {
+          width: 768,
+          height: 768,
+        });
       });
       const { id: reqId } = await submitPrompt(sd15Img2Img, true);
       while (expected > 0) {

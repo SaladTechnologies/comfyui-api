@@ -6,13 +6,15 @@ export async function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export async function waitForWebhook(
-  onReceive: (body: any) => void
+export async function createWebhookListener(
+  onReceive: (body: any) => void | Promise<void>
 ): Promise<FastifyInstance> {
-  const app = fastify();
-  app.post("/webhook", async (req, res) => {
-    res.send({ success: true });
+  const app = fastify({
+    bodyLimit: 1024 * 1024 * 1024, // 1 GB
+  });
+  app.post("/webhook", (req, res) => {
     onReceive(req.body);
+    res.send({ success: true });
   });
   await app.listen({ port: 1234 });
   await app.ready();
@@ -48,10 +50,9 @@ export async function submitPrompt(
 export async function checkImage(
   filename: string,
   imageB64: string,
-  options: { width: number; height: number; webpFrames: number } = {
+  options: { width: number; height: number; webpFrames?: number } = {
     width: 512,
     height: 512,
-    webpFrames: 1,
   }
 ): Promise<void> {
   const image = sharp(Buffer.from(imageB64, "base64"));
@@ -63,5 +64,17 @@ export async function checkImage(
     expect(metadata.pages).toEqual(options.webpFrames);
   } else if (filename.endsWith(".png")) {
     expect(metadata.format).toEqual("png");
+  }
+}
+
+export async function waitForServerToStart(): Promise<void> {
+  while (true) {
+    try {
+      const resp = await fetch(`http://localhost:3000/health`);
+      if (resp.ok) {
+        break;
+      }
+    } catch (e) {}
+    await sleep(100);
   }
 }

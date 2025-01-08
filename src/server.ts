@@ -283,6 +283,7 @@ server.after(() => {
                 );
               }
               const base64File = fileBuffer.toString("base64");
+              app.log.info(`Sending image ${filename} to webhook: ${webhook}`);
               fetch(webhook, {
                 method: "POST",
                 headers: {
@@ -294,9 +295,23 @@ server.after(() => {
                   filename,
                   prompt,
                 }),
-              }).catch((e: any) => {
-                app.log.error(`Failed to send image to webhook: ${e.message}`);
-              });
+              })
+                .catch((e: any) => {
+                  app.log.error(
+                    `Failed to send image to webhook: ${e.message}`
+                  );
+                })
+                .then(async (resp) => {
+                  if (!resp) {
+                    app.log.error("No response from webhook");
+                  } else if (!resp.ok) {
+                    app.log.error(
+                      `Failed to send image ${filename}: ${await resp.text()}`
+                    );
+                  } else {
+                    app.log.info(`Sent image ${filename}`);
+                  }
+                });
 
               // Remove the file after sending
               fsPromises.unlink(path.join(config.outputDir, originalFilename));
