@@ -1,5 +1,4 @@
 import { expect } from "earl";
-
 import {
   sleep,
   createWebhookListener,

@@ -1,6 +1,4 @@
 import { expect } from "earl";
-import path from "path";
-import fs from "fs";
 import {
   sleep,
   createWebhookListener,
