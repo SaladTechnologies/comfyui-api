@@ -4,6 +4,15 @@ on:
   pull_request:
     branches:
       - main
+    paths-ignore:
+      - ".github/**"
+      - "**.md"
+      - "**.png"
+      - ".gitignore"
+      - "generate-workflow"
+      - "**.yml"
+      - "test/**"
+      - "example-workflows/**"
 
 jobs:
   build:
@@ -23,8 +32,8 @@ jobs:
       - name: Build
         run: npm run build-binary
 
-      - name: Archive production artifacts
-        id: archive
+      - name: Upload artifact
+        id: artifact
         uses: actions/upload-artifact@v4
         with:
           path: bin/comfyui-api
@@ -39,6 +48,6 @@ jobs:
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: `:rocket: [Download the latest release candidate](${{ steps.archive.outputs.artifact-url }}) :rocket:`
+              body: `:rocket: [Download the latest release candidate](${{ steps.artifact.outputs.artifact-url }}) :rocket:`
             })
 
