@@ -130,3 +130,8 @@ dist
 .pnp.*
 
 bin/
+
+*.safetensors
+*.ckpt
+*.pth
+test/docker-image/models

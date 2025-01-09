@@ -3,4 +3,4 @@ set -e
 
 npm install
 npx tsc
-npx pkg .
+npx pkg --options "stack-size=65500" .

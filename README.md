@@ -14,6 +14,9 @@ A simple wrapper that facilitates using ComfyUI as a stateless API, either by re
     - [Automating with Claude 3.5 Sonnet](#automating-with-claude-35-sonnet)
   - [Prebuilt Docker Images](#prebuilt-docker-images)
   - [Contributing](#contributing)
+  - [Testing](#testing)
+    - [Required Models](#required-models)
+    - [Running Tests](#running-tests)
 
 ## Download and Usage
 
@@ -21,7 +24,7 @@ Download the latest version from the release page, and copy it into your existin
 
 ```dockerfile
 # Change this to the version you want to use
-ARG api_version=1.6.0
+ARG api_version=1.7.0
 
 # Download the comfyui-api binary, and make it executable
 ADD https://github.com/SaladTechnologies/comfyui-api/releases/download/${api_version}/comfyui-api .
@@ -38,6 +41,7 @@ The server hosts swagger docs at `/docs`, which can be used to interact with the
 ## Features
 
 - **Full Power Of ComfyUI**: The server supports the full ComfyUI /prompt API, and can be used to execute any ComfyUI workflow.
+- **Verified Model/Workflow Support**: Stable Diffusion 1.5, Stable Diffusion XL, Stable Diffusion 3.5, Flux, AnimateDiff, LTX Video, Hunyuan Video. My assumption is more model types are supported, but these are the ones I have verified.
 - **Stateless API**: The server is stateless, and can be scaled horizontally to handle more requests.
 - **Swagger Docs**: The server hosts swagger docs at `/docs`, which can be used to interact with the API.
 - **"Synchronous" Support**: The server will return base64-encoded images directly in the response, if no webhook is provided.
@@ -70,21 +74,23 @@ This guide provides an overview of how to configure the application using enviro
 The following table lists the available environment variables and their default values.
 The default values mostly assume this will run on top of an [ai-dock](https://github.com/ai-dock/comfyui) image, but can be customized as needed.
 
-| Variable                 | Default Value         | Description                                |
-| ------------------------ | --------------------- | ------------------------------------------ |
-| CMD                      | "init.sh"             | Command to launch ComfyUI                  |
-| HOST                     | "::"                  | Wrapper host address                       |
-| PORT                     | "3000"                | Wrapper port number                        |
-| DIRECT_ADDRESS           | "127.0.0.1"           | Direct address for ComfyUI                 |
-| COMFYUI_PORT_HOST        | "8188"                | ComfyUI port number                        |
-| STARTUP_CHECK_INTERVAL_S | "1"                   | Interval in seconds between startup checks |
-| STARTUP_CHECK_MAX_TRIES  | "10"                  | Maximum number of startup check attempts   |
-| COMFY_HOME               | "/opt/ComfyUI"        | ComfyUI home directory                     |
-| OUTPUT_DIR               | "/opt/ComfyUI/output" | Directory for output files                 |
-| INPUT_DIR                | "/opt/ComfyUI/input"  | Directory for input files                  |
-| MODEL_DIR                | "/opt/ComfyUI/models" | Directory for model files                  |
-| WARMUP_PROMPT_FILE       | (not set)             | Path to warmup prompt file (optional)      |
-| WORKFLOW_DIR             | "/workflows"          | Directory for workflow files               |
+| Variable                 | Default Value         | Description                                                                                                                                                                                            |
+| ------------------------ | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| CMD                      | "init.sh"             | Command to launch ComfyUI                                                                                                                                                                              |
+| HOST                     | "::"                  | Wrapper host address                                                                                                                                                                                   |
+| PORT                     | "3000"                | Wrapper port number                                                                                                                                                                                    |
+| MAX_BODY_SIZE_MB         | "100"                 | Maximum body size in MB                                                                                                                                                                                |
+| DIRECT_ADDRESS           | "127.0.0.1"           | Direct address for ComfyUI                                                                                                                                                                             |
+| COMFYUI_PORT_HOST        | "8188"                | ComfyUI port number                                                                                                                                                                                    |
+| STARTUP_CHECK_INTERVAL_S | "1"                   | Interval in seconds between startup checks                                                                                                                                                             |
+| STARTUP_CHECK_MAX_TRIES  | "10"                  | Maximum number of startup check attempts                                                                                                                                                               |
+| COMFY_HOME               | "/opt/ComfyUI"        | ComfyUI home directory                                                                                                                                                                                 |
+| OUTPUT_DIR               | "/opt/ComfyUI/output" | Directory for output files                                                                                                                                                                             |
+| INPUT_DIR                | "/opt/ComfyUI/input"  | Directory for input files                                                                                                                                                                              |
+| MODEL_DIR                | "/opt/ComfyUI/models" | Directory for model files                                                                                                                                                                              |
+| WARMUP_PROMPT_FILE       | (not set)             | Path to warmup prompt file (optional)                                                                                                                                                                  |
+| WORKFLOW_DIR             | "/workflows"          | Directory for workflow files                                                                                                                                                                           |
+| BASE                     | "ai-dock"             | There are different ways to load the comfyui environment for determining config values that vary with the base image. Currently only "ai-dock" has preset values. Set to empty string to not use this. |
 
 ### Configuration Details
 
@@ -152,7 +158,7 @@ type ComfyNode = z.infer<typeof ComfyNodeSchema>;
 
 interface Workflow {
   RequestSchema: z.ZodObject<any, any>;
-  generateWorkflow: (input: any) => Record<string, ComfyNode>;
+  generateWorkflow: (input: any) => ComfyPrompt;
 }
 
 // This defaults the checkpoint to whatever was used in the warmup workflow
@@ -225,7 +231,7 @@ const RequestSchema = z.object({
 
 type InputType = z.infer<typeof RequestSchema>;
 
-function generateWorkflow(input: InputType): Record<string, ComfyNode> {
+function generateWorkflow(input: InputType): ComfyPrompt {
   return {
     "3": {
       inputs: {
@@ -372,3 +378,79 @@ The tag pattern is `saladtechnologies/comfyui:comfy<comfy-version>-api<api-versi
 
 Contributions are welcome! Please open an issue or a pull request if you have any suggestions or improvements.
 ComfyUI is a powerful tool with MANY options, and it's likely that not all of them are currently supported by the comfyui-api server. If you find a feature that is missing, please open an issue or a pull request to add it. Let's make productionizing ComfyUI as easy as possible!
+
+## Testing
+
+### Required Models
+
+Automated tests for this project require model files to be present in the `./test/docker-image/models` directory. The following models are required:
+
+- `AnimateLCM_sd15_t2v.ckpt` - https://huggingface.co/wangfuyun/AnimateLCM/resolve/b78bbce/AnimateLCM_sd15_t2v.ckpt
+- `dreamshaper_8.safetensors` - https://civitai.com/models/4384/dreamshaper
+- `flux1-schnell-fp8.safetensors` - https://huggingface.co/Comfy-Org/flux1-schnell
+- `ltx-video-2b-v0.9.1.safetensors` - https://huggingface.co/Lightricks/LTX-Video/blob/main/ltx-video-2b-v0.9.1.safetensors
+- `sd3.5_medium.safetensors` - https://huggingface.co/stabilityai/stable-diffusion-3.5-medium
+- `sd_xl_base_1.0.safetensors` - https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0
+- `sd_xl_refiner_1.0.safetensors` - https://huggingface.co/stabilityai/stable-diffusion-xl-refiner-1.0
+- `clip_g.safetensors` - https://huggingface.co/Comfy-Org/stable-diffusion-3.5-fp8/blob/main/text_encoders/clip_g.safetensors
+- `clip_l.safetensors` - https://huggingface.co/Comfy-Org/stable-diffusion-3.5-fp8/blob/main/text_encoders/clip_l.safetensors
+- `t5xxl_fp16.safetensors` - https://huggingface.co/comfyanonymous/flux_text_encoders/blob/main/t5xxl_fp16.safetensors
+- `t5xxl_fp8_e4m3fn.safetensors` - https://huggingface.co/Comfy-Org/stable-diffusion-3.5-fp8/blob/main/text_encoders/t5xxl_fp8_e4m3fn_scaled.safetensors
+- `openpose-sd1.5-1.1.safetensors` - https://huggingface.co/lllyasviel/control_v11p_sd15_openpose/resolve/main/diffusion_pytorch_model.fp16.safetensors
+- `hunyuan_video_t2v_720p_bf16.safetensors` - https://huggingface.co/Comfy-Org/HunyuanVideo_repackaged/tree/main/split_files/diffusion_models
+- `jump_V2.safetensors` - https://civitai.com/models/193225?modelVersionId=235847
+- `llava_llama3_fp8_scaled.safetensors` - https://huggingface.co/Comfy-Org/HunyuanVideo_repackaged/tree/main/split_files/text_encoders
+- `hunyuan_video_vae_bf16.safetensors` - https://huggingface.co/Comfy-Org/HunyuanVideo_repackaged/tree/main/split_files/vae
+- `vae-ft-mse-840000-ema-pruned.ckpt` - https://huggingface.co/stabilityai/sd-vae-ft-mse-original/blob/main/vae-ft-mse-840000-ema-pruned.ckpt
+
+They should be in the correct comfyui directory structure, like so:
+
+```text
+./test/docker-image/models
+├── animatediff_models
+│   └── AnimateLCM_sd15_t2v.ckpt
+├── checkpoints
+│   ├── dreamshaper_8.safetensors
+│   ├── flux1-schnell-fp8.safetensors
+│   ├── ltx-video-2b-v0.9.1.safetensors
+│   ├── sd3.5_medium.safetensors
+│   ├── sd_xl_base_1.0.safetensors
+│   └── sd_xl_refiner_1.0.safetensors
+├── clip
+│   ├── clip_g.safetensors
+│   ├── clip_l.safetensors
+│   ├── t5xxl_fp16.safetensors
+│   └── t5xxl_fp8_e4m3fn.safetensors
+├── controlnet
+│   ├── openpose-sd1.5-1.1.safetensors
+├── diffusion_models
+│   └── hunyuan_video_t2v_720p_bf16.safetensors
+├── loras
+│   ├── jump_V2.safetensors
+├── text_encoders
+│   ├── clip_l.safetensors
+│   └── llava_llama3_fp8_scaled.safetensors
+├── vae
+│   ├── hunyuan_video_vae_bf16.safetensors
+│   └── vae-ft-mse-840000-ema-pruned.ckpt
+```
+
+### Running Tests
+
+In one terminal, start the test server:
+
+```shell
+docker compose up --build
+```
+
+> --build is only needed the first time, or if you make changes to the server code
+
+In another terminal, run the tests:
+
+```shell
+npm test
+```
+
+This will take quite a long time, and requires a minimum of 24gb of RAM.
+I did these tests on my RTX 3080ti Laptop Edition w/ 16gb VRAM, and 24gb WSL RAM.
+It takes about 30 minutes to run all the tests.

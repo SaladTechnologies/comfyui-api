@@ -9,6 +9,8 @@ export const ComfyNodeSchema = z.object({
 
 export type ComfyNode = z.infer<typeof ComfyNodeSchema>;
 
+export type ComfyPrompt = Record<string, ComfyNode>;
+
 export const JPEGOptionsSchema = z.object({
   quality: z.number().optional().default(80).describe("quality, integer 1-100"),
   progressive: z
@@ -130,7 +132,8 @@ export type PromptRequest = z.infer<typeof PromptRequestSchema>;
 export const PromptResponseSchema = z.object({
   id: z.string(),
   prompt: z.record(ComfyNodeSchema),
-  images: z.array(z.string().base64()).optional(),
+  images: z.array(z.string()).optional(),
+  filenames: z.array(z.string()).optional(),
   webhook: z.string().optional(),
   convert_output: OutputConversionOptionsSchema.optional(),
   status: z.enum(["ok"]).optional(),
@@ -152,7 +155,7 @@ export const WorkflowSchema = z.object({
 
 export interface Workflow {
   RequestSchema: z.ZodObject<any, any>;
-  generateWorkflow: (input: any) => Record<string, ComfyNode>;
+  generateWorkflow: (input: any) => Promise<ComfyPrompt> | ComfyPrompt;
   description?: string;
   summary?: string;
 }
@@ -181,7 +184,8 @@ export const WorkflowResponseSchema = z.object({
   id: z.string(),
   input: z.record(z.any()),
   prompt: z.record(ComfyNodeSchema),
-  images: z.array(z.string().base64()).optional(),
+  images: z.array(z.string()).optional(),
+  filenames: z.array(z.string()).optional(),
   webhook: z.string().optional(),
   convert_output: OutputConversionOptionsSchema.optional(),
   status: z.enum(["ok"]).optional(),

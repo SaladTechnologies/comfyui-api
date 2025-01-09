@@ -1,11 +1,18 @@
 services:
   comfyui:
-    image: saladtechnologies/comfyui:comfy0.2.7-api1.6.0-base
+    image: saladtechnologies/comfyui:comfy0.3.10-test-image
     volumes:
       - ./bin:/app/bin
+      - ./test/docker-image/models:/opt/ComfyUI/models
     command: ["/app/bin/comfyui-api"]
+    build:
+      context: ./test/docker-image
+      dockerfile: Dockerfile
+      args:
+        - comfy_version=0.3.10
     ports:
       - "3000:3000"
+      - "8188:8188"
     deploy:
       resources:
         reservations:

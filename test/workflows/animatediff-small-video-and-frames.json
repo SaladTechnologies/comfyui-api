@@ -1,0 +1,224 @@
+{
+  "11": {
+    "inputs": {
+      "ckpt_name": "dreamshaper_8.safetensors"
+    },
+    "class_type": "CheckpointLoaderSimple",
+    "_meta": {
+      "title": "Load Checkpoint"
+    }
+  },
+  "24": {
+    "inputs": {
+      "upscale_method": "lanczos",
+      "width": 512,
+      "height": 512,
+      "crop": "disabled",
+      "image": [
+        "49",
+        5
+      ]
+    },
+    "class_type": "ImageScale",
+    "_meta": {
+      "title": "Upscale Image"
+    }
+  },
+  "45": {
+    "inputs": {
+      "strength": 1.5,
+      "start_percent": 0,
+      "end_percent": 1,
+      "positive": [
+        "48",
+        0
+      ],
+      "negative": [
+        "47",
+        0
+      ],
+      "control_net": [
+        "46",
+        0
+      ],
+      "image": [
+        "52",
+        0
+      ]
+    },
+    "class_type": "ControlNetApplyAdvanced",
+    "_meta": {
+      "title": "Apply ControlNet"
+    }
+  },
+  "46": {
+    "inputs": {
+      "control_net_name": "openpose-sd1.5-1.1.safetensors"
+    },
+    "class_type": "ControlNetLoaderAdvanced",
+    "_meta": {
+      "title": "Load Advanced ControlNet Model 🛂🅐🅒🅝"
+    }
+  },
+  "47": {
+    "inputs": {
+      "text": "logo,text,low quality,sketches,watermark,signature,bad anatomy,worstquality,grayscale,monochrome,lowres,bad proportions,out of focus,username,cropped,EasyNegative,extra limb,disconnected limbs,floating limbs,malformed limbs,missing limb,extra arms,mutated hands,poorly drawn hands,malformed hands,mutated hands and fingers,bad hands,missing fingers,fused fingers,too many fingers,extra legs,bad feet,poorly drawn face,disfigured,ugly,mutation,mutated,deformed,bad body,",
+      "clip": [
+        "68",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  },
+  "48": {
+    "inputs": {
+      "text": "DragonBall, Vegeta, supersaiya, (white background)",
+      "clip": [
+        "68",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  },
+  "49": {
+    "inputs": {
+      "seed": 1234,
+      "steps": 20,
+      "cfg": 2,
+      "sampler_name": "lcm",
+      "scheduler": "karras",
+      "denoise": 1,
+      "preview_method": "none",
+      "vae_decode": "true",
+      "model": [
+        "54",
+        0
+      ],
+      "positive": [
+        "45",
+        0
+      ],
+      "negative": [
+        "45",
+        1
+      ],
+      "latent_image": [
+        "70",
+        0
+      ],
+      "optional_vae": [
+        "69",
+        0
+      ]
+    },
+    "class_type": "KSampler (Efficient)",
+    "_meta": {
+      "title": "KSampler (Efficient)"
+    }
+  },
+  "52": {
+    "inputs": {
+      "directory": "poses",
+      "image_load_cap": 10,
+      "skip_first_images": 0,
+      "select_every_nth": 3
+    },
+    "class_type": "VHS_LoadImages",
+    "_meta": {
+      "title": "Load Images (Upload) 🎥🅥🅗🅢"
+    }
+  },
+  "54": {
+    "inputs": {
+      "model_name": "AnimateLCM_sd15_t2v.ckpt",
+      "beta_schedule": "autoselect",
+      "model": [
+        "68",
+        0
+      ]
+    },
+    "class_type": "ADE_AnimateDiffLoaderGen1",
+    "_meta": {
+      "title": "AnimateDiff Loader 🎭🅐🅓①"
+    }
+  },
+  "68": {
+    "inputs": {
+      "lora_name": "jump_V2.safetensors",
+      "strength_model": 1,
+      "strength_clip": 1,
+      "model": [
+        "11",
+        0
+      ],
+      "clip": [
+        "11",
+        1
+      ]
+    },
+    "class_type": "LoraLoader",
+    "_meta": {
+      "title": "Load LoRA"
+    }
+  },
+  "69": {
+    "inputs": {
+      "vae_name": "vae-ft-mse-840000-ema-pruned.ckpt"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "70": {
+    "inputs": {
+      "width": 512,
+      "height": 512,
+      "batch_size": [
+        "52",
+        2
+      ]
+    },
+    "class_type": "EmptyLatentImage",
+    "_meta": {
+      "title": "Empty Latent Image"
+    }
+  },
+  "92": {
+    "inputs": {
+      "frame_rate": 20,
+      "loop_count": 0,
+      "filename_prefix": "EasySpriteAnimation_DragonEspral",
+      "format": "image/webp",
+      "pingpong": false,
+      "save_output": true,
+      "images": [
+        "24",
+        0
+      ]
+    },
+    "class_type": "VHS_VideoCombine",
+    "_meta": {
+      "title": "Video Combine 🎥🅥🅗🅢"
+    }
+  },
+  "111": {
+    "inputs": {
+      "filename_prefix": "ComfyUI",
+      "images": [
+        "24",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Save Image"
+    }
+  }
+}
