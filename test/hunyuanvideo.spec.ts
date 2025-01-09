@@ -9,7 +9,7 @@ import {
 import txt2Video from "./workflows/hunyuanvideo-txt2video.json";
 
 const text2VideoOptions = {
-  webpFrames: 73,
+  webpFrames: 9,
   width: txt2Video["45"].inputs.width,
   height: txt2Video["45"].inputs.height,
 };
