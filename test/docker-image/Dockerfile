@@ -34,6 +34,7 @@ RUN comfy node registry-install comfyui-videohelpersuite
 RUN comfy node registry-install comfyui-animatediff-evolved
 RUN comfy node registry-install efficiency-nodes-comfyui
 RUN comfy node registry-install comfyui-advanced-controlnet
+RUN comfy node registry-install comfyui-cogvideoxwrapper
 
 COPY poses ${INPUT_DIR}/poses
 ENV STARTUP_CHECK_MAX_TRIES=100

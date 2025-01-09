@@ -1,0 +1,137 @@
+{
+  "11": {
+    "inputs": {
+      "enable_vae_tiling": true,
+      "tile_sample_min_height": 240,
+      "tile_sample_min_width": 360,
+      "tile_overlap_factor_height": 0.2,
+      "tile_overlap_factor_width": 0.2,
+      "auto_tile_size": true,
+      "vae": [
+        "36",
+        1
+      ],
+      "samples": [
+        "35",
+        0
+      ]
+    },
+    "class_type": "CogVideoDecode",
+    "_meta": {
+      "title": "CogVideo Decode"
+    }
+  },
+  "20": {
+    "inputs": {
+      "clip_name": "t5xxl_fp8_e4m3fn.safetensors",
+      "type": "sd3"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Load CLIP"
+    }
+  },
+  "30": {
+    "inputs": {
+      "prompt": "A golden retriever, sporting sleek black sunglasses, with its lengthy fur flowing in the breeze, sprints playfully across a rooftop terrace, recently refreshed by a light rain. The scene unfolds from a distance, the dog's energetic bounds growing larger as it approaches the camera, its tail wagging with unrestrained joy, while droplets of water glisten on the concrete behind it. The overcast sky provides a dramatic backdrop, emphasizing the vibrant golden coat of the canine as it dashes towards the viewer.\n\n",
+      "strength": 1,
+      "force_offload": false,
+      "clip": [
+        "20",
+        0
+      ]
+    },
+    "class_type": "CogVideoTextEncode",
+    "_meta": {
+      "title": "CogVideo TextEncode"
+    }
+  },
+  "31": {
+    "inputs": {
+      "prompt": "",
+      "strength": 1,
+      "force_offload": true,
+      "clip": [
+        "30",
+        1
+      ]
+    },
+    "class_type": "CogVideoTextEncode",
+    "_meta": {
+      "title": "CogVideo TextEncode"
+    }
+  },
+  "33": {
+    "inputs": {
+      "frame_rate": 8,
+      "loop_count": 0,
+      "filename_prefix": "CogVideoX5B-T2V",
+      "format": "image/webp",
+      "pingpong": false,
+      "save_output": true,
+      "images": [
+        "11",
+        0
+      ]
+    },
+    "class_type": "VHS_VideoCombine",
+    "_meta": {
+      "title": "Video Combine 🎥🅥🅗🅢"
+    }
+  },
+  "35": {
+    "inputs": {
+      "num_frames": 6,
+      "steps": 50,
+      "cfg": 6,
+      "seed": 0,
+      "scheduler": "CogVideoXDDIM",
+      "denoise_strength": 1,
+      "model": [
+        "36",
+        0
+      ],
+      "positive": [
+        "30",
+        0
+      ],
+      "negative": [
+        "31",
+        0
+      ],
+      "samples": [
+        "37",
+        0
+      ]
+    },
+    "class_type": "CogVideoSampler",
+    "_meta": {
+      "title": "CogVideo Sampler"
+    }
+  },
+  "36": {
+    "inputs": {
+      "model": "THUDM/CogVideoX-2b",
+      "precision": "bf16",
+      "quantization": "fp8_e4m3fn",
+      "enable_sequential_cpu_offload": true,
+      "attention_mode": "sdpa",
+      "load_device": "main_device"
+    },
+    "class_type": "DownloadAndLoadCogVideoModel",
+    "_meta": {
+      "title": "(Down)load CogVideo Model"
+    }
+  },
+  "37": {
+    "inputs": {
+      "width": 720,
+      "height": 480,
+      "batch_size": 1
+    },
+    "class_type": "EmptyLatentImage",
+    "_meta": {
+      "title": "Empty Latent Image"
+    }
+  }
+}
