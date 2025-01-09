@@ -385,7 +385,23 @@ ComfyUI is a powerful tool with MANY options, and it's likely that not all of th
 
 Automated tests for this project require model files to be present in the `./test/docker-image/models` directory. The following models are required:
 
-**TODO: Add models**
+- `AnimateLCM_sd15_t2v.ckpt` - https://huggingface.co/wangfuyun/AnimateLCM/resolve/b78bbce/AnimateLCM_sd15_t2v.ckpt
+- `dreamshaper_8.safetensors` - https://civitai.com/models/4384/dreamshaper
+- `flux1-schnell-fp8.safetensors` - https://huggingface.co/Comfy-Org/flux1-schnell
+- `ltx-video-2b-v0.9.1.safetensors` - https://huggingface.co/Lightricks/LTX-Video/blob/main/ltx-video-2b-v0.9.1.safetensors
+- `sd3.5_medium.safetensors` - https://huggingface.co/stabilityai/stable-diffusion-3.5-medium
+- `sd_xl_base_1.0.safetensors` - https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0
+- `sd_xl_refiner_1.0.safetensors` - https://huggingface.co/stabilityai/stable-diffusion-xl-refiner-1.0
+- `clip_g.safetensors` - https://huggingface.co/Comfy-Org/stable-diffusion-3.5-fp8/blob/main/text_encoders/clip_g.safetensors
+- `clip_l.safetensors` - https://huggingface.co/Comfy-Org/stable-diffusion-3.5-fp8/blob/main/text_encoders/clip_l.safetensors
+- `t5xxl_fp16.safetensors` - https://huggingface.co/comfyanonymous/flux_text_encoders/blob/main/t5xxl_fp16.safetensors
+- `t5xxl_fp8_e4m3fn.safetensors` - https://huggingface.co/Comfy-Org/stable-diffusion-3.5-fp8/blob/main/text_encoders/t5xxl_fp8_e4m3fn_scaled.safetensors
+- `openpose-sd1.5-1.1.safetensors` - https://huggingface.co/lllyasviel/control_v11p_sd15_openpose/resolve/main/diffusion_pytorch_model.fp16.safetensors
+- `hunyuan_video_t2v_720p_bf16.safetensors` - https://huggingface.co/Comfy-Org/HunyuanVideo_repackaged/tree/main/split_files/diffusion_models
+- `jump_V2.safetensors` - https://civitai.com/models/193225?modelVersionId=235847
+- `llava_llama3_fp8_scaled.safetensors` - https://huggingface.co/Comfy-Org/HunyuanVideo_repackaged/tree/main/split_files/text_encoders
+- `hunyuan_video_vae_bf16.safetensors` - https://huggingface.co/Comfy-Org/HunyuanVideo_repackaged/tree/main/split_files/vae
+- `vae-ft-mse-840000-ema-pruned.ckpt` - https://huggingface.co/stabilityai/sd-vae-ft-mse-original/blob/main/vae-ft-mse-840000-ema-pruned.ckpt
 
 They should be in the correct comfyui directory structure, like so:
 
@@ -405,8 +421,6 @@ They should be in the correct comfyui directory structure, like so:
 │   ├── clip_l.safetensors
 │   ├── t5xxl_fp16.safetensors
 │   └── t5xxl_fp8_e4m3fn.safetensors
-├── clip_vision
-│   ├── open_clip_pytorch_model.safetensors
 ├── controlnet
 │   ├── openpose-sd1.5-1.1.safetensors
 ├── diffusion_models
@@ -419,7 +433,6 @@ They should be in the correct comfyui directory structure, like so:
 ├── vae
 │   ├── hunyuan_video_vae_bf16.safetensors
 │   └── vae-ft-mse-840000-ema-pruned.ckpt
-└── vae_approx
 ```
 
 ### Running Tests
