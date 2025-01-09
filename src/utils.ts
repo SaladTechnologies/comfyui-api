@@ -8,7 +8,7 @@ import path from "path";
 import { randomUUID } from "crypto";
 import { ZodObject, ZodRawShape, ZodTypeAny, ZodDefault } from "zod";
 import sharp from "sharp";
-import { OutputConversionOptions } from "./types";
+import { ComfyPrompt, OutputConversionOptions } from "./types";
 
 const commandExecutor = new CommandExecutor();
 
@@ -112,17 +112,46 @@ export async function downloadImage(
 
 export async function processImage(
   imageInput: string,
-  log: FastifyBaseLogger
+  log: FastifyBaseLogger,
+  dirWithinInputDir?: string
 ): Promise<string> {
-  const localFilePath = path.join(config.inputDir, `${randomUUID()}.png`);
+  let localFilePath: string;
+  const ext = path.extname(imageInput).split("?")[0];
+  const localFileName = `${randomUUID()}${ext}`;
+  if (dirWithinInputDir) {
+    localFilePath = path.join(
+      config.inputDir,
+      dirWithinInputDir,
+      localFileName
+    );
+    // Create the directory if it doesn't exist
+    await fsPromises.mkdir(path.dirname(localFilePath), { recursive: true });
+  } else {
+    localFilePath = path.join(config.inputDir, localFileName);
+  }
   // If image is a url, download it
   if (imageInput.startsWith("http")) {
     await downloadImage(imageInput, localFilePath, log);
     return localFilePath;
+  }
+  // If image is already a local path, return it as an absolute path
+  else if (
+    imageInput.startsWith("/") ||
+    imageInput.startsWith("./") ||
+    imageInput.startsWith("../")
+  ) {
+    return path.resolve(imageInput);
   } else {
     // Assume it's a base64 encoded image
     try {
       const base64Data = Buffer.from(imageInput, "base64");
+      const image = sharp(base64Data);
+      const metadata = await image.metadata();
+      if (!metadata.format) {
+        throw new Error("Failed to parse image metadata");
+      }
+      localFilePath = `${localFilePath}.${metadata.format}`;
+      log.debug(`Saving decoded image to ${localFilePath}`);
       await fsPromises.writeFile(localFilePath, base64Data);
       return localFilePath;
     } catch (e: any) {
@@ -235,4 +264,93 @@ export async function convertImageBuffer(
   }
 
   return image.toBuffer();
+}
+
+export async function queuePrompt(prompt: ComfyPrompt): Promise<string> {
+  const resp = await fetch(`${config.comfyURL}/prompt`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ prompt }),
+  });
+  if (!resp.ok) {
+    throw new Error(`Failed to queue prompt: ${await resp.text()}`);
+  }
+  const { prompt_id } = await resp.json();
+  return prompt_id;
+}
+
+export async function getPromptOutputs(
+  promptId: string,
+  log: FastifyBaseLogger
+): Promise<Record<string, Buffer> | null> {
+  const resp = await fetch(`${config.comfyURL}/history/${promptId}`);
+  if (!resp.ok) {
+    throw new Error(`Failed to get prompt outputs: ${await resp.text()}`);
+  }
+  const body = await resp.json();
+  const allOutputs: Record<string, Buffer> = {};
+  const fileLoadPromises: Promise<void>[] = [];
+  if (!body[promptId]) {
+    return null;
+  }
+  const { status, outputs } = body[promptId];
+  if (status.completed) {
+    for (const nodeId in outputs) {
+      const node = outputs[nodeId];
+      for (const outputType in node) {
+        for (let outputFile of node[outputType]) {
+          const filename = outputFile.filename;
+          if (!filename) {
+            /**
+             * Some nodes have fields in the outputs that are not actual files.
+             * For example, the SaveAnimatedWebP node has a field called "animated"
+             * that only container boolean values mapping to the files present in
+             * .images. We can safely ignore these.
+             */
+            continue;
+          }
+          const filepath = path.join(config.outputDir, filename);
+          fileLoadPromises.push(
+            fsPromises
+              .readFile(filepath)
+              .then((data) => {
+                allOutputs[filename] = data;
+              })
+              .catch((e: any) => {
+                /**
+                 * The most likely reason for this is a node that has an optonal
+                 * output. If the node doesn't produce that output, the file won't
+                 * exist.
+                 */
+                log.warn(`Failed to read file ${filepath}: ${e.message}`);
+              })
+          );
+        }
+      }
+    }
+  } else if (status.status_str === "error") {
+    throw new Error("Prompt execution failed");
+  } else {
+    console.log(JSON.stringify(status, null, 2));
+    throw new Error("Prompt is not completed");
+  }
+  await Promise.all(fileLoadPromises);
+  return allOutputs;
+}
+
+export async function runPromptAndGetOutputs(
+  prompt: ComfyPrompt,
+  log: FastifyBaseLogger
+): Promise<Record<string, Buffer>> {
+  const promptId = await queuePrompt(prompt);
+  log.info(`Prompt queued with ID: ${promptId}`);
+  while (true) {
+    const outputs = await getPromptOutputs(promptId, log);
+    if (outputs) {
+      return outputs;
+    }
+    await sleep(50);
+  }
 }

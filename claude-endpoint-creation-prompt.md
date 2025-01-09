@@ -28,7 +28,7 @@ type ComfyNode = z.infer<typeof ComfyNodeSchema>;
 
 interface Workflow {
   RequestSchema: z.ZodObject<any, any>;
-  generateWorkflow: (input: any) => Record<string, ComfyNode>;
+  generateWorkflow: (input: any) => ComfyPrompt;
   description?: string;
   summary?: string;
 }
@@ -92,7 +92,7 @@ const RequestSchema = z.object({
 
 type InputType = z.infer<typeof RequestSchema>;
 
-function generateWorkflow(input: InputType): Record<string, ComfyNode> {
+function generateWorkflow(input: InputType): ComfyPrompt {
   return {
     "6": {
       inputs: {

@@ -1,6 +1,7 @@
 import assert from "node:assert";
 import fs from "node:fs";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import { execSync } from "child_process";
 import { z } from "zod";
 const {
@@ -20,15 +21,19 @@ const {
   WORKFLOW_DIR = "/workflows",
   MARKDOWN_SCHEMA_DESCRIPTIONS = "true",
   BASE = "ai-dock",
+  MAX_BODY_SIZE_MB = "100",
 } = process.env;
 
 fs.mkdirSync(WORKFLOW_DIR, { recursive: true });
 
 const comfyURL = `http://${DIRECT_ADDRESS}:${COMFYUI_PORT_HOST}`;
+const wsClientId = randomUUID();
+const comfyWSURL = `ws://${DIRECT_ADDRESS}:${COMFYUI_PORT_HOST}/ws?clientId=${wsClientId}`;
 const selfURL = `http://localhost:${PORT}`;
 const port = parseInt(PORT, 10);
 const startupCheckInterval = parseInt(STARTUP_CHECK_INTERVAL_S, 10) * 1000;
 const startupCheckMaxTries = parseInt(STARTUP_CHECK_MAX_TRIES, 10);
+const maxBodySize = parseInt(MAX_BODY_SIZE_MB, 10) * 1024 * 1024;
 
 // type for {string: string}
 
@@ -122,9 +127,12 @@ const config = {
   wrapperHost: HOST,
   wrapperPort: port,
   selfURL,
+  maxBodySize,
   comfyHost: DIRECT_ADDRESS,
   comfyPort: COMFYUI_PORT_HOST,
   comfyURL,
+  wsClientId,
+  comfyWSURL,
   startupCheckInterval,
   startupCheckMaxTries,
   comfyDir,

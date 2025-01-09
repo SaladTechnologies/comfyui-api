@@ -1,0 +1,5 @@
+#! /usr/bin/bash
+
+comfy_model_dir=~/comfyui/models
+
+ln -s $comfy_model_dir $PWD
