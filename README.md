@@ -41,7 +41,7 @@ The server hosts swagger docs at `/docs`, which can be used to interact with the
 ## Features
 
 - **Full Power Of ComfyUI**: The server supports the full ComfyUI /prompt API, and can be used to execute any ComfyUI workflow.
-- **Verified Model/Workflow Support**: Stable Diffusion 1.5, Stable Diffusion XL, Stable Diffusion 3.5, Flux, AnimateDiff, LTX Video, Hunyuan Video. My assumption is more models are supported, but these are the ones I have verified.
+- **Verified Model/Workflow Support**: Stable Diffusion 1.5, Stable Diffusion XL, Stable Diffusion 3.5, Flux, AnimateDiff, LTX Video, Hunyuan Video. My assumption is more model types are supported, but these are the ones I have verified.
 - **Stateless API**: The server is stateless, and can be scaled horizontally to handle more requests.
 - **Swagger Docs**: The server hosts swagger docs at `/docs`, which can be used to interact with the API.
 - **"Synchronous" Support**: The server will return base64-encoded images directly in the response, if no webhook is provided.
@@ -79,6 +79,7 @@ The default values mostly assume this will run on top of an [ai-dock](https://gi
 | CMD                      | "init.sh"             | Command to launch ComfyUI                                                                                                                                                                              |
 | HOST                     | "::"                  | Wrapper host address                                                                                                                                                                                   |
 | PORT                     | "3000"                | Wrapper port number                                                                                                                                                                                    |
+| MAX_BODY_SIZE_MB         | "100"                 | Maximum body size in MB                                                                                                                                                                                |
 | DIRECT_ADDRESS           | "127.0.0.1"           | Direct address for ComfyUI                                                                                                                                                                             |
 | COMFYUI_PORT_HOST        | "8188"                | ComfyUI port number                                                                                                                                                                                    |
 | STARTUP_CHECK_INTERVAL_S | "1"                   | Interval in seconds between startup checks                                                                                                                                                             |

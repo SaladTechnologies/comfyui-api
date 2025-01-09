@@ -36,7 +36,7 @@ import { z } from "zod";
 import { randomUUID } from "crypto";
 
 const server = Fastify({
-  bodyLimit: 100 * 1024 * 1024, // 100MB
+  bodyLimit: config.maxBodySize,
   logger: true,
 });
 server.setValidatorCompiler(validatorCompiler);
@@ -59,7 +59,7 @@ server.register(fastifySwagger, {
   openapi: {
     openapi: "3.0.0",
     info: {
-      title: "Comfy Wrapper API",
+      title: "ComfyUI API",
       version,
     },
     servers: [
@@ -185,11 +185,14 @@ server.after(() => {
       const loadDirectoryOfImagesNodes = new Set<string>(["VHS_LoadImages"]);
       for (const nodeId in prompt) {
         const node = prompt[nodeId];
-        if (node.inputs.filename_prefix) {
+        if (
+          node.inputs.filename_prefix &&
+          typeof node.inputs.filename_prefix === "string"
+        ) {
           /**
            * If the node is for saving files, we want to set the filename_prefix
-           * to the id of the prompt. This is so that we can associate the output
-           * files with the prompt that generated them.
+           * to the id of the prompt. This ensures no collisions between prompts
+           * from different users.
            */
           node.inputs.filename_prefix = id;
           if (
@@ -199,7 +202,10 @@ server.after(() => {
             continue;
           }
           hasSaveImage = true;
-        } else if (loadImageNodes.has(node.class_type)) {
+        } else if (
+          loadImageNodes.has(node.class_type) &&
+          typeof node.inputs.image === "string"
+        ) {
           /**
            * If the node is for loading an image, the user will have provided
            * the image as base64 encoded data, or as a url. we need to download
@@ -214,40 +220,44 @@ server.after(() => {
               location: `prompt.${nodeId}.inputs.image`,
             });
           }
-        } else if (loadDirectoryOfImagesNodes.has(node.class_type)) {
+        } else if (
+          loadDirectoryOfImagesNodes.has(node.class_type) &&
+          Array.isArray(node.inputs.directory) &&
+          node.inputs.directory.every((x: any) => typeof x === "string")
+        ) {
           /**
            * If the node is for loading a directory of images, the user will have
            * provided the local directory as a string or an array of strings. If it's an
            * array, we need to download each image to a local file, and update the input
            * to be the local directory.
            */
-          if (Array.isArray(node.inputs.directory)) {
-            try {
-              /**
-               * We need to download each image to a local file.
-               */
-              app.log.debug(
-                `Downloading images to local directory for node ${nodeId}`
-              );
-              const processPromises: Promise<string>[] = [];
-              for (const b64 of node.inputs.directory) {
-                processPromises.push(processImage(b64, app.log, id));
-              }
-              await Promise.all(processPromises);
-              node.inputs.directory = id;
-              app.log.debug(
-                `Saved images to local directory for node ${nodeId}`
-              );
-            } catch (e: any) {
-              return reply.code(400).send({
-                error: e.message,
-                location: `prompt.${nodeId}.inputs.directory`,
-                message: "Failed to download images to local directory",
-              });
+          try {
+            /**
+             * We need to download each image to a local file.
+             */
+            app.log.debug(
+              `Downloading images to local directory for node ${nodeId}`
+            );
+            const processPromises: Promise<string>[] = [];
+            for (const b64 of node.inputs.directory) {
+              processPromises.push(processImage(b64, app.log, id));
             }
+            await Promise.all(processPromises);
+            node.inputs.directory = id;
+            app.log.debug(`Saved images to local directory for node ${nodeId}`);
+          } catch (e: any) {
+            return reply.code(400).send({
+              error: e.message,
+              location: `prompt.${nodeId}.inputs.directory`,
+              message: "Failed to download images to local directory",
+            });
           }
         }
       }
+
+      /**
+       * If the prompt has no outputs, there's no point in running it.
+       */
       if (!hasSaveImage) {
         return reply.code(400).send({
           error:
