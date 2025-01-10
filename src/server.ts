@@ -128,7 +128,7 @@ server.after(() => {
             version: z.literal(version),
             status: z.literal("ready"),
           }),
-          500: z.object({
+          503: z.object({
             version: z.literal(version),
             status: z.literal("not ready"),
           }),
@@ -139,7 +139,7 @@ server.after(() => {
       if (warm) {
         return reply.code(200).send({ version, status: "ready" });
       }
-      return reply.code(500).send({ version, status: "not ready" });
+      return reply.code(503).send({ version, status: "not ready" });
     }
   );
 
@@ -282,18 +282,22 @@ server.after(() => {
               let filename = originalFilename;
               let fileBuffer = outputs[filename];
               if (convert_output) {
-                fileBuffer = await convertImageBuffer(
-                  fileBuffer,
-                  convert_output
-                );
+                try {
+                  fileBuffer = await convertImageBuffer(
+                    fileBuffer,
+                    convert_output
+                  );
 
-                /**
-                 * If the user has provided an output format, we need to update the filename
-                 */
-                filename = originalFilename.replace(
-                  /\.[^/.]+$/,
-                  `.${convert_output.format}`
-                );
+                  /**
+                   * If the user has provided an output format, we need to update the filename
+                   */
+                  filename = originalFilename.replace(
+                    /\.[^/.]+$/,
+                    `.${convert_output.format}`
+                  );
+                } catch (e: any) {
+                  app.log.warn(`Failed to convert image: ${e.message}`);
+                }
               }
               const base64File = fileBuffer.toString("base64");
               app.log.info(`Sending image ${filename} to webhook: ${webhook}`);

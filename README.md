@@ -60,8 +60,8 @@ The server hosts swagger docs at `/docs`, which can be used to interact with the
 
 The server has two probes, `/health` and `/ready`.
 
-- The `/health` probe will return a 200 status code once the warmup workflow has complete.
-- The `/ready` probe will also return a 200 status code once the warmup workflow has completed, and the server is ready to accept requests.
+- The `/health` probe will return a 200 status code once the warmup workflow has completed. It will stay healthy as long as the server is running, even if ComfyUI crashes.
+- The `/ready` probe will also return a 200 status code once the warmup workflow has completed. It will return a 503 status code if ComfyUI is not running, such as in the case it has crashed, but is being automatically restarted.
 
 Here's a markdown guide to configuring the application based on the provided config.ts file:
 
