@@ -22,7 +22,7 @@ const {
   MARKDOWN_SCHEMA_DESCRIPTIONS = "true",
   BASE = "ai-dock",
   MAX_BODY_SIZE_MB = "100",
-  ALWAYS_RESTART_COMFYUI = "true",
+  ALWAYS_RESTART_COMFYUI = "false",
 } = process.env;
 
 fs.mkdirSync(WORKFLOW_DIR, { recursive: true });
@@ -35,7 +35,7 @@ const port = parseInt(PORT, 10);
 const startupCheckInterval = parseInt(STARTUP_CHECK_INTERVAL_S, 10) * 1000;
 const startupCheckMaxTries = parseInt(STARTUP_CHECK_MAX_TRIES, 10);
 const maxBodySize = parseInt(MAX_BODY_SIZE_MB, 10) * 1024 * 1024;
-const alwaysRestartComfyUI = ALWAYS_RESTART_COMFYUI === "true";
+const alwaysRestartComfyUI = ALWAYS_RESTART_COMFYUI.toLowerCase() === "true";
 
 // type for {string: string}
 

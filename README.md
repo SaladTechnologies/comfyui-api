@@ -91,6 +91,7 @@ The default values mostly assume this will run on top of an [ai-dock](https://gi
 | WARMUP_PROMPT_FILE       | (not set)             | Path to warmup prompt file (optional)                                                                                                                                                                  |
 | WORKFLOW_DIR             | "/workflows"          | Directory for workflow files                                                                                                                                                                           |
 | BASE                     | "ai-dock"             | There are different ways to load the comfyui environment for determining config values that vary with the base image. Currently only "ai-dock" has preset values. Set to empty string to not use this. |
+| ALWAYS_RESTART_COMFYUI   | "false"               | If set to "true", the ComfyUI process will be automatically restarted if it exits. Otherwise, the API server will exit when ComfyUI exits.                                                             |
 
 ### Configuration Details
 
