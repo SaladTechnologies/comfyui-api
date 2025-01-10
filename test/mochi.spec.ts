@@ -16,7 +16,7 @@ const text2VideoOptions = {
   height: txt2Video["21"].inputs.height,
 };
 
-describe.only("Mochi Video", () => {
+describe("Mochi Video", () => {
   before(async () => {
     await waitForServerToStart();
   });
