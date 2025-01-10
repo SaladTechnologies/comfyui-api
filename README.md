@@ -41,7 +41,7 @@ The server hosts swagger docs at `/docs`, which can be used to interact with the
 ## Features
 
 - **Full Power Of ComfyUI**: The server supports the full ComfyUI /prompt API, and can be used to execute any ComfyUI workflow.
-- **Verified Model/Workflow Support**: Stable Diffusion 1.5, Stable Diffusion XL, Stable Diffusion 3.5, Flux, AnimateDiff, LTX Video, Hunyuan Video. My assumption is more model types are supported, but these are the ones I have verified.
+- **Verified Model/Workflow Support**: Stable Diffusion 1.5, Stable Diffusion XL, Stable Diffusion 3.5, Flux, AnimateDiff, LTX Video, Hunyuan Video, CogVideoX, Mochi. My assumption is more model types are supported, but these are the ones I have verified.
 - **Stateless API**: The server is stateless, and can be scaled horizontally to handle more requests.
 - **Swagger Docs**: The server hosts swagger docs at `/docs`, which can be used to interact with the API.
 - **"Synchronous" Support**: The server will return base64-encoded images directly in the response, if no webhook is provided.
