@@ -55,6 +55,9 @@ for (const modelType in config.models) {
   modelResponse[modelType] = config.models[modelType].all;
 }
 
+let warm = false;
+let wasEverWarm = false;
+
 server.register(fastifySwagger, {
   openapi: {
     openapi: "3.0.0",
@@ -107,7 +110,7 @@ server.after(() => {
     },
     async (request, reply) => {
       // 200 if ready, 500 if not
-      if (warm) {
+      if (wasEverWarm) {
         return reply.code(200).send({ version, status: "healthy" });
       }
       return reply.code(500).send({ version, status: "not healthy" });
@@ -448,29 +451,43 @@ server.after(() => {
   walk(workflows);
 });
 
-let warm = false;
-
 process.on("SIGINT", async () => {
   server.log.info("Received SIGINT, interrupting process");
   shutdownComfyUI();
   process.exit(0);
 });
 
-export async function start() {
-  try {
-    const start = Date.now();
-    // Start the command
-    launchComfyUI();
-    await waitForComfyUIToStart(server.log);
-
+async function launchComfyUIAndAPIServerAndWaitForWarmup() {
+  warm = false;
+  launchComfyUI().catch((err: any) => {
+    server.log.error(err.message);
+    if (config.alwaysRestartComfyUI) {
+      server.log.info("Restarting ComfyUI");
+      launchComfyUIAndAPIServerAndWaitForWarmup();
+    } else {
+      server.log.info("Exiting");
+      process.exit(1);
+    }
+  });
+  await waitForComfyUIToStart(server.log);
+  if (!wasEverWarm) {
     await server.ready();
     server.swagger();
-
     // Start the server
     await server.listen({ port: config.wrapperPort, host: config.wrapperHost });
     server.log.info(`ComfyUI API ${version} started.`);
-    await warmupComfyUI();
-    warm = true;
+  }
+  await warmupComfyUI();
+  wasEverWarm = true;
+  warm = true;
+}
+
+export async function start() {
+  try {
+    const start = Date.now();
+    // Start ComfyUI
+    await launchComfyUIAndAPIServerAndWaitForWarmup();
+
     const warmupTime = Date.now() - start;
     server.log.info(`Warmup took ${warmupTime / 1000}s`);
   } catch (err: any) {
