@@ -353,14 +353,18 @@ server.after(() => {
           let filename = originalFilename;
 
           if (convert_output) {
-            fileBuffer = await convertImageBuffer(fileBuffer, convert_output);
-            /**
-             * If the user has provided an output format, we need to update the filename
-             */
-            filename = originalFilename.replace(
-              /\.[^/.]+$/,
-              `.${convert_output.format}`
-            );
+            try {
+              fileBuffer = await convertImageBuffer(fileBuffer, convert_output);
+              /**
+               * If the user has provided an output format, we need to update the filename
+               */
+              filename = originalFilename.replace(
+                /\.[^/.]+$/,
+                `.${convert_output.format}`
+              );
+            } catch (e: any) {
+              app.log.warn(`Failed to convert image: ${e.message}`);
+            }
           }
 
           const base64File = fileBuffer.toString("base64");
