@@ -37,8 +37,6 @@ const startupCheckMaxTries = parseInt(STARTUP_CHECK_MAX_TRIES, 10);
 const maxBodySize = parseInt(MAX_BODY_SIZE_MB, 10) * 1024 * 1024;
 const alwaysRestartComfyUI = ALWAYS_RESTART_COMFYUI.toLowerCase() === "true";
 
-// type for {string: string}
-
 const loadEnvCommand: Record<string, string> = {
   "ai-dock": `source /opt/ai-dock/etc/environment.sh \
   && source /opt/ai-dock/bin/venv-set.sh comfyui \
@@ -73,6 +71,11 @@ interface ComfyDescription {
   schedulers: string[];
 }
 
+/**
+ * This function uses python to import some of the ComfyUI code and get the
+ * description of the samplers and schedulers.
+ * @returns ComfyDescription
+ */
 function getComfyUIDescription(): ComfyDescription {
   const temptComfyFilePath = path.join(comfyDir, "temp_comfy_description.json");
   const pythonCode = `

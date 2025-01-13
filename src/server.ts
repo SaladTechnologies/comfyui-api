@@ -160,6 +160,15 @@ server.after(() => {
     }
   );
 
+  /**
+   * This route is the primary wrapper around the ComfyUI /prompt endpoint.
+   * It shares the same schema as the ComfyUI /prompt endpoint, but adds the
+   * ability to convert the output image to a different format, and to send
+   * the output image to a webhook, or return it in the response.
+   *
+   * If your application has it's own ID scheme, you can provide the ID in the
+   * request body. If you don't provide an ID, one will be generated for you.
+   */
   app.post<{
     Body: PromptRequest;
   }>(
@@ -409,6 +418,11 @@ server.after(() => {
           summary = node.summary;
         }
 
+        /**
+         * Workflow endpoints expose a simpler API to users, and then perform the transformation
+         * to a ComfyUI prompt behind the scenes. These endpoints behind-the-scenes just call the /prompt
+         * endpoint with the appropriate parameters.
+         */
         app.post<{
           Body: BodyType;
         }>(
