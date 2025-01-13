@@ -26,5 +26,7 @@ RUN comfy --skip-prompt set-default ${COMFY_HOME}
 ENV MODEL_DIR=${COMFY_HOME}/models
 ENV OUTPUT_DIR=${COMFY_HOME}/output
 ENV INPUT_DIR=${COMFY_HOME}/input
+ENV CMD="comfy --workspace ${COMFY_HOME} launch -- --listen *"
+ENV BASE=""
 
 CMD ["comfy", "--workspace", "${COMFY_HOME}", "launch", "--", "--listen", "*"]
