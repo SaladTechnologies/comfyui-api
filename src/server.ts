@@ -440,7 +440,7 @@ server.after(() => {
           },
           async (request, reply) => {
             const { id, input, webhook, convert_output } = request.body;
-            const prompt = node.generateWorkflow(input);
+            const prompt = await node.generateWorkflow(input);
 
             const resp = await fetch(
               `http://localhost:${config.wrapperPort}/prompt`,

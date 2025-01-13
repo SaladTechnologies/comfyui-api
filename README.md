@@ -157,10 +157,13 @@ const ComfyNodeSchema = z.object({
 });
 
 type ComfyNode = z.infer<typeof ComfyNodeSchema>;
+type ComfyPrompt = Record<string, ComfyNode>;
 
 interface Workflow {
   RequestSchema: z.ZodObject<any, any>;
-  generateWorkflow: (input: any) => ComfyPrompt;
+  generateWorkflow: (input: any) => Promise<ComfyPrompt> | ComfyPrompt;
+  description?: string;
+  summary?: string;
 }
 
 // This defaults the checkpoint to whatever was used in the warmup workflow
