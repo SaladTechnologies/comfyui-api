@@ -316,6 +316,7 @@ server.after(() => {
                   "Content-Type": "application/json",
                 },
                 body: JSON.stringify({
+                  event: "output.complete",
                   image: base64File,
                   id,
                   filename,
