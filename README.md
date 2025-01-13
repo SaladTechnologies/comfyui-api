@@ -403,6 +403,8 @@ Automated tests for this project require model files to be present in the `./tes
 - `llava_llama3_fp8_scaled.safetensors` - https://huggingface.co/Comfy-Org/HunyuanVideo_repackaged/tree/main/split_files/text_encoders
 - `hunyuan_video_vae_bf16.safetensors` - https://huggingface.co/Comfy-Org/HunyuanVideo_repackaged/tree/main/split_files/vae
 - `vae-ft-mse-840000-ema-pruned.ckpt` - https://huggingface.co/stabilityai/sd-vae-ft-mse-original/blob/main/vae-ft-mse-840000-ema-pruned.ckpt
+- `THUDM/CogVideoX-2b` - https://huggingface.co/THUDM/CogVideoX-2b
+- `mochi_preview_fp8_scaled.safetensors` - https://huggingface.co/Comfy-Org/mochi_preview_repackaged/blob/main/all_in_one/mochi_preview_fp8_scaled.safetensors
 
 They should be in the correct comfyui directory structure, like so:
 
@@ -414,6 +416,7 @@ They should be in the correct comfyui directory structure, like so:
 │   ├── dreamshaper_8.safetensors
 │   ├── flux1-schnell-fp8.safetensors
 │   ├── ltx-video-2b-v0.9.1.safetensors
+|   ├── mochi_preview_fp8_scaled.safetensors
 │   ├── sd3.5_medium.safetensors
 │   ├── sd_xl_base_1.0.safetensors
 │   └── sd_xl_refiner_1.0.safetensors
@@ -422,6 +425,8 @@ They should be in the correct comfyui directory structure, like so:
 │   ├── clip_l.safetensors
 │   ├── t5xxl_fp16.safetensors
 │   └── t5xxl_fp8_e4m3fn.safetensors
+├── CogVideo
+│   └── CogVideo2B/
 ├── controlnet
 │   ├── openpose-sd1.5-1.1.safetensors
 ├── diffusion_models
