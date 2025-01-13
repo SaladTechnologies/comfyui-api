@@ -41,8 +41,8 @@ jobs:
         id: pr-output
         run: |
           info=$(gh pr list --state merged --limit 1 --json title --json body)
-          echo "::set-output name=title:$(echo $info | jq -r '.title')"
-          echo "::set-output name=body:$(echo $info | jq -r '.body')"
+          echo "::set-output name=title::$(echo $info | jq -r '.title')"
+          echo "::set-output name=body::$(echo $info | jq -r '.body')"
 
       - name: Create a release
         uses: actions/create-release@v1
