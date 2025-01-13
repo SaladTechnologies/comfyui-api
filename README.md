@@ -26,6 +26,7 @@ Download the latest version from the release page, and copy it into your existin
 # Change this to the version you want to use
 ARG api_version=1.7.1
 
+
 # Download the comfyui-api binary, and make it executable
 ADD https://github.com/SaladTechnologies/comfyui-api/releases/download/${api_version}/comfyui-api .
 RUN chmod +x comfyui-api
@@ -405,6 +406,7 @@ Automated tests for this project require model files to be present in the `./tes
 - `vae-ft-mse-840000-ema-pruned.ckpt` - https://huggingface.co/stabilityai/sd-vae-ft-mse-original/blob/main/vae-ft-mse-840000-ema-pruned.ckpt
 - `THUDM/CogVideoX-2b` - https://huggingface.co/THUDM/CogVideoX-2b
 - `mochi_preview_fp8_scaled.safetensors` - https://huggingface.co/Comfy-Org/mochi_preview_repackaged/blob/main/all_in_one/mochi_preview_fp8_scaled.safetensors
+
 
 They should be in the correct comfyui directory structure, like so:
 
