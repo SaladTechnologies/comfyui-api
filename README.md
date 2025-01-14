@@ -21,7 +21,13 @@ A simple wrapper that facilitates using ComfyUI as a stateless API, either by re
 
 ## Download and Usage
 
-Download the latest version from the release page, and copy it into your existing ComfyUI dockerfile. Then, you can use it like this:
+Either use a [pre-built Docker image](#prebuilt-docker-images), or build your own.
+
+Download the latest version from the release page, and copy it into your existing ComfyUI dockerfile.
+You can find good base dockerfiles in the [docker](./docker) directory.
+There are also example dockerfiles for popular models in the [SaladCloud Recipes Repo](https://github.com/SaladTechnologies/salad-recipes/tree/master/src).
+
+If you have your own ComfyUI dockerfile, you can add the comfyui-api server to it like so:
 
 ```dockerfile
 # Change this to the version you want to use
