@@ -13,6 +13,7 @@ A simple wrapper that facilitates using ComfyUI as a stateless API, either by re
   - [Generating New Workflow Endpoints](#generating-new-workflow-endpoints)
     - [Automating with Claude 3.5 Sonnet](#automating-with-claude-35-sonnet)
   - [Prebuilt Docker Images](#prebuilt-docker-images)
+  - [Considerations for Running on SaladCloud](#considerations-for-running-on-saladcloud)
   - [Contributing](#contributing)
   - [Testing](#testing)
     - [Required Models](#required-models)
@@ -378,6 +379,11 @@ The tag pattern is `saladtechnologies/comfyui:comfy<comfy-version>-api<api-versi
 - `<comfy-version>` is the version of ComfyUI used
 - `<api-version>` is the version of the comfyui-api server
 - `<model|base>` is the model used. There is a `base` tag for an image that contains ComfyUI and the comfyui-api server, but no models. There are also tags for specific models, like `sdxl-with-refiner` or `flux-schnell-fp8`.
+
+## Considerations for Running on SaladCloud
+
+- **SaladCloud's Container Gateway has a 100s timeout.** It is possible to construct very long running workflows, such for video generation, with ComfyUI that would exceed this timeout. In this scenario, you will need to either use a webhook to receive the results, or integrate with SaladCloud's [Job Queues](https://docs.salad.com/products/sce/job-queues/job-queues#job-queues) to handle long-running workflows.
+- **SaladCloud's maximum container image size is 35GB(compressed).** The base [comfyui-api image](https://hub.docker.com/r/saladtechnologies/comfyui/tags) is around 3.25GB(compressed), so any models and extensions must fit in the remaining space.
 
 ## Contributing
 
