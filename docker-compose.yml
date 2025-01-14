@@ -1,6 +1,6 @@
 services:
   comfyui:
-    image: saladtechnologies/comfyui:comfy0.3.10-test-image
+    image: ghcr.io/saladtechnologies/comfyui-api:comfy0.3.10-test-image
     volumes:
       - ./bin:/app/bin
       - ./test/docker-image/models:/opt/ComfyUI/models

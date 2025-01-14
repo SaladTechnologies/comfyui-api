@@ -22,6 +22,7 @@ const {
   MARKDOWN_SCHEMA_DESCRIPTIONS = "true",
   BASE = "ai-dock",
   MAX_BODY_SIZE_MB = "100",
+  ALWAYS_RESTART_COMFYUI = "false",
 } = process.env;
 
 fs.mkdirSync(WORKFLOW_DIR, { recursive: true });
@@ -34,8 +35,7 @@ const port = parseInt(PORT, 10);
 const startupCheckInterval = parseInt(STARTUP_CHECK_INTERVAL_S, 10) * 1000;
 const startupCheckMaxTries = parseInt(STARTUP_CHECK_MAX_TRIES, 10);
 const maxBodySize = parseInt(MAX_BODY_SIZE_MB, 10) * 1024 * 1024;
-
-// type for {string: string}
+const alwaysRestartComfyUI = ALWAYS_RESTART_COMFYUI.toLowerCase() === "true";
 
 const loadEnvCommand: Record<string, string> = {
   "ai-dock": `source /opt/ai-dock/etc/environment.sh \
@@ -71,6 +71,11 @@ interface ComfyDescription {
   schedulers: string[];
 }
 
+/**
+ * This function uses python to import some of the ComfyUI code and get the
+ * description of the samplers and schedulers.
+ * @returns ComfyDescription
+ */
 function getComfyUIDescription(): ComfyDescription {
   const temptComfyFilePath = path.join(comfyDir, "temp_comfy_description.json");
   const pythonCode = `
@@ -131,6 +136,7 @@ const config = {
   comfyHost: DIRECT_ADDRESS,
   comfyPort: COMFYUI_PORT_HOST,
   comfyURL,
+  alwaysRestartComfyUI,
   wsClientId,
   comfyWSURL,
   startupCheckInterval,

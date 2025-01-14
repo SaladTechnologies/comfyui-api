@@ -13,6 +13,7 @@ A simple wrapper that facilitates using ComfyUI as a stateless API, either by re
   - [Generating New Workflow Endpoints](#generating-new-workflow-endpoints)
     - [Automating with Claude 3.5 Sonnet](#automating-with-claude-35-sonnet)
   - [Prebuilt Docker Images](#prebuilt-docker-images)
+  - [Considerations for Running on SaladCloud](#considerations-for-running-on-saladcloud)
   - [Contributing](#contributing)
   - [Testing](#testing)
     - [Required Models](#required-models)
@@ -20,11 +21,18 @@ A simple wrapper that facilitates using ComfyUI as a stateless API, either by re
 
 ## Download and Usage
 
-Download the latest version from the release page, and copy it into your existing ComfyUI dockerfile. Then, you can use it like this:
+Either use a [pre-built Docker image](#prebuilt-docker-images), or build your own.
+
+Download the latest version from the release page, and copy it into your existing ComfyUI dockerfile.
+You can find good base dockerfiles in the [docker](./docker) directory.
+There are also example dockerfiles for popular models in the [SaladCloud Recipes Repo](https://github.com/SaladTechnologies/salad-recipes/tree/master/src).
+
+If you have your own ComfyUI dockerfile, you can add the comfyui-api server to it like so:
 
 ```dockerfile
 # Change this to the version you want to use
-ARG api_version=1.7.0
+ARG api_version=1.7.1
+
 
 # Download the comfyui-api binary, and make it executable
 ADD https://github.com/SaladTechnologies/comfyui-api/releases/download/${api_version}/comfyui-api .
@@ -41,7 +49,7 @@ The server hosts swagger docs at `/docs`, which can be used to interact with the
 ## Features
 
 - **Full Power Of ComfyUI**: The server supports the full ComfyUI /prompt API, and can be used to execute any ComfyUI workflow.
-- **Verified Model/Workflow Support**: Stable Diffusion 1.5, Stable Diffusion XL, Stable Diffusion 3.5, Flux, AnimateDiff, LTX Video, Hunyuan Video. My assumption is more model types are supported, but these are the ones I have verified.
+- **Verified Model/Workflow Support**: Stable Diffusion 1.5, Stable Diffusion XL, Stable Diffusion 3.5, Flux, AnimateDiff, LTX Video, Hunyuan Video, CogVideoX, Mochi Video. My assumption is more model types are supported, but these are the ones I have verified.
 - **Stateless API**: The server is stateless, and can be scaled horizontally to handle more requests.
 - **Swagger Docs**: The server hosts swagger docs at `/docs`, which can be used to interact with the API.
 - **"Synchronous" Support**: The server will return base64-encoded images directly in the response, if no webhook is provided.
@@ -60,8 +68,8 @@ The server hosts swagger docs at `/docs`, which can be used to interact with the
 
 The server has two probes, `/health` and `/ready`.
 
-- The `/health` probe will return a 200 status code once the warmup workflow has complete.
-- The `/ready` probe will also return a 200 status code once the warmup workflow has completed, and the server is ready to accept requests.
+- The `/health` probe will return a 200 status code once the warmup workflow has completed. It will stay healthy as long as the server is running, even if ComfyUI crashes.
+- The `/ready` probe will also return a 200 status code once the warmup workflow has completed. It will return a 503 status code if ComfyUI is not running, such as in the case it has crashed, but is being automatically restarted.
 
 Here's a markdown guide to configuring the application based on the provided config.ts file:
 
@@ -91,6 +99,7 @@ The default values mostly assume this will run on top of an [ai-dock](https://gi
 | WARMUP_PROMPT_FILE       | (not set)             | Path to warmup prompt file (optional)                                                                                                                                                                  |
 | WORKFLOW_DIR             | "/workflows"          | Directory for workflow files                                                                                                                                                                           |
 | BASE                     | "ai-dock"             | There are different ways to load the comfyui environment for determining config values that vary with the base image. Currently only "ai-dock" has preset values. Set to empty string to not use this. |
+| ALWAYS_RESTART_COMFYUI   | "false"               | If set to "true", the ComfyUI process will be automatically restarted if it exits. Otherwise, the API server will exit when ComfyUI exits.                                                             |
 
 ### Configuration Details
 
@@ -155,10 +164,13 @@ const ComfyNodeSchema = z.object({
 });
 
 type ComfyNode = z.infer<typeof ComfyNodeSchema>;
+type ComfyPrompt = Record<string, ComfyNode>;
 
 interface Workflow {
   RequestSchema: z.ZodObject<any, any>;
-  generateWorkflow: (input: any) => ComfyPrompt;
+  generateWorkflow: (input: any) => Promise<ComfyPrompt> | ComfyPrompt;
+  description?: string;
+  summary?: string;
 }
 
 // This defaults the checkpoint to whatever was used in the warmup workflow
@@ -374,6 +386,11 @@ The tag pattern is `saladtechnologies/comfyui:comfy<comfy-version>-api<api-versi
 - `<api-version>` is the version of the comfyui-api server
 - `<model|base>` is the model used. There is a `base` tag for an image that contains ComfyUI and the comfyui-api server, but no models. There are also tags for specific models, like `sdxl-with-refiner` or `flux-schnell-fp8`.
 
+## Considerations for Running on SaladCloud
+
+- **SaladCloud's Container Gateway has a 100s timeout.** It is possible to construct very long running workflows, such for video generation, with ComfyUI that would exceed this timeout. In this scenario, you will need to either use a webhook to receive the results, or integrate with SaladCloud's [Job Queues](https://docs.salad.com/products/sce/job-queues/job-queues#job-queues) to handle long-running workflows.
+- **SaladCloud's maximum container image size is 35GB(compressed).** The base [comfyui-api image](https://hub.docker.com/r/saladtechnologies/comfyui/tags) is around 3.25GB(compressed), so any models and extensions must fit in the remaining space.
+
 ## Contributing
 
 Contributions are welcome! Please open an issue or a pull request if you have any suggestions or improvements.
@@ -402,6 +419,9 @@ Automated tests for this project require model files to be present in the `./tes
 - `llava_llama3_fp8_scaled.safetensors` - https://huggingface.co/Comfy-Org/HunyuanVideo_repackaged/tree/main/split_files/text_encoders
 - `hunyuan_video_vae_bf16.safetensors` - https://huggingface.co/Comfy-Org/HunyuanVideo_repackaged/tree/main/split_files/vae
 - `vae-ft-mse-840000-ema-pruned.ckpt` - https://huggingface.co/stabilityai/sd-vae-ft-mse-original/blob/main/vae-ft-mse-840000-ema-pruned.ckpt
+- `THUDM/CogVideoX-2b` - https://huggingface.co/THUDM/CogVideoX-2b
+- `mochi_preview_fp8_scaled.safetensors` - https://huggingface.co/Comfy-Org/mochi_preview_repackaged/blob/main/all_in_one/mochi_preview_fp8_scaled.safetensors
+
 
 They should be in the correct comfyui directory structure, like so:
 
@@ -413,6 +433,7 @@ They should be in the correct comfyui directory structure, like so:
 │   ├── dreamshaper_8.safetensors
 │   ├── flux1-schnell-fp8.safetensors
 │   ├── ltx-video-2b-v0.9.1.safetensors
+|   ├── mochi_preview_fp8_scaled.safetensors
 │   ├── sd3.5_medium.safetensors
 │   ├── sd_xl_base_1.0.safetensors
 │   └── sd_xl_refiner_1.0.safetensors
@@ -421,6 +442,8 @@ They should be in the correct comfyui directory structure, like so:
 │   ├── clip_l.safetensors
 │   ├── t5xxl_fp16.safetensors
 │   └── t5xxl_fp8_e4m3fn.safetensors
+├── CogVideo
+│   └── CogVideo2B/
 ├── controlnet
 │   ├── openpose-sd1.5-1.1.safetensors
 ├── diffusion_models

@@ -55,6 +55,9 @@ for (const modelType in config.models) {
   modelResponse[modelType] = config.models[modelType].all;
 }
 
+let warm = false;
+let wasEverWarm = false;
+
 server.register(fastifySwagger, {
   openapi: {
     openapi: "3.0.0",
@@ -107,7 +110,7 @@ server.after(() => {
     },
     async (request, reply) => {
       // 200 if ready, 500 if not
-      if (warm) {
+      if (wasEverWarm) {
         return reply.code(200).send({ version, status: "healthy" });
       }
       return reply.code(500).send({ version, status: "not healthy" });
@@ -125,7 +128,7 @@ server.after(() => {
             version: z.literal(version),
             status: z.literal("ready"),
           }),
-          500: z.object({
+          503: z.object({
             version: z.literal(version),
             status: z.literal("not ready"),
           }),
@@ -136,7 +139,7 @@ server.after(() => {
       if (warm) {
         return reply.code(200).send({ version, status: "ready" });
       }
-      return reply.code(500).send({ version, status: "not ready" });
+      return reply.code(503).send({ version, status: "not ready" });
     }
   );
 
@@ -157,6 +160,15 @@ server.after(() => {
     }
   );
 
+  /**
+   * This route is the primary wrapper around the ComfyUI /prompt endpoint.
+   * It shares the same schema as the ComfyUI /prompt endpoint, but adds the
+   * ability to convert the output image to a different format, and to send
+   * the output image to a webhook, or return it in the response.
+   *
+   * If your application has it's own ID scheme, you can provide the ID in the
+   * request body. If you don't provide an ID, one will be generated for you.
+   */
   app.post<{
     Body: PromptRequest;
   }>(
@@ -279,18 +291,22 @@ server.after(() => {
               let filename = originalFilename;
               let fileBuffer = outputs[filename];
               if (convert_output) {
-                fileBuffer = await convertImageBuffer(
-                  fileBuffer,
-                  convert_output
-                );
+                try {
+                  fileBuffer = await convertImageBuffer(
+                    fileBuffer,
+                    convert_output
+                  );
 
-                /**
-                 * If the user has provided an output format, we need to update the filename
-                 */
-                filename = originalFilename.replace(
-                  /\.[^/.]+$/,
-                  `.${convert_output.format}`
-                );
+                  /**
+                   * If the user has provided an output format, we need to update the filename
+                   */
+                  filename = originalFilename.replace(
+                    /\.[^/.]+$/,
+                    `.${convert_output.format}`
+                  );
+                } catch (e: any) {
+                  app.log.warn(`Failed to convert image: ${e.message}`);
+                }
               }
               const base64File = fileBuffer.toString("base64");
               app.log.info(`Sending image ${filename} to webhook: ${webhook}`);
@@ -300,6 +316,7 @@ server.after(() => {
                   "Content-Type": "application/json",
                 },
                 body: JSON.stringify({
+                  event: "output.complete",
                   image: base64File,
                   id,
                   filename,
@@ -346,14 +363,18 @@ server.after(() => {
           let filename = originalFilename;
 
           if (convert_output) {
-            fileBuffer = await convertImageBuffer(fileBuffer, convert_output);
-            /**
-             * If the user has provided an output format, we need to update the filename
-             */
-            filename = originalFilename.replace(
-              /\.[^/.]+$/,
-              `.${convert_output.format}`
-            );
+            try {
+              fileBuffer = await convertImageBuffer(fileBuffer, convert_output);
+              /**
+               * If the user has provided an output format, we need to update the filename
+               */
+              filename = originalFilename.replace(
+                /\.[^/.]+$/,
+                `.${convert_output.format}`
+              );
+            } catch (e: any) {
+              app.log.warn(`Failed to convert image: ${e.message}`);
+            }
           }
 
           const base64File = fileBuffer.toString("base64");
@@ -398,6 +419,11 @@ server.after(() => {
           summary = node.summary;
         }
 
+        /**
+         * Workflow endpoints expose a simpler API to users, and then perform the transformation
+         * to a ComfyUI prompt behind the scenes. These endpoints behind-the-scenes just call the /prompt
+         * endpoint with the appropriate parameters.
+         */
         app.post<{
           Body: BodyType;
         }>(
@@ -415,7 +441,7 @@ server.after(() => {
           },
           async (request, reply) => {
             const { id, input, webhook, convert_output } = request.body;
-            const prompt = node.generateWorkflow(input);
+            const prompt = await node.generateWorkflow(input);
 
             const resp = await fetch(
               `http://localhost:${config.wrapperPort}/prompt`,
@@ -448,29 +474,43 @@ server.after(() => {
   walk(workflows);
 });
 
-let warm = false;
-
 process.on("SIGINT", async () => {
   server.log.info("Received SIGINT, interrupting process");
   shutdownComfyUI();
   process.exit(0);
 });
 
-export async function start() {
-  try {
-    const start = Date.now();
-    // Start the command
-    launchComfyUI();
-    await waitForComfyUIToStart(server.log);
-
+async function launchComfyUIAndAPIServerAndWaitForWarmup() {
+  warm = false;
+  launchComfyUI().catch((err: any) => {
+    server.log.error(err.message);
+    if (config.alwaysRestartComfyUI) {
+      server.log.info("Restarting ComfyUI");
+      launchComfyUIAndAPIServerAndWaitForWarmup();
+    } else {
+      server.log.info("Exiting");
+      process.exit(1);
+    }
+  });
+  await waitForComfyUIToStart(server.log);
+  if (!wasEverWarm) {
     await server.ready();
     server.swagger();
-
     // Start the server
     await server.listen({ port: config.wrapperPort, host: config.wrapperHost });
     server.log.info(`ComfyUI API ${version} started.`);
-    await warmupComfyUI();
-    warm = true;
+  }
+  await warmupComfyUI();
+  wasEverWarm = true;
+  warm = true;
+}
+
+export async function start() {
+  try {
+    const start = Date.now();
+    // Start ComfyUI
+    await launchComfyUIAndAPIServerAndWaitForWarmup();
+
     const warmupTime = Date.now() - start;
     server.log.info(`Warmup took ${warmupTime / 1000}s`);
   } catch (err: any) {

@@ -1,0 +1,16 @@
+#! /usr/bin/bash
+
+comfy_version=${1:-0.3.10}
+torch_version=${2:-2.5.0}
+cuda_version=${3:-12.1}
+bases=("runtime" "devel")
+
+for base in "${bases[@]}"; do
+  docker build -t ghcr.io/saladtechnologies/comfyui-api:comfy$comfy_version-torch$torch_version-cuda$cuda_version-$base \
+    -f comfyui.dockerfile \
+    --build-arg comfy_version=$comfy_version \
+    --build-arg base=$base \
+    --build-arg pytorch_version=$torch_version \
+    --build-arg cuda_version=$cuda_version \
+    .
+done
