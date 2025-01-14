@@ -39,6 +39,8 @@ jobs:
 
       - name: Get the PR that was merged into main
         id: pr-output
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           info=$(gh pr list --state merged --limit 1 --json title --json body)
           echo "title=$(echo $info | jq -r '.title')" >> $GITHUB_OUTPUT

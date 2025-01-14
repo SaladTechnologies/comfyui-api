@@ -5,12 +5,10 @@ on:
     branches:
       - main
     paths-ignore:
-      - ".github/**"
       - "**.md"
       - "**.png"
       - ".gitignore"
       - "generate-workflow"
-      - "**.yml"
       - "test/**"
       - "example-workflows/**"
 
@@ -20,6 +18,18 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: "Only run if last commit was a code change"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git diff-tree --no-commit-id --name-only -r HEAD | sort > changed_files
+          if ! (grep -q "^src/" changed_files || grep -q "^\.github/workflows/pr-build\.yml$" changed_files); then
+            echo "No changes in src/ directory or .github/workflows/pr-build.yml"
+            gh run cancel ${{ github.run_id }}
+            gh run watch ${{ github.run_id }}
+          fi
+          
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
