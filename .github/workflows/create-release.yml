@@ -35,7 +35,7 @@ jobs:
 
       - name: Get version from package.json
         id: version
-        run: echo "version=$(jq -r .version package.json) >> $GITHUB_OUTPUT
+        run: echo "version=$(jq -r .version package.json)" >> $GITHUB_OUTPUT
 
       - name: Get the PR that was merged into main
         id: pr-output
