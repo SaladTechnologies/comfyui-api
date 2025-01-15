@@ -6,7 +6,7 @@ comfy_version=${1:-0.3.10}
 torch_version=${2:-2.5.0}
 cuda_version=${3:-12.1}
 
-current_api_version=$(cat package.json | jq -r '.version')
+current_api_version=$(cat ../package.json | jq -r '.version')
 api_version=${4:-$current_api_version}
 
 bases=("runtime" "devel")
