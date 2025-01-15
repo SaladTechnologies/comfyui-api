@@ -1,0 +1,13 @@
+#! /usr/bin/bash
+
+usage="Usage: $0 [comfy_version] [torch_version] [cuda_version]"
+
+comfy_version=${1:-0.3.10}
+torch_version=${2:-2.5.0}
+cuda_version=${3:-12.1}
+
+bases=("runtime" "devel")
+
+for base in "${bases[@]}"; do
+  docker push ghcr.io/saladtechnologies/comfyui-api:comfy$comfy_version-torch$torch_version-cuda$cuda_version-$base
+done

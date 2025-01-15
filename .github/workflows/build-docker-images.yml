@@ -1,0 +1,27 @@
+name: Build API Docker Images
+
+on:
+  release:
+    types:
+      - published
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to GitHub Container Registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Build Docker images
+        working-directory: ./docker
+        run: |
+          ./build-api-images
+
+      - name: Push Docker images
+        working-directory: ./docker
+        run: |
+          ./push-api-images
+          
