@@ -4,9 +4,10 @@ on:
   release:
     types:
       - published
+  workflow_dispatch: {}
 
 jobs:
-  build:
+  build-and-push:
     runs-on: ubuntu-latest
 
     steps:
