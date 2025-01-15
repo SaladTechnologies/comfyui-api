@@ -38,7 +38,7 @@ jobs:
         id: version
         run: echo "version=$(jq -r .version package.json)" >> "$GITHUB_OUTPUT"
 
-      - name: Get the PR that was merged into main
+      - name: Get the title and body from the last merged PR
         id: pr-output
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
