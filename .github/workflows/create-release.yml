@@ -35,16 +35,16 @@ jobs:
 
       - name: Get version from package.json
         id: version
-        run: echo "version=$(jq -r .version package.json)" >> $GITHUB_OUTPUT
+        run: echo "version=$(jq -r .version package.json)" >> "$GITHUB_OUTPUT"
 
       - name: Get the PR that was merged into main
         id: pr-output
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          info=$(gh pr list --state merged --limit 1 --json title --json body)
-          echo "title=$(echo $info | jq -r '.title')" >> $GITHUB_OUTPUT
-          echo "body=$(echo $info | jq -r '.body')" >> $GITHUB_OUTPUT
+          info=$(gh pr list --state merged --limit 1 --json title,body | jq -r '.[0]')
+          echo "title=$(echo $info | jq '.title')" >> "$GITHUB_OUTPUT"
+          echo "body=$(echo $info | jq '.body')" >> "$GITHUB_OUTPUT"
 
       - name: Create a release
         uses: actions/create-release@v1
@@ -62,5 +62,3 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release upload ${{ steps.version.outputs.version }} ./bin/comfyui-api#Linux_x64
-
-

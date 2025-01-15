@@ -64,13 +64,16 @@ export async function waitForComfyUIToStart(
 
 export async function warmupComfyUI(): Promise<void> {
   if (config.warmupPrompt) {
-    await fetch(`http://localhost:${config.wrapperPort}/prompt`, {
+    const resp = await fetch(`http://localhost:${config.wrapperPort}/prompt`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ prompt: config.warmupPrompt }),
     });
+    if (!resp.ok) {
+      throw new Error(`Failed to warmup Comfy UI: ${await resp.text()}`);
+    }
   }
 }
 

@@ -32,7 +32,11 @@ export class CommandExecutor {
         console.log(`Process exited with code ${code}, signal ${signal}`);
         this.process = null;
         if (code !== null) {
-          resolve(code);
+          if (code === 0) {
+            console.log("Command executed successfully");
+            return resolve(code);
+          }
+          reject(new Error(`Process exited with code ${code}`));
         } else {
           reject(new Error(`Process terminated due to signal: ${signal}`));
         }
