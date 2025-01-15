@@ -25,16 +25,22 @@ export class CommandExecutor {
 
       this.process.on("error", (err) => {
         console.error(`Failed to start subprocess: ${err.message}`);
-        reject(err);
+        return reject(err);
       });
 
       this.process.on("exit", (code, signal) => {
         console.log(`Process exited with code ${code}, signal ${signal}`);
         this.process = null;
         if (code !== null) {
-          resolve(code);
+          if (code === 0) {
+            console.log("Command executed successfully");
+            return resolve(code);
+          }
+          return reject(new Error(`Process exited with code ${code}`));
         } else {
-          reject(new Error(`Process terminated due to signal: ${signal}`));
+          return reject(
+            new Error(`Process terminated due to signal: ${signal}`)
+          );
         }
       });
     });

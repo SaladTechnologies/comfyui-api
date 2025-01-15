@@ -12,6 +12,8 @@ api_version=${4:-$current_api_version}
 bases=("runtime" "devel")
 
 for base in "${bases[@]}"; do
-  docker push ghcr.io/saladtechnologies/comfyui-api:comfy$comfy_version-torch$torch_version-cuda$cuda_version-$base
   docker push ghcr.io/saladtechnologies/comfyui-api:comfy$comfy_version-api$api_version-torch$torch_version-cuda$cuda_version-$base
 done
+
+docker tag ghcr.io/saladtechnologies/comfyui-api:comfy$comfy_version-api$api_version-torch$torch_version-cuda$cuda_version-runtime ghcr.io/saladtechnologies/comfyui-api:latest
+docker push ghcr.io/saladtechnologies/comfyui-api:latest

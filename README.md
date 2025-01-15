@@ -31,7 +31,7 @@ If you have your own ComfyUI dockerfile, you can add the comfyui-api server to i
 
 ```dockerfile
 # Change this to the version you want to use
-ARG api_version=1.7.1
+ARG api_version=1.7.2
 
 
 # Download the comfyui-api binary, and make it executable
@@ -388,7 +388,7 @@ The tag pattern is `saladtechnologies/comfyui:comfy<comfy-version>-api<api-versi
 
 ## Considerations for Running on SaladCloud
 
-- **SaladCloud's Container Gateway has a 100s timeout.** It is possible to construct very long running workflows, such for video generation, with ComfyUI that would exceed this timeout. In this scenario, you will need to either use a webhook to receive the results, or integrate with SaladCloud's [Job Queues](https://docs.salad.com/products/sce/job-queues/job-queues#job-queues) to handle long-running workflows.
+- **SaladCloud's Container Gateway has a 100s timeout.** It is possible to construct very long running ComfyUI workflows, such as for video generation, that would exceed this timeout. In this scenario, you will need to either use a webhook to receive the results, or integrate with SaladCloud's [Job Queues](https://docs.salad.com/products/sce/job-queues/job-queues#job-queues) to handle long-running workflows.
 - **SaladCloud's maximum container image size is 35GB(compressed).** The base [comfyui-api image](https://hub.docker.com/r/saladtechnologies/comfyui/tags) is around 3.25GB(compressed), so any models and extensions must fit in the remaining space.
 
 ## Contributing
