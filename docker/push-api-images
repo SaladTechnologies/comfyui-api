@@ -9,7 +9,7 @@ cuda_version=${3:-12.1}
 current_api_version=$(cat ../package.json | jq -r '.version')
 api_version=${4:-$current_api_version}
 
-bases=("runtime" "devel")
+bases=("devel" "runtime")
 
 for base in "${bases[@]}"; do
   docker push ghcr.io/saladtechnologies/comfyui-api:comfy$comfy_version-api$api_version-torch$torch_version-cuda$cuda_version-$base
