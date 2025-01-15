@@ -51,7 +51,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           {
             echo 'body<<EOF'
-            echo "echo $info | jq -r '.body'
+            echo $info | jq -r '.body'
             echo EOF
           } >> "$GITHUB_OUTPUT"
 
