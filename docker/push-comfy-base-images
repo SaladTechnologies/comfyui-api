@@ -11,3 +11,6 @@ bases=("runtime" "devel")
 for base in "${bases[@]}"; do
   docker push ghcr.io/saladtechnologies/comfyui-api:comfy$comfy_version-torch$torch_version-cuda$cuda_version-$base
 done
+
+docker tag ghcr.io/saladtechnologies/comfyui-api:comfy$comfy_version-torch$torch_version-cuda$cuda_version-runtime ghcr.io/saladtechnologies/comfyui-api:base
+docker push ghcr.io/saladtechnologies/comfyui-api:base
