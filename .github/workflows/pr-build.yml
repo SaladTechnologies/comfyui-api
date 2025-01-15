@@ -11,6 +11,7 @@ on:
       - "generate-workflow"
       - "test/**"
       - "example-workflows/**"
+      - "docker/**"
 
 jobs:
   build:
