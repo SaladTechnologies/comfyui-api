@@ -7,7 +7,11 @@ import path from "path";
 import { randomUUID } from "crypto";
 import { ZodObject, ZodRawShape, ZodTypeAny, ZodDefault } from "zod";
 import sharp from "sharp";
-import { OutputConversionOptions } from "./types";
+import {
+  isValidWebhookHandlerName,
+  OutputConversionOptions,
+  WebhookHandlers,
+} from "./types";
 
 export async function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -39,7 +43,7 @@ export async function downloadImage(
     await new Promise((resolve, reject) => {
       Readable.fromWeb(body as any)
         .pipe(fileStream)
-        .on("finish", resolve)
+        .on("finish", () => resolve)
         .on("error", reject);
     });
 
@@ -203,4 +207,61 @@ export async function convertImageBuffer(
   }
 
   return image.toBuffer();
+}
+
+export async function sendSystemWebhook(
+  eventName: string,
+  data: any,
+  log: FastifyBaseLogger
+): Promise<void> {
+  const metadata: Record<string, string> = { ...config.systemMetaData };
+  if (config.saladContainerGroupId) {
+    metadata["salad_container_group_id"] = config.saladContainerGroupId;
+  }
+  if (config.saladMachineId) {
+    metadata["salad_machine_id"] = config.saladMachineId;
+  }
+  if (config.systemWebhook) {
+    try {
+      const response = await fetch(config.systemWebhook, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ event: eventName, data, metadata }),
+      });
+
+      if (!response.ok) {
+        log.error(`Failed to send system webhook: ${await response.text()}`);
+      }
+    } catch (error) {
+      log.error("Error sending system webhook:", error);
+    }
+  }
+}
+
+function snakeCaseToCamelCase(str: string) {
+  return str.replace(/([-_]\w)/g, (g) => g[1].toUpperCase());
+}
+
+export function getConfiguredWebhookHandlers(
+  log: FastifyBaseLogger
+): WebhookHandlers {
+  const handlers: Record<string, (d: any) => void> = {};
+
+  if (config.systemWebhook) {
+    const systemWebhookEvents = config.systemWebhookEvents;
+    for (const eventName of systemWebhookEvents) {
+      const handlerName = `on${snakeCaseToCamelCase(eventName)}`;
+      if (!isValidWebhookHandlerName(handlerName)) {
+        log.error(`Invalid webhook handler name: ${handlerName}`);
+        continue;
+      }
+      handlers[handlerName] = (data: any) => {
+        sendSystemWebhook(`comfy.${eventName}`, data, log);
+      };
+    }
+  }
+
+  return handlers as WebhookHandlers;
 }

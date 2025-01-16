@@ -2,7 +2,20 @@ import { sleep } from "./utils";
 import config from "./config";
 import { CommandExecutor } from "./commands";
 import { FastifyBaseLogger } from "fastify";
-import { ComfyPrompt } from "./types";
+import {
+  ComfyPrompt,
+  ComfyWSMessage,
+  isStatusMessage,
+  isProgressMessage,
+  isExecutionStartMessage,
+  isExecutionCachedMessage,
+  isExecutedMessage,
+  isExecutionSuccessMessage,
+  isExecutingMessage,
+  isExecutionInterruptedMessage,
+  isExecutionErrorMessage,
+  WebhookHandlers,
+} from "./types";
 import path from "path";
 import fsPromises from "fs/promises";
 import { Message, client as WebSocketClient } from "websocket";
@@ -76,7 +89,7 @@ export async function queuePrompt(prompt: ComfyPrompt): Promise<string> {
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ prompt }),
+    body: JSON.stringify({ prompt, client_id: config.wsClientId }),
   });
   if (!resp.ok) {
     throw new Error(`Failed to queue prompt: ${await resp.text()}`);
@@ -144,12 +157,16 @@ export async function getPromptOutputs(
   return allOutputs;
 }
 
+export const comfyIDToApiID: Record<string, string> = {};
+
 export async function runPromptAndGetOutputs(
+  id: string,
   prompt: ComfyPrompt,
   log: FastifyBaseLogger
 ): Promise<Record<string, Buffer>> {
   const promptId = await queuePrompt(prompt);
-  log.info(`Prompt queued with ID: ${promptId}`);
+  comfyIDToApiID[promptId] = id;
+  log.info(`Prompt ${id} queued as comfy prompt id: ${promptId}`);
   while (true) {
     const outputs = await getPromptOutputs(promptId, log);
     if (outputs) {
@@ -159,16 +176,67 @@ export async function runPromptAndGetOutputs(
   }
 }
 
-export function getComfyUIWebsocketStream(
-  onMessage: (msg: Message) => Promise<void>,
-  log: FastifyBaseLogger
+export function connectToComfyUIWebsocketStream(
+  hooks: WebhookHandlers,
+  log: FastifyBaseLogger,
+  useApiIDs: boolean = true
 ): Promise<void> {
-  const client = new WebSocketClient();
-  client.connect(config.comfyWSURL);
   return new Promise((resolve, reject) => {
+    const client = new WebSocketClient();
+    client.connect(config.comfyWSURL);
     client.on("connect", (connection) => {
       log.info("Connected to Comfy UI websocket");
-      connection.on("message", onMessage);
+      connection.on("message", (data) => {
+        if (hooks.onMessage) {
+          hooks.onMessage(data);
+        }
+        if (data.type === "utf8") {
+          const message = JSON.parse(data.utf8Data) as ComfyWSMessage;
+          if (
+            useApiIDs &&
+            message.data.prompt_id &&
+            comfyIDToApiID[message.data.prompt_id]
+          ) {
+            message.data.prompt_id = comfyIDToApiID[message.data.prompt_id];
+          }
+          if (isStatusMessage(message) && hooks.onStatus) {
+            hooks.onStatus(message);
+          } else if (isProgressMessage(message) && hooks.onProgress) {
+            hooks.onProgress(message);
+          } else if (
+            isExecutionStartMessage(message) &&
+            hooks.onExecutionStart
+          ) {
+            hooks.onExecutionStart(message);
+          } else if (
+            isExecutionCachedMessage(message) &&
+            hooks.onExecutionCached
+          ) {
+            hooks.onExecutionCached(message);
+          } else if (isExecutingMessage(message) && hooks.onExecuting) {
+            hooks.onExecuting(message);
+          } else if (isExecutedMessage(message) && hooks.onExecuted) {
+            hooks.onExecuted(message);
+          } else if (
+            isExecutionSuccessMessage(message) &&
+            hooks.onExecutionSuccess
+          ) {
+            hooks.onExecutionSuccess(message);
+          } else if (
+            isExecutionInterruptedMessage(message) &&
+            hooks.onExecutionInterrupted
+          ) {
+            hooks.onExecutionInterrupted(message);
+          } else if (
+            isExecutionErrorMessage(message) &&
+            hooks.onExecutionError
+          ) {
+            hooks.onExecutionError(message);
+          }
+        } else {
+          log.info(`Received ${data.type} message`);
+        }
+      });
       resolve();
     });
     client.on("connectFailed", (error) => {

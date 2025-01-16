@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { randomUUID } from "crypto";
+import { Message } from "websocket";
 
 export const ComfyNodeSchema = z.object({
   inputs: z.any(),
@@ -190,3 +191,211 @@ export const WorkflowResponseSchema = z.object({
   convert_output: OutputConversionOptionsSchema.optional(),
   status: z.enum(["ok"]).optional(),
 });
+
+export interface ComfyWSMessage {
+  type:
+    | "status"
+    | "progress"
+    | "executing"
+    | "execution_start"
+    | "execution_cached"
+    | "executed"
+    | "execution_success"
+    | "execution_interrupted"
+    | "execution_error";
+  data: any;
+  sid: string | null;
+}
+
+export interface ComfyWSStatusMessage extends ComfyWSMessage {
+  type: "status";
+  data: {
+    status: {
+      exec_info: {
+        queue_remaining: number;
+      };
+    };
+  };
+}
+
+export interface ComfyWSProgressMessage extends ComfyWSMessage {
+  type: "progress";
+  data: {
+    value: number;
+    max: number;
+    prompt_id: string;
+    node: string | null;
+  };
+}
+
+export interface ComfyWSExecutingMessage extends ComfyWSMessage {
+  type: "executing";
+  data: {
+    node: string | null;
+    display_node: string;
+    prompt_id: string;
+  };
+}
+
+export interface ComfyWSExecutionStartMessage extends ComfyWSMessage {
+  type: "execution_start";
+  data: {
+    prompt_id: string;
+    timestamp: number;
+  };
+}
+
+export interface ComfyWSExecutionCachedMessage extends ComfyWSMessage {
+  type: "execution_cached";
+  data: {
+    nodes: string[];
+    prompt_id: string;
+    timestamp: number;
+  };
+}
+
+export interface ComfyWSExecutedMessage extends ComfyWSMessage {
+  type: "executed";
+  data: {
+    node: string;
+    display_node: string;
+    output: any;
+    prompt_id: string;
+  };
+}
+
+export interface ComfyWSExecutionSuccessMessage extends ComfyWSMessage {
+  type: "execution_success";
+  data: {
+    prompt_id: string;
+    timestamp: number;
+  };
+}
+
+export interface ComfyWSExecutionInterruptedMessage extends ComfyWSMessage {
+  type: "execution_interrupted";
+  data: {
+    prompt_id: string;
+    node_id: string;
+    node_type: string;
+    executed: any[];
+  };
+}
+
+export interface ComfyWSExecutionErrorMessage extends ComfyWSMessage {
+  type: "execution_error";
+  data: {
+    prompt_id: string;
+    node_id: string;
+    node_type: string;
+    executed: any[];
+    exception_message: string;
+    exception_type: string;
+    traceback: string;
+    current_inputs: any;
+    current_outputs: any[];
+  };
+}
+
+export function isStatusMessage(
+  msg: ComfyWSMessage
+): msg is ComfyWSStatusMessage {
+  return msg.type === "status";
+}
+
+export function isProgressMessage(
+  msg: ComfyWSMessage
+): msg is ComfyWSProgressMessage {
+  return msg.type === "progress";
+}
+
+export function isExecutingMessage(
+  msg: ComfyWSMessage
+): msg is ComfyWSExecutingMessage {
+  return msg.type === "executing";
+}
+
+export function isExecutionStartMessage(
+  msg: ComfyWSMessage
+): msg is ComfyWSExecutionStartMessage {
+  return msg.type === "execution_start";
+}
+
+export function isExecutionCachedMessage(
+  msg: ComfyWSMessage
+): msg is ComfyWSExecutionCachedMessage {
+  return msg.type === "execution_cached";
+}
+
+export function isExecutedMessage(
+  msg: ComfyWSMessage
+): msg is ComfyWSExecutedMessage {
+  return msg.type === "executed";
+}
+
+export function isExecutionSuccessMessage(
+  msg: ComfyWSMessage
+): msg is ComfyWSExecutionSuccessMessage {
+  return msg.type === "execution_success";
+}
+
+export function isExecutionInterruptedMessage(
+  msg: ComfyWSMessage
+): msg is ComfyWSExecutionInterruptedMessage {
+  return msg.type === "execution_interrupted";
+}
+
+export function isExecutionErrorMessage(
+  msg: ComfyWSMessage
+): msg is ComfyWSExecutionErrorMessage {
+  return msg.type === "execution_error";
+}
+
+export type WebhookHandlers = {
+  onMessage?: (msg: Message) => Promise<void> | void;
+  onStatus?: (data: ComfyWSStatusMessage) => Promise<void> | void;
+  onProgress?: (data: ComfyWSProgressMessage) => Promise<void> | void;
+  onExecuting?: (data: ComfyWSExecutingMessage) => Promise<void> | void;
+  onExecutionStart?: (
+    data: ComfyWSExecutionStartMessage
+  ) => Promise<void> | void;
+  onExecutionCached?: (
+    data: ComfyWSExecutionCachedMessage
+  ) => Promise<void> | void;
+  onExecuted?: (data: ComfyWSExecutedMessage) => Promise<void> | void;
+  onExecutionSuccess?: (data: ComfyWSExecutionSuccessMessage) => Promise<void>;
+  onExecutionError?: (
+    data: ComfyWSExecutionErrorMessage
+  ) => Promise<void> | void;
+  onExecutionInterrupted?: (
+    data: ComfyWSExecutionInterruptedMessage
+  ) => Promise<void> | void;
+};
+
+export const SystemWebhookEvents = [
+  "message",
+  "status",
+  "progress",
+  "executing",
+  "execution_start",
+  "execution_cached",
+  "executed",
+  "execution_success",
+  "execution_interrupted",
+  "execution_error",
+] as const;
+
+type Required<T> = {
+  [P in keyof T]-?: T[P];
+};
+
+type ValidWebhookHandlerName = keyof WebhookHandlers;
+
+const handler: Required<WebhookHandlers> = {} as Required<WebhookHandlers>;
+const webhookHandlerKeys = Object.keys(handler) as ValidWebhookHandlerName[];
+
+export function isValidWebhookHandlerName(
+  key: string
+): key is ValidWebhookHandlerName {
+  return webhookHandlerKeys.includes(key as ValidWebhookHandlerName);
+}

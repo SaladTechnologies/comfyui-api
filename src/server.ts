@@ -11,14 +11,19 @@ import fsPromises from "fs/promises";
 import path from "path";
 import { version } from "../package.json";
 import config from "./config";
-import { processImage, zodToMarkdownTable, convertImageBuffer } from "./utils";
+import {
+  processImage,
+  zodToMarkdownTable,
+  convertImageBuffer,
+  getConfiguredWebhookHandlers,
+} from "./utils";
 import {
   warmupComfyUI,
   waitForComfyUIToStart,
   launchComfyUI,
   shutdownComfyUI,
   runPromptAndGetOutputs,
-  getComfyUIWebsocketStream,
+  connectToComfyUIWebsocketStream,
 } from "./comfy";
 import {
   PromptRequestSchema,
@@ -33,7 +38,6 @@ import {
 import workflows from "./workflows";
 import { z } from "zod";
 import { randomUUID } from "crypto";
-import { Message } from "websocket";
 
 const server = Fastify({
   bodyLimit: config.maxBodySize,
@@ -57,6 +61,7 @@ for (const modelType in config.models) {
 
 let warm = false;
 let wasEverWarm = false;
+let queueDepth = 0;
 
 server.register(fastifySwagger, {
   openapi: {
@@ -282,7 +287,7 @@ server.after(() => {
         /**
          * Send the prompt to ComfyUI, and return a 202 response to the user.
          */
-        runPromptAndGetOutputs(prompt, app.log)
+        runPromptAndGetOutputs(id, prompt, app.log)
           .then(
             /**
              * This function does not block returning the 202 response to the user.
@@ -392,7 +397,7 @@ server.after(() => {
         /**
          * Send the prompt to ComfyUI, and wait for the images to be generated.
          */
-        const allOutputs = await runPromptAndGetOutputs(prompt, app.log);
+        const allOutputs = await runPromptAndGetOutputs(id, prompt, app.log);
         for (const originalFilename in allOutputs) {
           let fileBuffer = allOutputs[originalFilename];
           let filename = originalFilename;
@@ -547,12 +552,11 @@ export async function start() {
     await launchComfyUIAndAPIServerAndWaitForWarmup();
     const warmupTime = Date.now() - start;
     server.log.info(`Warmup took ${warmupTime / 1000}s`);
-    await getComfyUIWebsocketStream(async (data: Message) => {
-      server.log.info(`Received ${data.type} message`);
-      if (data.type === "utf8") {
-        console.log(data.utf8Data);
-      }
-    }, server.log);
+    await connectToComfyUIWebsocketStream(
+      getConfiguredWebhookHandlers(server.log),
+      server.log,
+      true
+    );
   } catch (err: any) {
     server.log.error(`Failed to start server: ${err.message}`);
     process.exit(1);

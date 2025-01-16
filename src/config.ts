@@ -19,9 +19,12 @@ const {
   MODEL_DIR,
   OUTPUT_DIR,
   PORT = "3000",
+  SALAD_MACHINE_ID,
+  SALAD_CONTAINER_GROUP_ID,
   STARTUP_CHECK_INTERVAL_S = "1",
   STARTUP_CHECK_MAX_TRIES = "10",
   SYSTEM_WEBHOOK,
+  SYSTEM_WEBHOOK_EVENTS,
   WARMUP_PROMPT_FILE,
   WORKFLOW_DIR = "/workflows",
 } = process.env;
@@ -47,6 +50,26 @@ if (systemWebhook) {
     throw new Error(`Invalid system webhook: ${e.message}`);
   }
 }
+
+const allEvents = new Set([
+  "message",
+  "status",
+  "progress",
+  "executing",
+  "execution_start",
+  "execution_cached",
+  "executed",
+  "execution_success",
+  "execution_interrupted",
+  "execution_error",
+]);
+const systemWebhookEvents = SYSTEM_WEBHOOK_EVENTS?.split(",") ?? [];
+assert(
+  systemWebhookEvents.every((e) => allEvents.has(e)),
+  `Invalid system webhook events. Supported options: ${Array.from(
+    allEvents
+  ).join(", ")}`
+);
 
 const loadEnvCommand: Record<string, string> = {
   "ai-dock": `source /opt/ai-dock/etc/environment.sh \
@@ -159,12 +182,16 @@ const config = {
     }
   >,
   outputDir: OUTPUT_DIR ?? path.join(comfyDir, "output"),
+  saladContainerGroupId: SALAD_CONTAINER_GROUP_ID,
+  saladMachineId: SALAD_MACHINE_ID,
   samplers: z.enum(comfyDescription.samplers as [string, ...string[]]),
   schedulers: z.enum(comfyDescription.schedulers as [string, ...string[]]),
   selfURL,
   startupCheckInterval,
   startupCheckMaxTries,
+  systemMetaData: {} as Record<string, string>,
   systemWebhook,
+  systemWebhookEvents,
   warmupCkpt,
   warmupPrompt,
   workflowDir: WORKFLOW_DIR,
@@ -186,6 +213,13 @@ for (const modelType of modelSubDirs) {
       all,
       enum: z.enum(all as [string, ...string[]]),
     };
+  }
+}
+
+for (const varName of Object.keys(process.env)) {
+  if (varName.startsWith("SYSTEM_META_")) {
+    const key = varName.substring("SYSTEM_META_".length);
+    config.systemMetaData[key] = process.env[varName] ?? "";
   }
 }
 
