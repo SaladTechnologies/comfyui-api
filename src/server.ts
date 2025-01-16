@@ -282,69 +282,104 @@ server.after(() => {
         /**
          * Send the prompt to ComfyUI, and return a 202 response to the user.
          */
-        runPromptAndGetOutputs(prompt, app.log).then(
-          /**
-           * This function does not block returning the 202 response to the user.
-           */
-          async (outputs: Record<string, Buffer>) => {
-            for (const originalFilename in outputs) {
-              let filename = originalFilename;
-              let fileBuffer = outputs[filename];
-              if (convert_output) {
-                try {
-                  fileBuffer = await convertImageBuffer(
-                    fileBuffer,
-                    convert_output
-                  );
+        runPromptAndGetOutputs(prompt, app.log)
+          .then(
+            /**
+             * This function does not block returning the 202 response to the user.
+             */
+            async (outputs: Record<string, Buffer>) => {
+              for (const originalFilename in outputs) {
+                let filename = originalFilename;
+                let fileBuffer = outputs[filename];
+                if (convert_output) {
+                  try {
+                    fileBuffer = await convertImageBuffer(
+                      fileBuffer,
+                      convert_output
+                    );
 
-                  /**
-                   * If the user has provided an output format, we need to update the filename
-                   */
-                  filename = originalFilename.replace(
-                    /\.[^/.]+$/,
-                    `.${convert_output.format}`
-                  );
-                } catch (e: any) {
-                  app.log.warn(`Failed to convert image: ${e.message}`);
+                    /**
+                     * If the user has provided an output format, we need to update the filename
+                     */
+                    filename = originalFilename.replace(
+                      /\.[^/.]+$/,
+                      `.${convert_output.format}`
+                    );
+                  } catch (e: any) {
+                    app.log.warn(`Failed to convert image: ${e.message}`);
+                  }
                 }
+                const base64File = fileBuffer.toString("base64");
+                app.log.info(
+                  `Sending image ${filename} to webhook: ${webhook}`
+                );
+                fetch(webhook, {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({
+                    event: "output.complete",
+                    image: base64File,
+                    id,
+                    filename,
+                    prompt,
+                  }),
+                })
+                  .catch((e: any) => {
+                    app.log.error(
+                      `Failed to send image to webhook: ${e.message}`
+                    );
+                  })
+                  .then(async (resp) => {
+                    if (!resp) {
+                      app.log.error("No response from webhook");
+                    } else if (!resp.ok) {
+                      app.log.error(
+                        `Failed to send image ${filename}: ${await resp.text()}`
+                      );
+                    } else {
+                      app.log.info(`Sent image ${filename}`);
+                    }
+                  });
+
+                // Remove the file after sending
+                fsPromises.unlink(
+                  path.join(config.outputDir, originalFilename)
+                );
               }
-              const base64File = fileBuffer.toString("base64");
-              app.log.info(`Sending image ${filename} to webhook: ${webhook}`);
-              fetch(webhook, {
+            }
+          )
+          .catch(async (e: any) => {
+            /**
+             * Send a webhook reporting that the generation failed.
+             */
+            app.log.error(`Failed to generate images: ${e.message}`);
+            try {
+              const resp = await fetch(webhook, {
                 method: "POST",
                 headers: {
                   "Content-Type": "application/json",
                 },
                 body: JSON.stringify({
-                  event: "output.complete",
-                  image: base64File,
+                  event: "prompt.failed",
                   id,
-                  filename,
                   prompt,
+                  error: e.message,
                 }),
-              })
-                .catch((e: any) => {
-                  app.log.error(
-                    `Failed to send image to webhook: ${e.message}`
-                  );
-                })
-                .then(async (resp) => {
-                  if (!resp) {
-                    app.log.error("No response from webhook");
-                  } else if (!resp.ok) {
-                    app.log.error(
-                      `Failed to send image ${filename}: ${await resp.text()}`
-                    );
-                  } else {
-                    app.log.info(`Sent image ${filename}`);
-                  }
-                });
+              });
 
-              // Remove the file after sending
-              fsPromises.unlink(path.join(config.outputDir, originalFilename));
+              if (!resp.ok) {
+                app.log.error(
+                  `Failed to send failure message to webhook: ${await resp.text()}`
+                );
+              }
+            } catch (e: any) {
+              app.log.error(
+                `Failed to send failure message to webhook: ${e.message}`
+              );
             }
-          }
-        );
+          });
         return reply.code(202).send({ status: "ok", id, webhook, prompt });
       } else {
         /**
