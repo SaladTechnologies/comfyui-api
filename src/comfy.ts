@@ -18,7 +18,7 @@ import {
 } from "./types";
 import path from "path";
 import fsPromises from "fs/promises";
-import { Message, client as WebSocketClient } from "websocket";
+import { client as WebSocketClient } from "websocket";
 
 const commandExecutor = new CommandExecutor();
 
@@ -170,6 +170,9 @@ export async function runPromptAndGetOutputs(
   while (true) {
     const outputs = await getPromptOutputs(promptId, log);
     if (outputs) {
+      sleep(1000).then(() => {
+        delete comfyIDToApiID[promptId];
+      });
       return outputs;
     }
     await sleep(50);
