@@ -5,6 +5,7 @@ import { FastifyBaseLogger } from "fastify";
 import { ComfyPrompt } from "./types";
 import path from "path";
 import fsPromises from "fs/promises";
+import { Message, client as WebSocketClient } from "websocket";
 
 const commandExecutor = new CommandExecutor();
 
@@ -156,4 +157,23 @@ export async function runPromptAndGetOutputs(
     }
     await sleep(50);
   }
+}
+
+export function getComfyUIWebsocketStream(
+  onMessage: (msg: Message) => Promise<void>,
+  log: FastifyBaseLogger
+): Promise<void> {
+  const client = new WebSocketClient();
+  client.connect(config.comfyWSURL);
+  return new Promise((resolve, reject) => {
+    client.on("connect", (connection) => {
+      log.info("Connected to Comfy UI websocket");
+      connection.on("message", onMessage);
+      resolve();
+    });
+    client.on("connectFailed", (error) => {
+      log.error(`Failed to connect to Comfy UI websocket: ${error}`);
+      reject(error);
+    });
+  });
 }

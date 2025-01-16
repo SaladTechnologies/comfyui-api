@@ -18,6 +18,7 @@ import {
   launchComfyUI,
   shutdownComfyUI,
   runPromptAndGetOutputs,
+  getComfyUIWebsocketStream,
 } from "./comfy";
 import {
   PromptRequestSchema,
@@ -32,6 +33,7 @@ import {
 import workflows from "./workflows";
 import { z } from "zod";
 import { randomUUID } from "crypto";
+import { Message } from "websocket";
 
 const server = Fastify({
   bodyLimit: config.maxBodySize,
@@ -543,9 +545,14 @@ export async function start() {
     const start = Date.now();
     // Start ComfyUI
     await launchComfyUIAndAPIServerAndWaitForWarmup();
-
     const warmupTime = Date.now() - start;
     server.log.info(`Warmup took ${warmupTime / 1000}s`);
+    await getComfyUIWebsocketStream(async (data: Message) => {
+      server.log.info(`Received ${data.type} message`);
+      if (data.type === "utf8") {
+        console.log(data.utf8Data);
+      }
+    }, server.log);
   } catch (err: any) {
     server.log.error(`Failed to start server: ${err.message}`);
     process.exit(1);
