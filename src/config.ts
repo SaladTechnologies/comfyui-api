@@ -5,24 +5,25 @@ import { randomUUID } from "node:crypto";
 import { execSync } from "child_process";
 import { z } from "zod";
 const {
+  ALWAYS_RESTART_COMFYUI = "false",
+  BASE = "ai-dock",
   CMD = "init.sh",
-  HOST = "::",
-  PORT = "3000",
-  DIRECT_ADDRESS = "127.0.0.1",
+  COMFY_HOME = "/opt/ComfyUI",
   COMFYUI_PORT_HOST = "8188",
+  DIRECT_ADDRESS = "127.0.0.1",
+  HOST = "::",
+  INPUT_DIR,
+  LOG_LEVEL = "info",
+  MARKDOWN_SCHEMA_DESCRIPTIONS = "true",
+  MAX_BODY_SIZE_MB = "100",
+  MODEL_DIR,
+  OUTPUT_DIR,
+  PORT = "3000",
   STARTUP_CHECK_INTERVAL_S = "1",
   STARTUP_CHECK_MAX_TRIES = "10",
-  COMFY_HOME = "/opt/ComfyUI",
-  OUTPUT_DIR,
-  INPUT_DIR,
-  MODEL_DIR,
+  SYSTEM_WEBHOOK,
   WARMUP_PROMPT_FILE,
-  WORKFLOW_MODELS = "all",
   WORKFLOW_DIR = "/workflows",
-  MARKDOWN_SCHEMA_DESCRIPTIONS = "true",
-  BASE = "ai-dock",
-  MAX_BODY_SIZE_MB = "100",
-  ALWAYS_RESTART_COMFYUI = "false",
 } = process.env;
 
 fs.mkdirSync(WORKFLOW_DIR, { recursive: true });
@@ -36,6 +37,16 @@ const startupCheckInterval = parseInt(STARTUP_CHECK_INTERVAL_S, 10) * 1000;
 const startupCheckMaxTries = parseInt(STARTUP_CHECK_MAX_TRIES, 10);
 const maxBodySize = parseInt(MAX_BODY_SIZE_MB, 10) * 1024 * 1024;
 const alwaysRestartComfyUI = ALWAYS_RESTART_COMFYUI.toLowerCase() === "true";
+const systemWebhook = SYSTEM_WEBHOOK ?? "";
+
+if (systemWebhook) {
+  try {
+    const webhook = new URL(systemWebhook);
+    assert(webhook.protocol === "http:" || webhook.protocol === "https:");
+  } catch (e: any) {
+    throw new Error(`Invalid system webhook: ${e.message}`);
+  }
+}
 
 const loadEnvCommand: Record<string, string> = {
   "ai-dock": `source /opt/ai-dock/etc/environment.sh \
@@ -128,27 +139,17 @@ with open("${temptComfyFilePath}", "w") as f:
 const comfyDescription = getComfyUIDescription();
 
 const config = {
-  comfyLaunchCmd: CMD,
-  wrapperHost: HOST,
-  wrapperPort: port,
-  selfURL,
-  maxBodySize,
+  alwaysRestartComfyUI,
+  comfyDir,
   comfyHost: DIRECT_ADDRESS,
+  comfyLaunchCmd: CMD,
   comfyPort: COMFYUI_PORT_HOST,
   comfyURL,
-  alwaysRestartComfyUI,
-  wsClientId,
   comfyWSURL,
-  startupCheckInterval,
-  startupCheckMaxTries,
-  comfyDir,
-  outputDir: OUTPUT_DIR ?? path.join(comfyDir, "output"),
   inputDir: INPUT_DIR ?? path.join(comfyDir, "input"),
-  workflowDir: WORKFLOW_DIR,
-  warmupPrompt,
-  warmupCkpt,
-  samplers: z.enum(comfyDescription.samplers as [string, ...string[]]),
-  schedulers: z.enum(comfyDescription.schedulers as [string, ...string[]]),
+  logLevel: LOG_LEVEL.toLowerCase(),
+  markdownSchemaDescriptions: MARKDOWN_SCHEMA_DESCRIPTIONS === "true",
+  maxBodySize,
   models: {} as Record<
     string,
     {
@@ -157,8 +158,19 @@ const config = {
       enum: z.ZodEnum<[string, ...string[]]>;
     }
   >,
-  workflowModels: WORKFLOW_MODELS,
-  markdownSchemaDescriptions: MARKDOWN_SCHEMA_DESCRIPTIONS === "true",
+  outputDir: OUTPUT_DIR ?? path.join(comfyDir, "output"),
+  samplers: z.enum(comfyDescription.samplers as [string, ...string[]]),
+  schedulers: z.enum(comfyDescription.schedulers as [string, ...string[]]),
+  selfURL,
+  startupCheckInterval,
+  startupCheckMaxTries,
+  systemWebhook,
+  warmupCkpt,
+  warmupPrompt,
+  workflowDir: WORKFLOW_DIR,
+  wrapperHost: HOST,
+  wrapperPort: port,
+  wsClientId,
 };
 
 const modelDir = MODEL_DIR ?? path.join(comfyDir, "models");

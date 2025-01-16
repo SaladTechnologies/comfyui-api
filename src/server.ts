@@ -11,16 +11,14 @@ import fsPromises from "fs/promises";
 import path from "path";
 import { version } from "../package.json";
 import config from "./config";
+import { processImage, zodToMarkdownTable, convertImageBuffer } from "./utils";
 import {
   warmupComfyUI,
   waitForComfyUIToStart,
   launchComfyUI,
   shutdownComfyUI,
-  processImage,
-  zodToMarkdownTable,
-  convertImageBuffer,
   runPromptAndGetOutputs,
-} from "./utils";
+} from "./comfy";
 import {
   PromptRequestSchema,
   PromptErrorResponseSchema,
@@ -37,7 +35,7 @@ import { randomUUID } from "crypto";
 
 const server = Fastify({
   bodyLimit: config.maxBodySize,
-  logger: true,
+  logger: { level: config.logLevel },
 });
 server.setValidatorCompiler(validatorCompiler);
 server.setSerializerCompiler(serializerCompiler);
@@ -456,7 +454,7 @@ server.after(() => {
 
         /**
          * Workflow endpoints expose a simpler API to users, and then perform the transformation
-         * to a ComfyUI prompt behind the scenes. These endpoints behind-the-scenes just call the /prompt
+         * to a ComfyUI prompt behind the scenes. These endpoints under the hood just call the /prompt
          * endpoint with the appropriate parameters.
          */
         app.post<{
