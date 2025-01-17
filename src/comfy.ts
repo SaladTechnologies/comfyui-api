@@ -159,7 +159,7 @@ export async function getPromptOutputs(
 
 export async function waitForPromptToComplete(promptId: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    const func = (event: MessageEvent) => {
+    const handleMessage = (event: MessageEvent) => {
       const { data } = event;
       if (typeof data === "string") {
         const message = JSON.parse(data) as ComfyWSMessage;
@@ -167,7 +167,7 @@ export async function waitForPromptToComplete(promptId: string): Promise<void> {
           isExecutionSuccessMessage(message) &&
           message.data.prompt_id === promptId
         ) {
-          wsClient?.removeEventListener("message", func);
+          wsClient?.removeEventListener("message", handleMessage);
           return resolve();
         } else if (
           isExecutionErrorMessage(message) &&
@@ -182,7 +182,14 @@ export async function waitForPromptToComplete(promptId: string): Promise<void> {
         }
       }
     };
-    wsClient?.addEventListener("message", func);
+    wsClient?.addEventListener("message", handleMessage);
+
+    const onClose = () => {
+      wsClient?.removeEventListener("message", handleMessage);
+      wsClient?.removeEventListener("close", onClose);
+      return reject(new Error("Websocket closed"));
+    };
+    wsClient?.addEventListener("close", onClose);
   });
 }
 
@@ -270,6 +277,10 @@ export function connectToComfyUIWebsocketStream(
     wsClient.on("error", (error) => {
       log.error(`Failed to connect to Comfy UI websocket: ${error}`);
       return reject(error);
+    });
+
+    wsClient.on("close", () => {
+      log.info("Disconnected from Comfy UI websocket");
     });
   });
 }
