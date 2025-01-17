@@ -13,10 +13,10 @@ services:
     ports:
       - "3000:3000"
       - "8188:8188"
-    environment:
-      ALWAYS_RESTART_COMFYUI: "true"
-      SYSTEM_WEBHOOK_URL: "http://host.docker.internal:1234/system"
-      SYSTEM_WEBHOOK_EVENTS: all
+    # environment:
+    #   ALWAYS_RESTART_COMFYUI: "true"
+    #   SYSTEM_WEBHOOK_URL: "http://host.docker.internal:1234/system"
+    #   SYSTEM_WEBHOOK_EVENTS: all
     deploy:
       resources:
         reservations:

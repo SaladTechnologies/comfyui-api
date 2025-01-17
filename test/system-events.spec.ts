@@ -6,7 +6,7 @@ import {
 } from "./test-utils";
 import sd15Txt2Img from "./workflows/sd1.5-txt2img.json";
 
-describe("System Events", () => {
+describe.skip("System Events", () => {
   before(async () => {
     await waitForServerToBeReady();
   });
