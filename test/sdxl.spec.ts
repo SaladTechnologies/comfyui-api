@@ -4,7 +4,7 @@ import {
   createWebhookListener,
   submitPrompt,
   checkImage,
-  waitForServerToStart,
+  waitForServerToBeReady,
 } from "./test-utils";
 import sdxlWithRefinerTxt2Img from "./workflows/sdxl-with-refiner.json";
 
@@ -15,7 +15,7 @@ const txt2imgOpts = {
 
 describe("Stable Diffusion XL", () => {
   before(async () => {
-    await waitForServerToStart();
+    await waitForServerToBeReady();
   });
   describe("Return content in response", () => {
     it("text2image works with 1 image", async () => {

@@ -69,7 +69,6 @@ if (systemWebhook) {
 }
 
 const allEvents = new Set([
-  "message",
   "status",
   "progress",
   "executing",
@@ -80,13 +79,18 @@ const allEvents = new Set([
   "execution_interrupted",
   "execution_error",
 ]);
-const systemWebhookEvents = SYSTEM_WEBHOOK_EVENTS?.split(",") ?? [];
-assert(
-  systemWebhookEvents.every((e) => allEvents.has(e)),
-  `Invalid system webhook events. Supported options: ${Array.from(
-    allEvents
-  ).join(", ")}`
-);
+let systemWebhookEvents: string[] = [];
+if (SYSTEM_WEBHOOK_EVENTS === "all") {
+  systemWebhookEvents = Array.from(allEvents);
+} else {
+  systemWebhookEvents = SYSTEM_WEBHOOK_EVENTS?.split(",") ?? [];
+  assert(
+    systemWebhookEvents.every((e) => allEvents.has(e)),
+    `Invalid system webhook events. Supported options: ${Array.from(
+      allEvents
+    ).join(", ")}`
+  );
+}
 
 const loadEnvCommand: Record<string, string> = {
   "ai-dock": `source /opt/ai-dock/etc/environment.sh \

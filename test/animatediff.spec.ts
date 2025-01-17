@@ -10,7 +10,7 @@ import {
   createWebhookListener,
   submitPrompt,
   checkImage,
-  waitForServerToStart,
+  waitForServerToBeReady,
 } from "./test-utils";
 import { before } from "mocha";
 
@@ -28,7 +28,7 @@ const largeOpts = {
 
 describe("AnimateDiff", () => {
   before(async () => {
-    await waitForServerToStart();
+    await waitForServerToBeReady();
   });
   describe("Return content in response", () => {
     it("returns still frames and a video", async () => {

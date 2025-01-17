@@ -384,18 +384,3 @@ export const SystemWebhookEvents = [
   "execution_interrupted",
   "execution_error",
 ] as const;
-
-type Required<T> = {
-  [P in keyof T]-?: T[P];
-};
-
-type ValidWebhookHandlerName = keyof WebhookHandlers;
-
-const handler: Required<WebhookHandlers> = {} as Required<WebhookHandlers>;
-const webhookHandlerKeys = Object.keys(handler) as ValidWebhookHandlerName[];
-
-export function isValidWebhookHandlerName(
-  key: string
-): key is ValidWebhookHandlerName {
-  return webhookHandlerKeys.includes(key as ValidWebhookHandlerName);
-}

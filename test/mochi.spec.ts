@@ -6,7 +6,7 @@ import {
   createWebhookListener,
   submitPrompt,
   checkImage,
-  waitForServerToStart,
+  waitForServerToBeReady,
 } from "./test-utils";
 import txt2Video from "./workflows/mochi.json";
 
@@ -18,7 +18,7 @@ const text2VideoOptions = {
 
 describe("Mochi Video", () => {
   before(async () => {
-    await waitForServerToStart();
+    await waitForServerToBeReady();
   });
   describe("Return content in response", () => {
     it("text2video works", async () => {

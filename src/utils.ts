@@ -7,11 +7,7 @@ import path from "path";
 import { randomUUID } from "crypto";
 import { ZodObject, ZodRawShape, ZodTypeAny, ZodDefault } from "zod";
 import sharp from "sharp";
-import {
-  isValidWebhookHandlerName,
-  OutputConversionOptions,
-  WebhookHandlers,
-} from "./types";
+import { OutputConversionOptions, WebhookHandlers } from "./types";
 
 export async function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -240,23 +236,23 @@ export async function sendSystemWebhook(
   }
 }
 
-function snakeCaseToCamelCase(str: string) {
-  return str.replace(/([-_]\w)/g, (g) => g[1].toUpperCase());
+/**
+ * Converts a snake_case string to UpperCamelCase
+ */
+function snakeCaseToUpperCamelCase(str: string): string {
+  const camel = str.replace(/(_\w)/g, (match) => match[1].toUpperCase());
+  const upperCamel = camel.charAt(0).toUpperCase() + camel.slice(1);
+  return upperCamel;
 }
 
 export function getConfiguredWebhookHandlers(
   log: FastifyBaseLogger
 ): WebhookHandlers {
   const handlers: Record<string, (d: any) => void> = {};
-
   if (config.systemWebhook) {
     const systemWebhookEvents = config.systemWebhookEvents;
     for (const eventName of systemWebhookEvents) {
-      const handlerName = `on${snakeCaseToCamelCase(eventName)}`;
-      if (!isValidWebhookHandlerName(handlerName)) {
-        log.error(`Invalid webhook handler name: ${handlerName}`);
-        continue;
-      }
+      const handlerName = `on${snakeCaseToUpperCamelCase(eventName)}`;
       handlers[handlerName] = (data: any) => {
         log.debug(`Sending system webhook for event: ${eventName}`);
         sendSystemWebhook(`comfy.${eventName}`, data, log);

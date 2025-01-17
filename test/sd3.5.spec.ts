@@ -5,7 +5,7 @@ import {
   createWebhookListener,
   submitPrompt,
   checkImage,
-  waitForServerToStart,
+  waitForServerToBeReady,
 } from "./test-utils";
 import sd35Txt2Image from "./workflows/sd3.5-txt2img.json";
 
@@ -16,7 +16,7 @@ const txt2imgOpts = {
 
 describe("Stable Diffusion 3.5", () => {
   before(async () => {
-    await waitForServerToStart();
+    await waitForServerToBeReady();
   });
   describe("Return content in response", () => {
     it("text2image works with 1 image", async () => {

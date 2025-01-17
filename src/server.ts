@@ -566,11 +566,13 @@ export async function start() {
       const originalHandler = handlers.onStatus;
       handlers.onStatus = (msg) => {
         queueDepth = msg.data.status.exec_info.queue_remaining;
+        server.log.debug(`Queue depth: ${queueDepth}`);
         originalHandler(msg);
       };
     } else {
       handlers.onStatus = (msg) => {
         queueDepth = msg.data.status.exec_info.queue_remaining;
+        server.log.debug(`Queue depth: ${queueDepth}`);
       };
     }
     comfyWebsocketClient = await connectToComfyUIWebsocketStream(

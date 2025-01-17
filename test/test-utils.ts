@@ -77,10 +77,10 @@ export async function checkImage(
   }
 }
 
-export async function waitForServerToStart(): Promise<void> {
+export async function waitForServerToBeReady(): Promise<void> {
   while (true) {
     try {
-      const resp = await fetch(`http://localhost:3000/health`);
+      const resp = await fetch(`http://localhost:3000/ready`);
       if (resp.ok) {
         break;
       }
