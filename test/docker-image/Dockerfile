@@ -1,4 +1,4 @@
-FROM ghcr.io/saladtechnologies/comfyui-api:comfy0.3.10-torch2.5.0-cuda12.1-devel
+FROM ghcr.io/saladtechnologies/comfyui-api:comfy0.3.12-torch2.5.0-cuda12.1-devel
 
 RUN apt-get update && apt-get install -y \
   libgl1 \
