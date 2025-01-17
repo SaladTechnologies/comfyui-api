@@ -7,12 +7,13 @@ export async function sleep(ms: number): Promise<void> {
 }
 
 export async function createWebhookListener(
-  onReceive: (body: any) => void | Promise<void>
+  onReceive: (body: any) => void | Promise<void>,
+  endpoint: string = "/webhook"
 ): Promise<FastifyInstance> {
   const app = fastify({
     bodyLimit: 1024 * 1024 * 1024, // 1 GB
   });
-  app.post("/webhook", (req, res) => {
+  app.post(endpoint, (req, res) => {
     if (req.body) {
       onReceive(req.body);
     }
