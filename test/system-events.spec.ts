@@ -1,13 +1,10 @@
 import { expect } from "earl";
 import {
-  sleep,
   createWebhookListener,
   submitPrompt,
-  checkImage,
   waitForServerToBeReady,
 } from "./test-utils";
 import sd15Txt2Img from "./workflows/sd1.5-txt2img.json";
-import exp from "constants";
 
 describe("System Events", () => {
   before(async () => {
