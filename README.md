@@ -623,14 +623,27 @@ As with all AI-generated code, it is strongly recommended to review the generate
 
 ## Prebuilt Docker Images
 
-There are several prebuilt Docker images using this server.
-They are built from the [SaladCloud Recipes Repo](https://github.com/SaladTechnologies/salad-recipes/), and can be found on [Docker Hub](https://hub.docker.com/r/saladtechnologies/comfyui/tags).
+You can find ready-to-go docker images under [Packages](https://github.com/orgs/SaladTechnologies/packages?repo_name=comfyui-api) in this repository.
 
-The tag pattern is `saladtechnologies/comfyui:comfy<comfy-version>-api<api-version>-<model|base>` where:
+The images are tagged with the comfyui-api version they are built with, and the comfyui version they are built for, along with their pytorch version and CUDA version. There are versions for both CUDA runtime and CUDA devel, so you can choose the one that best fits your needs.
+
+The tag pattern is `ghcr.io/saladtechnologies/comfyui-api:comfy<comfy-version>-api<api-version>-torch<pytorch-version>-cuda<cuda-version>-<runtime|devel>` where:
 
 - `<comfy-version>` is the version of ComfyUI used
 - `<api-version>` is the version of the comfyui-api server
-- `<model|base>` is the model used. There is a `base` tag for an image that contains ComfyUI and the comfyui-api server, but no models. There are also tags for specific models, like `sdxl-with-refiner` or `flux-schnell-fp8`.
+- `<pytorch-version>` is the version of PyTorch used
+- `<cuda-version>` is the version of CUDA used
+- `<runtime|devel>` is whether the image is built with the CUDA runtime or the CUDA devel image. The devel image is much larger, but includes the full CUDA toolkit, which is required for some custom nodes.
+
+Included in the API images are the following utilities:
+- `git`
+- `curl`
+- `wget`
+- `unzip`
+- `ComfyUI`
+- `comfy` cli
+
+All of SaladCloud's image and video generation [recipes](https://docs.salad.com/products/recipes/overview) are built on top of these images, so you can use them as a base for your own workflows. For examples of using this with custom models and nodes, check out the [Salad Recipes](https://github.com/SaladTechnologies/salad-recipes/tree/master/src) repository on GitHub.
 
 ## Considerations for Running on SaladCloud
 
