@@ -10,6 +10,19 @@ A simple wrapper that facilitates using ComfyUI as a stateless API, either by re
     - [Environment Variables](#environment-variables)
     - [Configuration Details](#configuration-details)
     - [Additional Notes](#additional-notes)
+  - [Webhooks](#webhooks)
+    - [output.complete](#outputcomplete)
+    - [prompt.failed](#promptfailed)
+  - [System Events](#system-events)
+    - [status](#status)
+    - [progress](#progress)
+    - [executing](#executing)
+    - [execution\_start](#execution_start)
+    - [execution\_cached](#execution_cached)
+    - [executed](#executed)
+    - [execution\_success](#execution_success)
+    - [execution\_interrupted](#execution_interrupted)
+    - [execution\_error](#execution_error)
   - [Generating New Workflow Endpoints](#generating-new-workflow-endpoints)
     - [Automating with Claude 3.5 Sonnet](#automating-with-claude-35-sonnet)
   - [Prebuilt Docker Images](#prebuilt-docker-images)
@@ -69,7 +82,7 @@ The server hosts swagger docs at `/docs`, which can be used to interact with the
 The server has two probes, `/health` and `/ready`.
 
 - The `/health` probe will return a 200 status code once the warmup workflow has completed. It will stay healthy as long as the server is running, even if ComfyUI crashes.
-- The `/ready` probe will also return a 200 status code once the warmup workflow has completed. It will return a 503 status code if ComfyUI is not running, such as in the case it has crashed, but is being automatically restarted.
+- The `/ready` probe will also return a 200 status code once the warmup workflow has completed. It will return a 503 status code if ComfyUI is not running, such as in the case it has crashed, but is being automatically restarted. If you have set `MAX_QUEUE_DEPTH` to a non-zero value, it will return a 503 status code if ComfyUI's queue has reached the maximum depth.
 
 Here's a markdown guide to configuring the application based on the provided config.ts file:
 
@@ -82,24 +95,31 @@ This guide provides an overview of how to configure the application using enviro
 The following table lists the available environment variables and their default values.
 The default values mostly assume this will run on top of an [ai-dock](https://github.com/ai-dock/comfyui) image, but can be customized as needed.
 
-| Variable                 | Default Value         | Description                                                                                                                                                                                            |
-| ------------------------ | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| CMD                      | "init.sh"             | Command to launch ComfyUI                                                                                                                                                                              |
-| HOST                     | "::"                  | Wrapper host address                                                                                                                                                                                   |
-| PORT                     | "3000"                | Wrapper port number                                                                                                                                                                                    |
-| MAX_BODY_SIZE_MB         | "100"                 | Maximum body size in MB                                                                                                                                                                                |
-| DIRECT_ADDRESS           | "127.0.0.1"           | Direct address for ComfyUI                                                                                                                                                                             |
-| COMFYUI_PORT_HOST        | "8188"                | ComfyUI port number                                                                                                                                                                                    |
-| STARTUP_CHECK_INTERVAL_S | "1"                   | Interval in seconds between startup checks                                                                                                                                                             |
-| STARTUP_CHECK_MAX_TRIES  | "10"                  | Maximum number of startup check attempts                                                                                                                                                               |
-| COMFY_HOME               | "/opt/ComfyUI"        | ComfyUI home directory                                                                                                                                                                                 |
-| OUTPUT_DIR               | "/opt/ComfyUI/output" | Directory for output files                                                                                                                                                                             |
-| INPUT_DIR                | "/opt/ComfyUI/input"  | Directory for input files                                                                                                                                                                              |
-| MODEL_DIR                | "/opt/ComfyUI/models" | Directory for model files                                                                                                                                                                              |
-| WARMUP_PROMPT_FILE       | (not set)             | Path to warmup prompt file (optional)                                                                                                                                                                  |
-| WORKFLOW_DIR             | "/workflows"          | Directory for workflow files                                                                                                                                                                           |
-| BASE                     | "ai-dock"             | There are different ways to load the comfyui environment for determining config values that vary with the base image. Currently only "ai-dock" has preset values. Set to empty string to not use this. |
-| ALWAYS_RESTART_COMFYUI   | "false"               | If set to "true", the ComfyUI process will be automatically restarted if it exits. Otherwise, the API server will exit when ComfyUI exits.                                                             |
+| Variable                     | Default Value         | Description                                                                                                                                                                                               |
+| ---------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ALWAYS_RESTART_COMFYUI       | "false"               | If set to "true", the ComfyUI process will be automatically restarted if it exits. Otherwise, the API server will exit when ComfyUI exits.                                                                |
+| BASE                         | "ai-dock"             | There are different ways to load the comfyui environment for determining config values that vary with the base image. Currently only "ai-dock" has preset values. Set to empty string to not use this.    |
+| CMD                          | "init.sh"             | Command to launch ComfyUI                                                                                                                                                                                 |
+| COMFY_HOME                   | "/opt/ComfyUI"        | ComfyUI home directory                                                                                                                                                                                    |
+| COMFYUI_PORT_HOST            | "8188"                | ComfyUI port number                                                                                                                                                                                       |
+| DIRECT_ADDRESS               | "127.0.0.1"           | Direct address for ComfyUI                                                                                                                                                                                |
+| HOST                         | "::"                  | Wrapper host address                                                                                                                                                                                      |
+| INPUT_DIR                    | "/opt/ComfyUI/input"  | Directory for input files                                                                                                                                                                                 |
+| LOG_LEVEL                    | "info"                | Log level for the application. One of "trace", "debug", "info", "warn", "error", "fatal".                                                                                                                 |
+| MARKDOWN_SCHEMA_DESCRIPTIONS | "true"                | If set to "true", the server will use the descriptions in the zod schemas to generate markdown tables in the swagger docs.                                                                                |
+| MAX_BODY_SIZE_MB             | "100"                 | Maximum body size in MB                                                                                                                                                                                   |
+| MAX_BODY_SIZE_MB             | "100"                 | Maximum request body size in MB                                                                                                                                                                           |
+| MAX_QUEUE_DEPTH              | "0"                   | Maximum number of queued requests before the readiness probe will return 503. 0 indicates no limit.                                                                                                       |
+| MODEL_DIR                    | "/opt/ComfyUI/models" | Directory for model files                                                                                                                                                                                 |
+| OUTPUT_DIR                   | "/opt/ComfyUI/output" | Directory for output files                                                                                                                                                                                |
+| PORT                         | "3000"                | Wrapper port number                                                                                                                                                                                       |
+| STARTUP_CHECK_INTERVAL_S     | "1"                   | Interval in seconds between startup checks                                                                                                                                                                |
+| STARTUP_CHECK_MAX_TRIES      | "10"                  | Maximum number of startup check attempts                                                                                                                                                                  |
+| SYSTEM_META_*                | (not set)             | Any environment variable starting with SYSTEM_META_ will be sent to the system webhook as metadata. i.e. `SYSTEM_META_batch=abc` will add `{"batch": "abc"}` to the `.metadata` field on system webhooks. |
+| SYSTEM_WEBHOOK_EVENTS        | (not set)             | Comma separated list of events to send to the webhook. Only selected events will be sent. If not set, no events will be sent. See [System Events](#system-events)                                                          |
+| SYSTEM_WEBHOOK_URL               | (not set)             | Optionally receive via webhook the events that ComfyUI emits on websocket. This includes progress events.                                                                                                 |
+| WARMUP_PROMPT_FILE           | (not set)             | Path to warmup prompt file (optional)                                                                                                                                                                     |
+| WORKFLOW_DIR                 | "/workflows"          | Directory for workflow files                                                                                                                                                                              |
 
 ### Configuration Details
 
@@ -133,7 +153,7 @@ The default values mostly assume this will run on top of an [ai-dock](https://gi
    - The model names are exposed via the `GET /models` endpoint, and via the config object throughout the application.
 
 7. **ComfyUI Description**:
-   - The application retrieves available samplers and schedulers from ComfyUI.
+   - The application retrieves available samplers and schedulers from ComfyUI itself.
    - This information is used to create Zod enums for validation.
 
 ### Additional Notes
@@ -142,6 +162,232 @@ The default values mostly assume this will run on top of an [ai-dock](https://gi
 - The configuration includes setup for both the wrapper application and ComfyUI itself.
 
 Remember to set these environment variables according to your specific deployment needs before running the application.
+
+## Webhooks
+
+ComfyUI API sends two types of webhooks: System Events, which are emitted by ComfyUI itself, and Workflow Events, which are emitted by the API server. See [System Events](#system-events) for more information on System Events.
+
+If a user includes the `.webhook` field in a request to `/prompt` or any of the workflow endpoints, the server will send any completed outputs to the webhook URL provided in the request. It will also send a webhook if the request fails.
+
+For successful requests, every output from the workflow will be sent as individual webhook requests. That means if your request generates 4 images, you will receive 4 webhook requests, each with a single image.
+
+### output.complete
+
+The webhook event name for a completed output is `output.complete`. The webhook will have the following schema:
+
+```json
+{
+  "event": "output.complete",
+  "image": "base64-encoded-image",
+  "id": "request-id",
+  "filename": "output-filename.png",
+  "prompt": {}
+}
+```
+
+### prompt.failed
+
+The webhook event name for a failed request is `prompt.failed`. The webhook will have the following schema:
+
+```json
+{
+  "event": "prompt.failed",
+  "error": "error-message",
+  "id": "request-id",
+  "prompt": {}
+}
+```
+
+## System Events
+
+ComfyUI emits a number of events over websocket during the course of a workflow. These can be configured to be sent to a webhook using the `SYSTEM_WEBHOOK_URL` and `SYSTEM_WEBHOOK_EVENTS` environment variables. Additionally, any environment variable starting with `SYSTEM_META_` will be sent as metadata with the event.
+
+All webhooks have the same format, which is as follows:
+
+```json
+{
+  "event": "event_name",
+  "data": {},
+  "metadata": {}
+}
+```
+
+When running on SaladCloud, `.metadata` will always include `salad_container_group_id` and `salad_machine_id`.
+
+The following events are available:
+
+- "status"
+- "progress"
+- "executing"
+- "execution_start"
+- "execution_cached"
+- "executed"
+- "execution_success"
+- "execution_interrupted"
+- "execution_error"
+
+The `SYSTEM_WEBHOOK_EVENTS` environment variable should be a comma-separated list of the events you want to send to the webhook. If not set, no events will be sent.
+
+The event name received in the webhook will be `comfy.${event_name}`, i.e. `comfy.progress`.
+
+**Example**:
+
+```shell
+export SYSTEM_WEBHOOK_EVENTS="progress,execution_start,execution_success,execution_error"
+```
+
+This will cause the API to send the `progress`, `execution_start`, `execution_success`, and `execution_error` events to the webhook.
+
+The `SYSTEM_META_*` environment variables can be used to add metadata to the webhook events. For example:
+
+```shell
+export SYSTEM_META_batch=abc
+export SYSTEM_META_purpose=testing
+```
+
+Will add `{"batch": "abc", "purpose": "testing"}` to the `.metadata` field on system webhooks.
+
+The following are the schemas for the event data that will be sent to the webhook. This will populate the `.data` field on the webhook.
+
+### status
+
+```json
+{
+  "type": "status",
+  "data": {
+    "status": {
+      "exec_info": {
+        "queue_remaining": 3
+      }
+    }
+  },
+  "sid": "abc123"
+}
+```
+
+### progress
+
+```json
+{
+  "type": "progress",
+  "data": {
+    "value": 45,
+    "max": 100,
+    "prompt_id": "123e4567-e89b-12d3-a456-426614174000",
+    "node": "42"
+  },
+  "sid": "xyz789"
+}
+```
+
+### executing
+
+```json
+{
+  "type": "executing",
+  "data": {
+    "node": "42",
+    "display_node": "42",
+    "prompt_id": "123e4567-e89b-12d3-a456-426614174000"
+  },
+  "sid": "xyz789"
+}
+```
+
+### execution_start
+
+```json
+{
+  "type": "execution_start",
+  "data": {
+    "prompt_id": "123e4567-e89b-12d3-a456-426614174000",
+    "timestamp": 1705505423000
+  },
+  "sid": "xyz789"
+}
+```
+
+### execution_cached
+
+```json
+{
+  "type": "execution_cached",
+  "data": {
+    "nodes": ["42", "7", "13"],
+    "prompt_id": "123e4567-e89b-12d3-a456-426614174000",
+    "timestamp": 1705505423000
+  },
+  "sid": "xyz789"
+}
+```
+
+### executed
+
+```json
+{
+  "type": "executed",
+  "data": {
+    "node": "42",
+    "display_node": "42",
+    "output": {},
+    "prompt_id": "123e4567-e89b-12d3-a456-426614174000"
+  },
+  "sid": "xyz789"
+}
+```
+
+### execution_success
+
+```json
+{
+  "type": "execution_success",
+  "data": {
+    "prompt_id": "123e4567-e89b-12d3-a456-426614174000",
+    "timestamp": 1705505423000
+  },
+  "sid": "xyz789"
+}
+```
+
+### execution_interrupted
+
+```json
+{
+  "type": "execution_interrupted",
+  "data": {
+    "prompt_id": "123e4567-e89b-12d3-a456-426614174000",
+    "node_id": "42",
+    "node_type": "KSampler",
+    "executed": []
+  },
+  "sid": "xyz789"
+}
+```
+
+### execution_error
+
+```json
+{
+  "type": "execution_error",
+  "data": {
+    "prompt_id": "123e4567-e89b-12d3-a456-426614174000",
+    "node_id": "42",
+    "node_type": "KSampler",
+    "executed": [],
+    "exception_message": "CUDA out of memory. Tried to allocate 2.20 GiB",
+    "exception_type": "RuntimeError",
+    "traceback": "Traceback (most recent call last):\n  File \"nodes.py\", line 245, in sample\n    samples = sampler.sample(model, noise, steps)",
+    "current_inputs": {
+      "seed": 42,
+      "steps": 20,
+      "cfg": 7.5,
+      "sampler_name": "euler"
+    },
+    "current_outputs": []
+  },
+  "sid": "xyz789"
+}
+```
 
 ## Generating New Workflow Endpoints
 

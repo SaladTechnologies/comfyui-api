@@ -24,7 +24,7 @@ const {
   SALAD_CONTAINER_GROUP_ID,
   STARTUP_CHECK_INTERVAL_S = "1",
   STARTUP_CHECK_MAX_TRIES = "10",
-  SYSTEM_WEBHOOK,
+  SYSTEM_WEBHOOK_URL,
   SYSTEM_WEBHOOK_EVENTS,
   WARMUP_PROMPT_FILE,
   WORKFLOW_DIR = "/workflows",
@@ -37,12 +37,27 @@ const wsClientId = randomUUID();
 const comfyWSURL = `ws://${DIRECT_ADDRESS}:${COMFYUI_PORT_HOST}/ws?clientId=${wsClientId}`;
 const selfURL = `http://localhost:${PORT}`;
 const port = parseInt(PORT, 10);
+
 const startupCheckInterval = parseInt(STARTUP_CHECK_INTERVAL_S, 10) * 1000;
+assert(
+  startupCheckInterval > 0,
+  "STARTUP_CHECK_INTERVAL_S must be a positive integer"
+);
+
 const startupCheckMaxTries = parseInt(STARTUP_CHECK_MAX_TRIES, 10);
+assert(
+  startupCheckMaxTries > 0,
+  "STARTUP_CHECK_MAX_TRIES must be a positive integer"
+);
+
 const maxBodySize = parseInt(MAX_BODY_SIZE_MB, 10) * 1024 * 1024;
+assert(maxBodySize > 0, "MAX_BODY_SIZE_MB must be a positive integer");
+
 const maxQueueDepth = parseInt(MAX_QUEUE_DEPTH, 10);
+assert(maxQueueDepth >= 0, "MAX_QUEUE_DEPTH must be a non-negative integer");
+
 const alwaysRestartComfyUI = ALWAYS_RESTART_COMFYUI.toLowerCase() === "true";
-const systemWebhook = SYSTEM_WEBHOOK ?? "";
+const systemWebhook = SYSTEM_WEBHOOK_URL ?? "";
 
 if (systemWebhook) {
   try {
