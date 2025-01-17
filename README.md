@@ -636,6 +636,7 @@ The tag pattern is `ghcr.io/saladtechnologies/comfyui-api:comfy<comfy-version>-a
 - `<runtime|devel>` is whether the image is built with the CUDA runtime or the CUDA devel image. The devel image is much larger, but includes the full CUDA toolkit, which is required for some custom nodes.
 
 Included in the API images are the following utilities:
+
 - `git`
 - `curl`
 - `wget`
