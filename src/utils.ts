@@ -258,6 +258,7 @@ export function getConfiguredWebhookHandlers(
         continue;
       }
       handlers[handlerName] = (data: any) => {
+        log.debug(`Sending system webhook for event: ${eventName}`);
         sendSystemWebhook(`comfy.${eventName}`, data, log);
       };
     }
