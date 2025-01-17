@@ -16,6 +16,7 @@ const {
   LOG_LEVEL = "info",
   MARKDOWN_SCHEMA_DESCRIPTIONS = "true",
   MAX_BODY_SIZE_MB = "100",
+  MAX_QUEUE_DEPTH = "0",
   MODEL_DIR,
   OUTPUT_DIR,
   PORT = "3000",
@@ -39,6 +40,7 @@ const port = parseInt(PORT, 10);
 const startupCheckInterval = parseInt(STARTUP_CHECK_INTERVAL_S, 10) * 1000;
 const startupCheckMaxTries = parseInt(STARTUP_CHECK_MAX_TRIES, 10);
 const maxBodySize = parseInt(MAX_BODY_SIZE_MB, 10) * 1024 * 1024;
+const maxQueueDepth = parseInt(MAX_QUEUE_DEPTH, 10);
 const alwaysRestartComfyUI = ALWAYS_RESTART_COMFYUI.toLowerCase() === "true";
 const systemWebhook = SYSTEM_WEBHOOK ?? "";
 
@@ -173,6 +175,7 @@ const config = {
   logLevel: LOG_LEVEL.toLowerCase(),
   markdownSchemaDescriptions: MARKDOWN_SCHEMA_DESCRIPTIONS === "true",
   maxBodySize,
+  maxQueueDepth,
   models: {} as Record<
     string,
     {

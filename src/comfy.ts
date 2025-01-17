@@ -18,7 +18,7 @@ import {
 } from "./types";
 import path from "path";
 import fsPromises from "fs/promises";
-import { client as WebSocketClient } from "websocket";
+import WebSocket, { MessageEvent } from "ws";
 
 const commandExecutor = new CommandExecutor();
 
@@ -157,6 +157,35 @@ export async function getPromptOutputs(
   return allOutputs;
 }
 
+export async function waitForPromptToComplete(promptId: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const func = (event: MessageEvent) => {
+      const { data } = event;
+      if (typeof data === "string") {
+        const message = JSON.parse(data) as ComfyWSMessage;
+        if (
+          isExecutionSuccessMessage(message) &&
+          message.data.prompt_id === promptId
+        ) {
+          wsClient?.removeEventListener("message", func);
+          return resolve();
+        } else if (
+          isExecutionErrorMessage(message) &&
+          message.data.prompt_id === promptId
+        ) {
+          return reject(new Error("Prompt execution failed"));
+        } else if (
+          isExecutionInterruptedMessage(message) &&
+          message.data.prompt_id === promptId
+        ) {
+          return reject(new Error("Prompt execution interrupted"));
+        }
+      }
+    };
+    wsClient?.addEventListener("message", func);
+  });
+}
+
 export const comfyIDToApiID: Record<string, string> = {};
 
 export async function runPromptAndGetOutputs(
@@ -166,85 +195,81 @@ export async function runPromptAndGetOutputs(
 ): Promise<Record<string, Buffer>> {
   const promptId = await queuePrompt(prompt);
   comfyIDToApiID[promptId] = id;
-  log.info(`Prompt ${id} queued as comfy prompt id: ${promptId}`);
-  while (true) {
-    const outputs = await getPromptOutputs(promptId, log);
-    if (outputs) {
-      sleep(1000).then(() => {
-        delete comfyIDToApiID[promptId];
-      });
-      return outputs;
-    }
-    await sleep(50);
+  log.debug(`Prompt ${id} queued as comfy prompt id: ${promptId}`);
+  await waitForPromptToComplete(promptId);
+  const outputs = await getPromptOutputs(promptId, log);
+  if (outputs) {
+    sleep(1000).then(() => {
+      delete comfyIDToApiID[promptId];
+    });
+    return outputs;
   }
+  throw new Error("Failed to get prompt outputs");
 }
+
+let wsClient: WebSocket | null = null;
 
 export function connectToComfyUIWebsocketStream(
   hooks: WebhookHandlers,
   log: FastifyBaseLogger,
   useApiIDs: boolean = true
-): Promise<void> {
+): Promise<WebSocket> {
   return new Promise((resolve, reject) => {
-    const client = new WebSocketClient();
-    client.connect(config.comfyWSURL);
-    client.on("connect", (connection) => {
-      log.info("Connected to Comfy UI websocket");
-      connection.on("message", (data) => {
-        if (hooks.onMessage) {
-          hooks.onMessage(data);
+    wsClient = new WebSocket(config.comfyWSURL);
+    wsClient.on("message", (data, isBinary) => {
+      if (hooks.onMessage) {
+        hooks.onMessage(data);
+      }
+      if (!isBinary) {
+        const message = JSON.parse(data.toString("utf8")) as ComfyWSMessage;
+        if (
+          useApiIDs &&
+          message.data.prompt_id &&
+          comfyIDToApiID[message.data.prompt_id]
+        ) {
+          message.data.prompt_id = comfyIDToApiID[message.data.prompt_id];
         }
-        if (data.type === "utf8") {
-          const message = JSON.parse(data.utf8Data) as ComfyWSMessage;
-          if (
-            useApiIDs &&
-            message.data.prompt_id &&
-            comfyIDToApiID[message.data.prompt_id]
-          ) {
-            message.data.prompt_id = comfyIDToApiID[message.data.prompt_id];
-          }
-          if (isStatusMessage(message) && hooks.onStatus) {
-            hooks.onStatus(message);
-          } else if (isProgressMessage(message) && hooks.onProgress) {
-            hooks.onProgress(message);
-          } else if (
-            isExecutionStartMessage(message) &&
-            hooks.onExecutionStart
-          ) {
-            hooks.onExecutionStart(message);
-          } else if (
-            isExecutionCachedMessage(message) &&
-            hooks.onExecutionCached
-          ) {
-            hooks.onExecutionCached(message);
-          } else if (isExecutingMessage(message) && hooks.onExecuting) {
-            hooks.onExecuting(message);
-          } else if (isExecutedMessage(message) && hooks.onExecuted) {
-            hooks.onExecuted(message);
-          } else if (
-            isExecutionSuccessMessage(message) &&
-            hooks.onExecutionSuccess
-          ) {
-            hooks.onExecutionSuccess(message);
-          } else if (
-            isExecutionInterruptedMessage(message) &&
-            hooks.onExecutionInterrupted
-          ) {
-            hooks.onExecutionInterrupted(message);
-          } else if (
-            isExecutionErrorMessage(message) &&
-            hooks.onExecutionError
-          ) {
-            hooks.onExecutionError(message);
-          }
-        } else {
-          log.info(`Received ${data.type} message`);
+        if (isStatusMessage(message) && hooks.onStatus) {
+          hooks.onStatus(message);
+        } else if (isProgressMessage(message) && hooks.onProgress) {
+          hooks.onProgress(message);
+        } else if (isExecutionStartMessage(message) && hooks.onExecutionStart) {
+          hooks.onExecutionStart(message);
+        } else if (
+          isExecutionCachedMessage(message) &&
+          hooks.onExecutionCached
+        ) {
+          hooks.onExecutionCached(message);
+        } else if (isExecutingMessage(message) && hooks.onExecuting) {
+          hooks.onExecuting(message);
+        } else if (isExecutedMessage(message) && hooks.onExecuted) {
+          hooks.onExecuted(message);
+        } else if (
+          isExecutionSuccessMessage(message) &&
+          hooks.onExecutionSuccess
+        ) {
+          hooks.onExecutionSuccess(message);
+        } else if (
+          isExecutionInterruptedMessage(message) &&
+          hooks.onExecutionInterrupted
+        ) {
+          hooks.onExecutionInterrupted(message);
+        } else if (isExecutionErrorMessage(message) && hooks.onExecutionError) {
+          hooks.onExecutionError(message);
         }
-      });
-      resolve();
+      } else {
+        log.info(`Received binary message`);
+      }
     });
-    client.on("connectFailed", (error) => {
+
+    wsClient.on("open", () => {
+      log.info("Connected to Comfy UI websocket");
+
+      return resolve(wsClient as WebSocket);
+    });
+    wsClient.on("error", (error) => {
       log.error(`Failed to connect to Comfy UI websocket: ${error}`);
-      reject(error);
+      return reject(error);
     });
   });
 }

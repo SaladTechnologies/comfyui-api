@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { randomUUID } from "crypto";
-import { Message } from "websocket";
+import { RawData } from "ws";
 
 export const ComfyNodeSchema = z.object({
   inputs: z.any(),
@@ -352,7 +352,7 @@ export function isExecutionErrorMessage(
 }
 
 export type WebhookHandlers = {
-  onMessage?: (msg: Message) => Promise<void> | void;
+  onMessage?: (msg: RawData) => Promise<void> | void;
   onStatus?: (data: ComfyWSStatusMessage) => Promise<void> | void;
   onProgress?: (data: ComfyWSProgressMessage) => Promise<void> | void;
   onExecuting?: (data: ComfyWSExecutingMessage) => Promise<void> | void;

@@ -38,6 +38,7 @@ import {
 import workflows from "./workflows";
 import { z } from "zod";
 import { randomUUID } from "crypto";
+import { WebSocket } from "ws";
 
 const server = Fastify({
   bodyLimit: config.maxBodySize,
@@ -141,7 +142,10 @@ server.after(() => {
       },
     },
     async (request, reply) => {
-      if (warm) {
+      if (
+        warm &&
+        (!config.maxQueueDepth || queueDepth < config.maxQueueDepth)
+      ) {
         return reply.code(200).send({ version, status: "ready" });
       }
       return reply.code(503).send({ version, status: "not ready" });
@@ -514,9 +518,14 @@ server.after(() => {
   walk(workflows);
 });
 
+let comfyWebsocketClient: WebSocket | null = null;
+
 process.on("SIGINT", async () => {
   server.log.info("Received SIGINT, interrupting process");
   shutdownComfyUI();
+  if (comfyWebsocketClient) {
+    comfyWebsocketClient.terminate();
+  }
   process.exit(0);
 });
 
@@ -552,8 +561,20 @@ export async function start() {
     await launchComfyUIAndAPIServerAndWaitForWarmup();
     const warmupTime = Date.now() - start;
     server.log.info(`Warmup took ${warmupTime / 1000}s`);
-    await connectToComfyUIWebsocketStream(
-      getConfiguredWebhookHandlers(server.log),
+    const handlers = getConfiguredWebhookHandlers(server.log);
+    if (handlers.onStatus) {
+      const originalHandler = handlers.onStatus;
+      handlers.onStatus = (msg) => {
+        queueDepth = msg.data.status.exec_info.queue_remaining;
+        originalHandler(msg);
+      };
+    } else {
+      handlers.onStatus = (msg) => {
+        queueDepth = msg.data.status.exec_info.queue_remaining;
+      };
+    }
+    comfyWebsocketClient = await connectToComfyUIWebsocketStream(
+      handlers,
       server.log,
       true
     );
