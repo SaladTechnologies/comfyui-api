@@ -9,6 +9,7 @@ import { randomUUID } from "crypto";
 import { ZodObject, ZodRawShape, ZodTypeAny, ZodDefault } from "zod";
 import sharp from "sharp";
 import { ComfyPrompt, OutputConversionOptions } from "./types";
+import fetch from "node-fetch";
 
 const commandExecutor = new CommandExecutor();
 

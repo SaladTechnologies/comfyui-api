@@ -34,6 +34,7 @@ import {
 import workflows from "./workflows";
 import { z } from "zod";
 import { randomUUID } from "crypto";
+import fetch from "node-fetch";
 
 const server = Fastify({
   bodyLimit: config.maxBodySize,

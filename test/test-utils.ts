@@ -1,6 +1,7 @@
 import { expect } from "earl";
 import sharp from "sharp";
 import fastify, { FastifyInstance } from "fastify";
+import fetch from "node-fetch";
 
 export async function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
