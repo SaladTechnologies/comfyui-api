@@ -31,6 +31,7 @@
     "chokidar": "^3.6.0",
     "fastify": "^4.26.2",
     "fastify-type-provider-zod": "^2.0.0",
+    "node-fetch": "^3.3.2",
     "sharp": "^0.33.5",
     "typescript": "^5.4.5",
     "zod": "^3.23.8"
