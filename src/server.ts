@@ -43,6 +43,9 @@ import { WebSocket } from "ws";
 const server = Fastify({
   bodyLimit: config.maxBodySize,
   logger: { level: config.logLevel },
+  connectionTimeout: 0,
+  keepAliveTimeout: 0,
+  requestTimeout: 0,
 });
 server.setValidatorCompiler(validatorCompiler);
 server.setSerializerCompiler(serializerCompiler);
@@ -552,6 +555,25 @@ async function launchComfyUIAndAPIServerAndWaitForWarmup() {
     await server.listen({ port: config.wrapperPort, host: config.wrapperHost });
     server.log.info(`ComfyUI API ${version} started.`);
   }
+  const handlers = getConfiguredWebhookHandlers(server.log);
+  if (handlers.onStatus) {
+    const originalHandler = handlers.onStatus;
+    handlers.onStatus = (msg) => {
+      queueDepth = msg.data.status.exec_info.queue_remaining;
+      server.log.debug(`Queue depth: ${queueDepth}`);
+      originalHandler(msg);
+    };
+  } else {
+    handlers.onStatus = (msg) => {
+      queueDepth = msg.data.status.exec_info.queue_remaining;
+      server.log.debug(`Queue depth: ${queueDepth}`);
+    };
+  }
+  comfyWebsocketClient = await connectToComfyUIWebsocketStream(
+    handlers,
+    server.log,
+    true
+  );
   await warmupComfyUI();
   wasEverWarm = true;
   warm = true;
@@ -564,25 +586,6 @@ export async function start() {
     await launchComfyUIAndAPIServerAndWaitForWarmup();
     const warmupTime = Date.now() - start;
     server.log.info(`Warmup took ${warmupTime / 1000}s`);
-    const handlers = getConfiguredWebhookHandlers(server.log);
-    if (handlers.onStatus) {
-      const originalHandler = handlers.onStatus;
-      handlers.onStatus = (msg) => {
-        queueDepth = msg.data.status.exec_info.queue_remaining;
-        server.log.debug(`Queue depth: ${queueDepth}`);
-        originalHandler(msg);
-      };
-    } else {
-      handlers.onStatus = (msg) => {
-        queueDepth = msg.data.status.exec_info.queue_remaining;
-        server.log.debug(`Queue depth: ${queueDepth}`);
-      };
-    }
-    comfyWebsocketClient = await connectToComfyUIWebsocketStream(
-      handlers,
-      server.log,
-      true
-    );
   } catch (err: any) {
     server.log.error(`Failed to start server: ${err.message}`);
     process.exit(1);
