@@ -76,6 +76,7 @@ export async function warmupComfyUI(): Promise<void> {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ prompt: config.warmupPrompt }),
+      signal: AbortSignal.timeout(1000 * 60 * 60 * 20), // 20 hours
     });
     if (!resp.ok) {
       throw new Error(`Failed to warmup Comfy UI: ${await resp.text()}`);

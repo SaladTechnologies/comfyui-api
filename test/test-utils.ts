@@ -48,7 +48,7 @@ export async function submitPrompt(
       "Content-Type": "application/json",
     },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(1000 * 60 * 60 * 20), // 20 minutes
+    signal: AbortSignal.timeout(1000 * 60 * 60 * 20), // 20 hours
   });
   if (!resp.ok) {
     console.error(await resp.text());

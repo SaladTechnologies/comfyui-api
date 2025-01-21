@@ -334,6 +334,7 @@ server.after(() => {
                     filename,
                     prompt,
                   }),
+                  signal: AbortSignal.timeout(1000 * 60 * 60 * 20), // 20 hours
                 })
                   .catch((e: any) => {
                     app.log.error(
@@ -376,6 +377,7 @@ server.after(() => {
                   prompt,
                   error: e.message,
                 }),
+                signal: AbortSignal.timeout(1000 * 60 * 60 * 20), // 20 hours
               });
 
               if (!resp.ok) {
@@ -495,6 +497,7 @@ server.after(() => {
                   "Content-Type": "application/json",
                 },
                 body: JSON.stringify({ prompt, id, webhook, convert_output }),
+                signal: AbortSignal.timeout(1000 * 60 * 60 * 20), // 20 hours
               }
             );
             const body = await resp.json();
