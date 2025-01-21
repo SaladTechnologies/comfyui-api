@@ -651,7 +651,7 @@ All of SaladCloud's image and video generation [recipes](https://docs.salad.com/
 ## Considerations for Running on SaladCloud
 
 - **SaladCloud's Container Gateway has a 100s timeout.** It is possible to construct very long running ComfyUI workflows, such as for video generation, that would exceed this timeout. In this scenario, you will need to either use a webhook to receive the results, or integrate with SaladCloud's [Job Queues](https://docs.salad.com/products/sce/job-queues/job-queues#job-queues) to handle long-running workflows.
-- **SaladCloud's maximum container image size is 35GB(compressed).** The base [comfyui-api image](https://hub.docker.com/r/saladtechnologies/comfyui/tags) is around 3.25GB(compressed), so any models and extensions must fit in the remaining space.
+- **SaladCloud's maximum container image size is 35GB(compressed).** The base [comfyui-api image](https://github.com/SaladTechnologies/comfyui-api/pkgs/container/comfyui-api) is around 3.25GB(compressed), so any models and extensions must fit in the remaining space.
 
 ## Contributing
 
