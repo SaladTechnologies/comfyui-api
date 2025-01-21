@@ -384,3 +384,30 @@ export const SystemWebhookEvents = [
   "execution_interrupted",
   "execution_error",
 ] as const;
+
+export type ComfyPromptResponse = {
+  prompt_id: string;
+  number: number;
+  node_errors: any[];
+};
+
+export type ComfyHistoryResponse = Record<
+  string,
+  {
+    prompt: [number, string, ComfyPrompt, any, string[]];
+    outputs: Record<
+      string,
+      Record<
+        string,
+        {
+          filename: string;
+        }[]
+      >
+    >;
+    status: {
+      status_str: string;
+      completed: boolean;
+      messages: any[];
+    };
+  }
+>;

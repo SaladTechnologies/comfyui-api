@@ -1,6 +1,7 @@
 import { expect } from "earl";
 import sharp from "sharp";
 import fastify, { FastifyInstance } from "fastify";
+import { fetch, Agent } from "undici";
 
 export async function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -42,19 +43,29 @@ export async function submitPrompt(
   if (webhook) {
     body["webhook"] = webhookAddress;
   }
-  const resp = await fetch(`http://localhost:3000/prompt`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(1000 * 60 * 60 * 20), // 20 hours
-  });
-  if (!resp.ok) {
-    console.error(await resp.text());
+  try {
+    const resp = await fetch(`http://localhost:3000/prompt`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+      dispatcher: new Agent({
+        headersTimeout: 0,
+        bodyTimeout: 0,
+        connectTimeout: 0,
+      }),
+    });
+    if (!resp.ok) {
+      console.error(await resp.text());
+      throw new Error("Prompt submission failed");
+    }
+    expect(resp.ok).toEqual(true);
+    return await resp.json();
+  } catch (e) {
+    console.error(e);
+    throw e;
   }
-  expect(resp.ok).toEqual(true);
-  return await resp.json();
 }
 
 export async function checkImage(

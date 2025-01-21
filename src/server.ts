@@ -39,6 +39,7 @@ import workflows from "./workflows";
 import { z } from "zod";
 import { randomUUID } from "crypto";
 import { WebSocket } from "ws";
+import { fetch, Agent } from "undici";
 
 const server = Fastify({
   bodyLimit: config.maxBodySize,
@@ -337,7 +338,11 @@ server.after(() => {
                     filename,
                     prompt,
                   }),
-                  signal: AbortSignal.timeout(1000 * 60 * 60 * 20), // 20 hours
+                  dispatcher: new Agent({
+                    headersTimeout: 0,
+                    bodyTimeout: 0,
+                    connectTimeout: 0,
+                  }),
                 })
                   .catch((e: any) => {
                     app.log.error(
@@ -380,7 +385,11 @@ server.after(() => {
                   prompt,
                   error: e.message,
                 }),
-                signal: AbortSignal.timeout(1000 * 60 * 60 * 20), // 20 hours
+                dispatcher: new Agent({
+                  headersTimeout: 0,
+                  bodyTimeout: 0,
+                  connectTimeout: 0,
+                }),
               });
 
               if (!resp.ok) {
@@ -500,10 +509,14 @@ server.after(() => {
                   "Content-Type": "application/json",
                 },
                 body: JSON.stringify({ prompt, id, webhook, convert_output }),
-                signal: AbortSignal.timeout(1000 * 60 * 60 * 20), // 20 hours
+                dispatcher: new Agent({
+                  headersTimeout: 0,
+                  bodyTimeout: 0,
+                  connectTimeout: 0,
+                }),
               }
             );
-            const body = await resp.json();
+            const body = (await resp.json()) as any;
             if (!resp.ok) {
               return reply.code(resp.status).send(body);
             }
