@@ -12,15 +12,19 @@ import path from "path";
 import { version } from "../package.json";
 import config from "./config";
 import {
+  processImage,
+  zodToMarkdownTable,
+  convertImageBuffer,
+  getConfiguredWebhookHandlers,
+} from "./utils";
+import {
   warmupComfyUI,
   waitForComfyUIToStart,
   launchComfyUI,
   shutdownComfyUI,
-  processImage,
-  zodToMarkdownTable,
-  convertImageBuffer,
   runPromptAndGetOutputs,
-} from "./utils";
+  connectToComfyUIWebsocketStream,
+} from "./comfy";
 import {
   PromptRequestSchema,
   PromptErrorResponseSchema,
@@ -34,10 +38,11 @@ import {
 import workflows from "./workflows";
 import { z } from "zod";
 import { randomUUID } from "crypto";
+import { WebSocket } from "ws";
 
 const server = Fastify({
   bodyLimit: config.maxBodySize,
-  logger: true,
+  logger: { level: config.logLevel },
 });
 server.setValidatorCompiler(validatorCompiler);
 server.setSerializerCompiler(serializerCompiler);
@@ -57,6 +62,7 @@ for (const modelType in config.models) {
 
 let warm = false;
 let wasEverWarm = false;
+let queueDepth = 0;
 
 server.register(fastifySwagger, {
   openapi: {
@@ -136,7 +142,10 @@ server.after(() => {
       },
     },
     async (request, reply) => {
-      if (warm) {
+      if (
+        warm &&
+        (!config.maxQueueDepth || queueDepth < config.maxQueueDepth)
+      ) {
         return reply.code(200).send({ version, status: "ready" });
       }
       return reply.code(503).send({ version, status: "not ready" });
@@ -282,69 +291,104 @@ server.after(() => {
         /**
          * Send the prompt to ComfyUI, and return a 202 response to the user.
          */
-        runPromptAndGetOutputs(prompt, app.log).then(
-          /**
-           * This function does not block returning the 202 response to the user.
-           */
-          async (outputs: Record<string, Buffer>) => {
-            for (const originalFilename in outputs) {
-              let filename = originalFilename;
-              let fileBuffer = outputs[filename];
-              if (convert_output) {
-                try {
-                  fileBuffer = await convertImageBuffer(
-                    fileBuffer,
-                    convert_output
-                  );
+        runPromptAndGetOutputs(id, prompt, app.log)
+          .then(
+            /**
+             * This function does not block returning the 202 response to the user.
+             */
+            async (outputs: Record<string, Buffer>) => {
+              for (const originalFilename in outputs) {
+                let filename = originalFilename;
+                let fileBuffer = outputs[filename];
+                if (convert_output) {
+                  try {
+                    fileBuffer = await convertImageBuffer(
+                      fileBuffer,
+                      convert_output
+                    );
 
-                  /**
-                   * If the user has provided an output format, we need to update the filename
-                   */
-                  filename = originalFilename.replace(
-                    /\.[^/.]+$/,
-                    `.${convert_output.format}`
-                  );
-                } catch (e: any) {
-                  app.log.warn(`Failed to convert image: ${e.message}`);
+                    /**
+                     * If the user has provided an output format, we need to update the filename
+                     */
+                    filename = originalFilename.replace(
+                      /\.[^/.]+$/,
+                      `.${convert_output.format}`
+                    );
+                  } catch (e: any) {
+                    app.log.warn(`Failed to convert image: ${e.message}`);
+                  }
                 }
+                const base64File = fileBuffer.toString("base64");
+                app.log.info(
+                  `Sending image ${filename} to webhook: ${webhook}`
+                );
+                fetch(webhook, {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({
+                    event: "output.complete",
+                    image: base64File,
+                    id,
+                    filename,
+                    prompt,
+                  }),
+                })
+                  .catch((e: any) => {
+                    app.log.error(
+                      `Failed to send image to webhook: ${e.message}`
+                    );
+                  })
+                  .then(async (resp) => {
+                    if (!resp) {
+                      app.log.error("No response from webhook");
+                    } else if (!resp.ok) {
+                      app.log.error(
+                        `Failed to send image ${filename}: ${await resp.text()}`
+                      );
+                    } else {
+                      app.log.info(`Sent image ${filename}`);
+                    }
+                  });
+
+                // Remove the file after sending
+                fsPromises.unlink(
+                  path.join(config.outputDir, originalFilename)
+                );
               }
-              const base64File = fileBuffer.toString("base64");
-              app.log.info(`Sending image ${filename} to webhook: ${webhook}`);
-              fetch(webhook, {
+            }
+          )
+          .catch(async (e: any) => {
+            /**
+             * Send a webhook reporting that the generation failed.
+             */
+            app.log.error(`Failed to generate images: ${e.message}`);
+            try {
+              const resp = await fetch(webhook, {
                 method: "POST",
                 headers: {
                   "Content-Type": "application/json",
                 },
                 body: JSON.stringify({
-                  event: "output.complete",
-                  image: base64File,
+                  event: "prompt.failed",
                   id,
-                  filename,
                   prompt,
+                  error: e.message,
                 }),
-              })
-                .catch((e: any) => {
-                  app.log.error(
-                    `Failed to send image to webhook: ${e.message}`
-                  );
-                })
-                .then(async (resp) => {
-                  if (!resp) {
-                    app.log.error("No response from webhook");
-                  } else if (!resp.ok) {
-                    app.log.error(
-                      `Failed to send image ${filename}: ${await resp.text()}`
-                    );
-                  } else {
-                    app.log.info(`Sent image ${filename}`);
-                  }
-                });
+              });
 
-              // Remove the file after sending
-              fsPromises.unlink(path.join(config.outputDir, originalFilename));
+              if (!resp.ok) {
+                app.log.error(
+                  `Failed to send failure message to webhook: ${await resp.text()}`
+                );
+              }
+            } catch (e: any) {
+              app.log.error(
+                `Failed to send failure message to webhook: ${e.message}`
+              );
             }
-          }
-        );
+          });
         return reply.code(202).send({ status: "ok", id, webhook, prompt });
       } else {
         /**
@@ -357,7 +401,7 @@ server.after(() => {
         /**
          * Send the prompt to ComfyUI, and wait for the images to be generated.
          */
-        const allOutputs = await runPromptAndGetOutputs(prompt, app.log);
+        const allOutputs = await runPromptAndGetOutputs(id, prompt, app.log);
         for (const originalFilename in allOutputs) {
           let fileBuffer = allOutputs[originalFilename];
           let filename = originalFilename;
@@ -421,7 +465,7 @@ server.after(() => {
 
         /**
          * Workflow endpoints expose a simpler API to users, and then perform the transformation
-         * to a ComfyUI prompt behind the scenes. These endpoints behind-the-scenes just call the /prompt
+         * to a ComfyUI prompt behind the scenes. These endpoints under the hood just call the /prompt
          * endpoint with the appropriate parameters.
          */
         app.post<{
@@ -474,9 +518,14 @@ server.after(() => {
   walk(workflows);
 });
 
+let comfyWebsocketClient: WebSocket | null = null;
+
 process.on("SIGINT", async () => {
   server.log.info("Received SIGINT, interrupting process");
   shutdownComfyUI();
+  if (comfyWebsocketClient) {
+    comfyWebsocketClient.terminate();
+  }
   process.exit(0);
 });
 
@@ -510,9 +559,27 @@ export async function start() {
     const start = Date.now();
     // Start ComfyUI
     await launchComfyUIAndAPIServerAndWaitForWarmup();
-
     const warmupTime = Date.now() - start;
     server.log.info(`Warmup took ${warmupTime / 1000}s`);
+    const handlers = getConfiguredWebhookHandlers(server.log);
+    if (handlers.onStatus) {
+      const originalHandler = handlers.onStatus;
+      handlers.onStatus = (msg) => {
+        queueDepth = msg.data.status.exec_info.queue_remaining;
+        server.log.debug(`Queue depth: ${queueDepth}`);
+        originalHandler(msg);
+      };
+    } else {
+      handlers.onStatus = (msg) => {
+        queueDepth = msg.data.status.exec_info.queue_remaining;
+        server.log.debug(`Queue depth: ${queueDepth}`);
+      };
+    }
+    comfyWebsocketClient = await connectToComfyUIWebsocketStream(
+      handlers,
+      server.log,
+      true
+    );
   } catch (err: any) {
     server.log.error(`Failed to start server: ${err.message}`);
     process.exit(1);

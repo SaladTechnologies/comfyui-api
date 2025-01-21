@@ -6,7 +6,7 @@ import {
   createWebhookListener,
   submitPrompt,
   checkImage,
-  waitForServerToStart,
+  waitForServerToBeReady,
 } from "./test-utils";
 import txt2Video from "./workflows/ltxv_text_to_video.json";
 import img2Video from "./workflows/ltxv_image_to_video.json";
@@ -29,7 +29,7 @@ const img2VideoOptions = {
 
 describe("LTX Video", () => {
   before(async () => {
-    await waitForServerToStart();
+    await waitForServerToBeReady();
   });
   describe("Return content in response", () => {
     it("text2video works", async () => {

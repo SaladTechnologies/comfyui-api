@@ -6,7 +6,7 @@ import {
   createWebhookListener,
   submitPrompt,
   checkImage,
-  waitForServerToStart,
+  waitForServerToBeReady,
 } from "./test-utils";
 import sd15Txt2Img from "./workflows/sd1.5-txt2img.json";
 import sd15Img2Img from "./workflows/sd1.5-img2img.json";
@@ -21,7 +21,7 @@ sd15Img2Img["10"].inputs.image = inputImage;
 
 describe("Stable Diffusion 1.5", () => {
   before(async () => {
-    await waitForServerToStart();
+    await waitForServerToBeReady();
   });
   describe("Return content in response", () => {
     it("text2image works with 1 image", async () => {

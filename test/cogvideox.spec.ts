@@ -1,12 +1,10 @@
 import { expect } from "earl";
-import path from "path";
-import fs from "fs";
 import {
   sleep,
   createWebhookListener,
   submitPrompt,
   checkImage,
-  waitForServerToStart,
+  waitForServerToBeReady,
 } from "./test-utils";
 import txt2Video from "./workflows/cogvideox-txt2video.json";
 
@@ -18,7 +16,7 @@ const text2VideoOptions = {
 
 describe("CogVideoX", () => {
   before(async () => {
-    await waitForServerToStart();
+    await waitForServerToBeReady();
   });
   describe("Return content in response", () => {
     it("text2video works", async () => {

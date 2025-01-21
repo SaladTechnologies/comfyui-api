@@ -15,7 +15,7 @@ RUN apt-get update && apt-get install -y \
 RUN pip install --upgrade pip
 RUN pip install comfy-cli
 WORKDIR /opt
-ARG comfy_version=0.3.10
+ARG comfy_version=0.3.12
 RUN git clone --depth 1 --branch v${comfy_version} https://github.com/comfyanonymous/ComfyUI.git
 WORKDIR /opt/ComfyUI
 RUN pip install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu121
