@@ -1,6 +1,6 @@
 {
   "name": "comfyui-api",
-  "version": "1.8.0",
+  "version": "1.8.1",
   "description": "Wraps comfyui to make it easier to use as a stateless web service",
   "main": "dist/src/index.js",
   "scripts": {
@@ -13,7 +13,6 @@
   "license": "MIT",
   "devDependencies": {
     "@anthropic-ai/sdk": "^0.26.1",
-    "@types/chokidar": "^2.1.3",
     "@types/mocha": "^10.0.10",
     "@types/node": "^20.12.7",
     "@types/ws": "^8.5.13",
@@ -29,11 +28,11 @@
   "dependencies": {
     "@fastify/swagger": "^8.15.0",
     "@fastify/swagger-ui": "^4.1.0",
-    "chokidar": "^3.6.0",
     "fastify": "^4.26.2",
     "fastify-type-provider-zod": "^2.0.0",
     "sharp": "^0.33.5",
     "typescript": "^5.4.5",
+    "undici": "^7.2.3",
     "ws": "^8.18.0",
     "zod": "^3.23.8"
   },
@@ -43,5 +42,8 @@
     ],
     "outputPath": "bin",
     "public": true
+  },
+  "engines": {
+    "node": ">=20.18.1"
   }
 }

@@ -62,7 +62,7 @@ The server hosts swagger docs at `/docs`, which can be used to interact with the
 ## Features
 
 - **Full Power Of ComfyUI**: The server supports the full ComfyUI /prompt API, and can be used to execute any ComfyUI workflow.
-- **Verified Model/Workflow Support**: Stable Diffusion 1.5, Stable Diffusion XL, Stable Diffusion 3.5, Flux, AnimateDiff, LTX Video, Hunyuan Video, CogVideoX, Mochi Video. My assumption is more model types are supported, but these are the ones I have verified.
+- **Verified Model/Workflow Support**: Stable Diffusion 1.5, Stable Diffusion XL, Stable Diffusion 3.5, Flux, AnimateDiff, LTX Video, Hunyuan Video, CogVideoX, Mochi Video, Cosmos 1.0. My assumption is more model types are supported, but these are the ones I have verified.
 - **Stateless API**: The server is stateless, and can be scaled horizontally to handle more requests.
 - **Swagger Docs**: The server hosts swagger docs at `/docs`, which can be used to interact with the API.
 - **"Synchronous" Support**: The server will return base64-encoded images directly in the response, if no webhook is provided.
@@ -75,6 +75,7 @@ The server hosts swagger docs at `/docs`, which can be used to interact with the
 - **Bring Your Own Models And Extensions**: Use any model or extension you want by adding them to the normal ComfyUI directories `/opt/ComfyUI/`.
 - **Works Great with SaladCloud**: The server is designed to work well with SaladCloud, and can be used to host ComfyUI on the SaladCloud platform. It is likely to work well with other platforms as well.
 - **Single Binary**: The server is distributed as a single binary, and can be run with no dependencies.
+- **Websocket Events Via Webhook**: The server can forward ComfyUI websocket events to a configured webhook, which can be used to monitor the progress of a workflow.
 - **Friendly License**: The server is distributed under the MIT license, and can be used for any purpose. All of its dependencies are also MIT or Apache 2.0 licensed, except ComfyUI itself, which is GPL-3.0 licensed.
 
 ## Probes
@@ -651,7 +652,7 @@ All of SaladCloud's image and video generation [recipes](https://docs.salad.com/
 ## Considerations for Running on SaladCloud
 
 - **SaladCloud's Container Gateway has a 100s timeout.** It is possible to construct very long running ComfyUI workflows, such as for video generation, that would exceed this timeout. In this scenario, you will need to either use a webhook to receive the results, or integrate with SaladCloud's [Job Queues](https://docs.salad.com/products/sce/job-queues/job-queues#job-queues) to handle long-running workflows.
-- **SaladCloud's maximum container image size is 35GB(compressed).** The base [comfyui-api image](https://hub.docker.com/r/saladtechnologies/comfyui/tags) is around 3.25GB(compressed), so any models and extensions must fit in the remaining space.
+- **SaladCloud's maximum container image size is 35GB(compressed).** The base [comfyui-api image](https://github.com/SaladTechnologies/comfyui-api/pkgs/container/comfyui-api) is around 3.25GB(compressed), so any models and extensions must fit in the remaining space.
 
 ## Contributing
 
@@ -683,6 +684,9 @@ Automated tests for this project require model files to be present in the `./tes
 - `vae-ft-mse-840000-ema-pruned.ckpt` - https://huggingface.co/stabilityai/sd-vae-ft-mse-original/blob/main/vae-ft-mse-840000-ema-pruned.ckpt
 - `THUDM/CogVideoX-2b` - https://huggingface.co/THUDM/CogVideoX-2b
 - `mochi_preview_fp8_scaled.safetensors` - https://huggingface.co/Comfy-Org/mochi_preview_repackaged/blob/main/all_in_one/mochi_preview_fp8_scaled.safetensors
+- `oldt5_xxl_fp8_e4m3fn_scaled.safetensors` - https://huggingface.co/comfyanonymous/cosmos_1.0_text_encoder_and_VAE_ComfyUI/tree/main/text_encoders
+- `cosmos_cv8x8x8_1.0.safetensors` - https://huggingface.co/comfyanonymous/cosmos_1.0_text_encoder_and_VAE_ComfyUI/blob/main/vae/cosmos_cv8x8x8_1.0.safetensors
+- `Cosmos-1_0-Diffusion-7B-Text2World.safetensors` - https://huggingface.co/mcmonkey/cosmos-1.0/blob/main/Cosmos-1_0-Diffusion-7B-Text2World.safetensors
 
 
 They should be in the correct comfyui directory structure, like so:
@@ -709,15 +713,18 @@ They should be in the correct comfyui directory structure, like so:
 ├── controlnet
 │   ├── openpose-sd1.5-1.1.safetensors
 ├── diffusion_models
-│   └── hunyuan_video_t2v_720p_bf16.safetensors
+│   ├── hunyuan_video_t2v_720p_bf16.safetensors
+|   └── Cosmos-1_0-Diffusion-7B-Text2World.safetensors
 ├── loras
 │   ├── jump_V2.safetensors
 ├── text_encoders
 │   ├── clip_l.safetensors
-│   └── llava_llama3_fp8_scaled.safetensors
+│   ├── llava_llama3_fp8_scaled.safetensors
+|   └── oldt5_xxl_fp8_e4m3fn_scaled.safetensors
 ├── vae
 │   ├── hunyuan_video_vae_bf16.safetensors
-│   └── vae-ft-mse-840000-ema-pruned.ckpt
+│   ├── vae-ft-mse-840000-ema-pruned.ckpt
+│   └── cosmos_cv8x8x8_1.0.safetensors
 ```
 
 ### Running Tests

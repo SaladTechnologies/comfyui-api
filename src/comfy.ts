@@ -15,10 +15,13 @@ import {
   isExecutionInterruptedMessage,
   isExecutionErrorMessage,
   WebhookHandlers,
+  ComfyPromptResponse,
+  ComfyHistoryResponse,
 } from "./types";
 import path from "path";
 import fsPromises from "fs/promises";
 import WebSocket, { MessageEvent } from "ws";
+import { fetch, Agent } from "undici";
 
 const commandExecutor = new CommandExecutor();
 
@@ -76,6 +79,11 @@ export async function warmupComfyUI(): Promise<void> {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ prompt: config.warmupPrompt }),
+      dispatcher: new Agent({
+        headersTimeout: 0,
+        bodyTimeout: 0,
+        connectTimeout: 0,
+      }),
     });
     if (!resp.ok) {
       throw new Error(`Failed to warmup Comfy UI: ${await resp.text()}`);
@@ -94,7 +102,7 @@ export async function queuePrompt(prompt: ComfyPrompt): Promise<string> {
   if (!resp.ok) {
     throw new Error(`Failed to queue prompt: ${await resp.text()}`);
   }
-  const { prompt_id } = await resp.json();
+  const { prompt_id } = (await resp.json()) as ComfyPromptResponse;
   return prompt_id;
 }
 
@@ -106,7 +114,7 @@ export async function getPromptOutputs(
   if (!resp.ok) {
     throw new Error(`Failed to get prompt outputs: ${await resp.text()}`);
   }
-  const body = await resp.json();
+  const body = (await resp.json()) as ComfyHistoryResponse;
   const allOutputs: Record<string, Buffer> = {};
   const fileLoadPromises: Promise<void>[] = [];
   if (!body[promptId]) {

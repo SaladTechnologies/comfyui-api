@@ -2,8 +2,12 @@ services:
   comfyui:
     image: ghcr.io/saladtechnologies/comfyui-api:comfy0.3.12-test-image
     volumes:
-      - ./bin:/app/bin
-      - ./test/docker-image/models:/opt/ComfyUI/models
+      - type: bind
+        source: ./bin
+        target: /app/bin
+      - type: bind
+        source: ./test/docker-image/models
+        target: /opt/ComfyUI/models
     command: ["/app/bin/comfyui-api"]
     build:
       context: ./test/docker-image
