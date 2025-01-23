@@ -94,7 +94,7 @@ This guide provides an overview of how to configure the application using enviro
 ### Environment Variables
 
 The following table lists the available environment variables and their default values.
-The default values mostly assume this will run on top of an [ai-dock](https://github.com/ai-dock/comfyui) image, but can be customized as needed.
+For historical reasons, the default values mostly assume this will run on top of an [ai-dock](https://github.com/ai-dock/comfyui) image, but we currently provide [our own more minimal image](#prebuilt-docker-images) here in this repo.
 
 | Variable                     | Default Value         | Description                                                                                                                                                                                                                                  |
 | ---------------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

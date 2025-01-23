@@ -11,7 +11,8 @@ import {
 import sd15Txt2Img from "./workflows/sd1.5-txt2img.json";
 import sd15Img2Img from "./workflows/sd1.5-img2img.json";
 import sd15MultiOutput from "./workflows/sd1.5-multi-output.json";
-import sd15Parallel from "./workflows/sd1.5-parallel.json";
+import sd15Parallel2 from "./workflows/sd1.5-parallel-2.json";
+import sd15Parallel3 from "./workflows/sd1.5-parallel-3.json";
 
 const sd15Txt2ImgBatch4 = JSON.parse(JSON.stringify(sd15Txt2Img));
 sd15Txt2ImgBatch4["5"].inputs.batch_size = 4;
@@ -58,8 +59,14 @@ describe("Stable Diffusion 1.5", () => {
       expect(respBody.images.length).toEqual(2);
     });
 
-    it("works if there are parallel, non-interrelated workflows", async () => {
-      const respBody = await submitPrompt(sd15Parallel);
+    it("works if there are 2 parallel, non-interrelated workflows", async () => {
+      const respBody = await submitPrompt(sd15Parallel2);
+      expect(respBody.filenames.length).toEqual(2);
+      expect(respBody.images.length).toEqual(2);
+    });
+
+    it("works if there are 3 parallel, non-interrelated workflows", async () => {
+      const respBody = await submitPrompt(sd15Parallel3);
       expect(respBody.filenames.length).toEqual(3);
       expect(respBody.images.length).toEqual(3);
     });
