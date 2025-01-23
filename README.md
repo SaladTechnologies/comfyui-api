@@ -656,8 +656,12 @@ All of SaladCloud's image and video generation [recipes](https://docs.salad.com/
 
 ## Contributing
 
-Contributions are welcome! Please open an issue or a pull request if you have any suggestions or improvements.
-ComfyUI is a powerful tool with MANY options, and it's likely that not all of them are currently supported by the comfyui-api server. If you find a feature that is missing, please open an issue or a pull request to add it. Let's make productionizing ComfyUI as easy as possible!
+Contributions are welcome!
+ComfyUI is a powerful tool with MANY options, and it's likely that not all of them are currently supported by the `comfyui-api` server.
+Please open an issue with as much information as possible about the problem you're facing or the feature you need.
+If you have encountered a bug, please include the steps to reproduce it, and any relevant logs or error messages.
+If you are able, adding a failing test is the best way to ensure your issue is resolved quickly.
+Let's make productionizing ComfyUI as easy as possible!
 
 ## Testing
 
