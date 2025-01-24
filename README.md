@@ -31,6 +31,7 @@ A simple wrapper that facilitates using ComfyUI as a stateless API, either by re
   - [Testing](#testing)
     - [Required Models](#required-models)
     - [Running Tests](#running-tests)
+  - [Architecture](#architecture)
 
 ## Download and Usage
 
@@ -750,3 +751,10 @@ npm test
 This will take quite a long time, and requires a minimum of 24gb of RAM.
 I did these tests on my RTX 3080ti Laptop Edition w/ 16gb VRAM, and 24gb WSL RAM.
 It takes about 30 minutes to run all the tests.
+
+## Architecture
+
+The server is built with [Fastify](https://www.fastify.io/), a fast and low overhead web framework for Node.js.
+It sits in front of ComfyUI, and provides a RESTful API for interacting with ComfyUI.
+
+![Architecture Diagram](./ComfyUI%20API%20Diagram.png)
