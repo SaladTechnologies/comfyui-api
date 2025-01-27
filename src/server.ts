@@ -9,13 +9,13 @@ import {
 } from "fastify-type-provider-zod";
 import fsPromises from "fs/promises";
 import path from "path";
-import { version } from "../package.json";
 import config from "./config";
 import {
   processImage,
   zodToMarkdownTable,
   convertImageBuffer,
   getConfiguredWebhookHandlers,
+  fetchWithRetries,
 } from "./utils";
 import {
   warmupComfyUI,
@@ -40,6 +40,8 @@ import { z } from "zod";
 import { randomUUID } from "crypto";
 import { WebSocket } from "ws";
 import { fetch, Agent } from "undici";
+
+const { apiVersion: version } = config;
 
 const server = Fastify({
   bodyLimit: config.maxBodySize,
@@ -326,24 +328,29 @@ server.after(() => {
                 app.log.info(
                   `Sending image ${filename} to webhook: ${webhook}`
                 );
-                fetch(webhook, {
-                  method: "POST",
-                  headers: {
-                    "Content-Type": "application/json",
+                fetchWithRetries(
+                  webhook,
+                  {
+                    method: "POST",
+                    headers: {
+                      "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                      event: "output.complete",
+                      image: base64File,
+                      id,
+                      filename,
+                      prompt,
+                    }),
+                    dispatcher: new Agent({
+                      headersTimeout: 0,
+                      bodyTimeout: 0,
+                      connectTimeout: 0,
+                    }),
                   },
-                  body: JSON.stringify({
-                    event: "output.complete",
-                    image: base64File,
-                    id,
-                    filename,
-                    prompt,
-                  }),
-                  dispatcher: new Agent({
-                    headersTimeout: 0,
-                    bodyTimeout: 0,
-                    connectTimeout: 0,
-                  }),
-                })
+                  config.promptWebhookRetries,
+                  app.log
+                )
                   .catch((e: any) => {
                     app.log.error(
                       `Failed to send image to webhook: ${e.message}`
@@ -374,23 +381,28 @@ server.after(() => {
              */
             app.log.error(`Failed to generate images: ${e.message}`);
             try {
-              const resp = await fetch(webhook, {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
+              const resp = await fetchWithRetries(
+                webhook,
+                {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({
+                    event: "prompt.failed",
+                    id,
+                    prompt,
+                    error: e.message,
+                  }),
+                  dispatcher: new Agent({
+                    headersTimeout: 0,
+                    bodyTimeout: 0,
+                    connectTimeout: 0,
+                  }),
                 },
-                body: JSON.stringify({
-                  event: "prompt.failed",
-                  id,
-                  prompt,
-                  error: e.message,
-                }),
-                dispatcher: new Agent({
-                  headersTimeout: 0,
-                  bodyTimeout: 0,
-                  connectTimeout: 0,
-                }),
-              });
+                config.promptWebhookRetries,
+                app.log
+              );
 
               if (!resp.ok) {
                 app.log.error(
@@ -550,6 +562,7 @@ process.on("SIGINT", async () => {
 
 async function launchComfyUIAndAPIServerAndWaitForWarmup() {
   warm = false;
+  server.log.info(`Starting ComfyUI API ${config.comfyVersion}`);
   launchComfyUI().catch((err: any) => {
     server.log.error(err.message);
     if (config.alwaysRestartComfyUI) {
@@ -561,6 +574,7 @@ async function launchComfyUIAndAPIServerAndWaitForWarmup() {
     }
   });
   await waitForComfyUIToStart(server.log);
+  server.log.info(`ComfyUI API ${config.comfyVersion} started.`);
   if (!wasEverWarm) {
     await server.ready();
     server.swagger();

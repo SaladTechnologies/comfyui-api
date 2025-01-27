@@ -8,6 +8,7 @@ import { randomUUID } from "crypto";
 import { ZodObject, ZodRawShape, ZodTypeAny, ZodDefault } from "zod";
 import sharp from "sharp";
 import { OutputConversionOptions, WebhookHandlers } from "./types";
+import { fetch, RequestInit, Response } from "undici";
 
 export async function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -261,4 +262,29 @@ export function getConfiguredWebhookHandlers(
   }
 
   return handlers as WebhookHandlers;
+}
+
+export async function fetchWithRetries(
+  url: string,
+  options: RequestInit,
+  maxRetries: number,
+  log: FastifyBaseLogger
+): Promise<Response> {
+  let retries = 0;
+  while (retries < maxRetries) {
+    try {
+      const response = await fetch(url, options);
+      if (response.ok) {
+        return response;
+      }
+      log.error(
+        `Failed to fetch ${url}: ${response.status} ${response.statusText}`
+      );
+    } catch (error) {
+      log.error(`Error fetching ${url}: ${error}`);
+    }
+    retries++;
+    await sleep(1000);
+  }
+  throw new Error(`Failed to fetch ${url} after ${maxRetries} retries`);
 }
