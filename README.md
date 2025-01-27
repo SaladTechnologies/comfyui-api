@@ -1,6 +1,6 @@
 # ComfyUI API - A Stateless and Extendable API for ComfyUI
 
-A simple wrapper that facilitates using ComfyUI as a stateless API, either by receiving images in the response, or by sending completed images to a webhook
+A simple wrapper that facilitates using [ComfyUI](https://github.com/comfyanonymous/ComfyUI/) as a stateless API, either by receiving images in the response, or by sending completed images to a webhook
 
 - [ComfyUI API - A Stateless and Extendable API for ComfyUI](#comfyui-api---a-stateless-and-extendable-api-for-comfyui)
   - [Download and Usage](#download-and-usage)
