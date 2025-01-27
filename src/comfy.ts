@@ -293,6 +293,11 @@ export async function runPromptAndGetOutputs(
   const promptId = await queuePrompt(prompt);
   comfyIDToApiID[promptId] = id;
   log.debug(`Prompt ${id} queued as comfy prompt id: ${promptId}`);
+  /**
+   * We start with a slow poll to the history endpoint, both as a safety measure around websocket
+   * failures, and to avoid hammering the history endpoint with requests in the case of many queued
+   * prompts.
+   */
   const poller = new HistoryEndpointPoller({
     promptId,
     log,
@@ -300,13 +305,30 @@ export async function runPromptAndGetOutputs(
     interval: 1000,
   });
   const historyPoll = poller.poll();
+
+  /**
+   * We also listen to the websocket stream for the prompt to complete.
+   */
   const wsSuccessEvent = waitForPromptToComplete(promptId);
+
+  /**
+   * We wait for either the history endpoint to return the outputs, or the websocket
+   * to signal that the prompt has completed.
+   */
   const firstToComplete = await Promise.race([historyPoll, wsSuccessEvent]);
   if (firstToComplete === true) {
+    /**
+     * If the websocket signals that the prompt has completed (this is typical), we can speed
+     * up the history endpoint polling, as it should only need 1-2 tries to get the outputs.
+     */
     log.info(`Prompt ${id} completed`);
     poller.setMaxTries(100);
     poller.setInterval(50);
     const outputs = await historyPoll;
+    /**
+     * We delete the comfyIDToApiID mapping after a short delay to prevent
+     * this object from growing indefinitely.
+     */
     setTimeout(() => {
       delete comfyIDToApiID[promptId];
     }, 1000);
@@ -319,7 +341,16 @@ export async function runPromptAndGetOutputs(
   } else if (firstToComplete === false) {
     throw new Error("Prompt execution failed");
   }
+  /**
+   * If we reach this point, it means that the history endpoint returned the outputs
+   * before the websocket signaled that the prompt had completed. This is unexpected,
+   * but fine. We return the outputs and delete the comfyIDToApiID mapping.
+   */
   setTimeout(() => {
+    /**
+     * We delete the comfyIDToApiID mapping after a short delay to prevent
+     * this object from growing indefinitely.
+     */
     delete comfyIDToApiID[promptId];
   }, 1000);
   return firstToComplete;
