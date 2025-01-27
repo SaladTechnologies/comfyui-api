@@ -322,7 +322,8 @@ export async function runPromptAndGetOutputs(
     firstToComplete = await Promise.race([historyPoll, wsSuccessEvent]);
   } catch (e) {
     /**
-     * If
+     * If an error is thrown by either of those processes, we stop the polling and
+     * throw an error.
      */
     log.error(`Error waiting for prompt to complete: ${e}`);
     firstToComplete = false;
