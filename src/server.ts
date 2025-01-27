@@ -598,7 +598,9 @@ export async function start() {
     // Start ComfyUI
     await launchComfyUIAndAPIServerAndWaitForWarmup();
     const warmupTime = Date.now() - start;
-    server.log.info(`Warmup took ${warmupTime / 1000}s`);
+    server.log.info(
+      `Starting Comfy and any warmup workflow took ${warmupTime / 1000}s`
+    );
   } catch (err: any) {
     server.log.error(`Failed to start server: ${err.message}`);
     process.exit(1);

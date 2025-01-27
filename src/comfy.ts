@@ -112,12 +112,15 @@ export async function getPromptOutputs(
 ): Promise<Record<string, Buffer> | null> {
   const resp = await fetch(`${config.comfyURL}/history/${promptId}`);
   if (!resp.ok) {
-    throw new Error(`Failed to get prompt outputs: ${await resp.text()}`);
+    const txt = await resp.text();
+    log.error(`Failed to get prompt outputs: ${txt}`);
+    throw new Error(`Failed to get prompt outputs: ${txt}`);
   }
   const body = (await resp.json()) as ComfyHistoryResponse;
   const allOutputs: Record<string, Buffer> = {};
   const fileLoadPromises: Promise<void>[] = [];
   if (!body[promptId]) {
+    log.debug(`Prompt ${promptId} not found in history endpoint response`);
     return null;
   }
   const { status, outputs } = body[promptId];
@@ -165,7 +168,9 @@ export async function getPromptOutputs(
   return allOutputs;
 }
 
-export async function waitForPromptToComplete(promptId: string): Promise<void> {
+export async function waitForPromptToComplete(
+  promptId: string
+): Promise<boolean> {
   return new Promise((resolve, reject) => {
     const handleMessage = (event: MessageEvent) => {
       const { data } = event;
@@ -175,8 +180,9 @@ export async function waitForPromptToComplete(promptId: string): Promise<void> {
           isExecutionSuccessMessage(message) &&
           message.data.prompt_id === promptId
         ) {
+          wsClient?.removeEventListener("close", onClose);
           wsClient?.removeEventListener("message", handleMessage);
-          return resolve();
+          return resolve(true);
         } else if (
           isExecutionErrorMessage(message) &&
           message.data.prompt_id === promptId
@@ -203,6 +209,82 @@ export async function waitForPromptToComplete(promptId: string): Promise<void> {
 
 export const comfyIDToApiID: Record<string, string> = {};
 
+class HistoryEndpointPoller {
+  private promptId: string;
+  private log: FastifyBaseLogger;
+  private maxTries: number;
+  private interval: number;
+  private currentTries: number = 0;
+  private sleepTimer: NodeJS.Timeout | null = null;
+  private resolveCurrentSleep: (() => void) | null = null;
+  constructor(options: {
+    promptId: string;
+    log: FastifyBaseLogger;
+    maxTries: number;
+    interval: number;
+  }) {
+    this.promptId = options.promptId;
+    this.log = options.log;
+    this.maxTries = options.maxTries;
+    this.interval = options.interval;
+  }
+  async poll(): Promise<Record<string, Buffer> | null> {
+    while (this.currentTries < this.getMaxTries() || this.maxTries === 0) {
+      this.log.debug(
+        `Polling history endpoint for prompt ${this.promptId}, try ${
+          this.currentTries
+        } of ${this.getMaxTries()}`
+      );
+      try {
+        const outputs = await getPromptOutputs(this.promptId, this.log);
+        if (outputs) {
+          return outputs;
+        }
+      } catch (e) {
+        this.log.error(`Failed to get prompt outputs: ${e}`);
+      }
+      this.currentTries++;
+      this.log.debug(
+        `Polling history endpoint for prompt ${
+          this.promptId
+        }, sleep for ${this.getInterval()}ms`
+      );
+      await new Promise<void>((resolve) => {
+        this.resolveCurrentSleep = resolve;
+        this.sleepTimer = setTimeout(resolve, this.getInterval());
+      });
+    }
+    return null;
+  }
+
+  getInterval(): number {
+    return this.interval;
+  }
+
+  getMaxTries(): number {
+    return this.maxTries;
+  }
+
+  setInterval(interval: number, skipCurrentTimeout: boolean = true): void {
+    this.interval = interval;
+    if (skipCurrentTimeout && this.sleepTimer) {
+      clearTimeout(this.sleepTimer);
+      this.sleepTimer = null;
+    }
+    if (skipCurrentTimeout && this.resolveCurrentSleep) {
+      this.resolveCurrentSleep();
+      this.resolveCurrentSleep = null;
+    }
+  }
+
+  setMaxTries(maxTries: number, reset: boolean = true): void {
+    this.maxTries = maxTries;
+    if (reset) {
+      this.currentTries = 0;
+    }
+  }
+}
+
 export async function runPromptAndGetOutputs(
   id: string,
   prompt: ComfyPrompt,
@@ -211,15 +293,36 @@ export async function runPromptAndGetOutputs(
   const promptId = await queuePrompt(prompt);
   comfyIDToApiID[promptId] = id;
   log.debug(`Prompt ${id} queued as comfy prompt id: ${promptId}`);
-  await waitForPromptToComplete(promptId);
-  const outputs = await getPromptOutputs(promptId, log);
-  if (outputs) {
-    sleep(1000).then(() => {
+  const poller = new HistoryEndpointPoller({
+    promptId,
+    log,
+    maxTries: 0,
+    interval: 1000,
+  });
+  const historyPoll = poller.poll();
+  const wsSuccessEvent = waitForPromptToComplete(promptId);
+  const firstToComplete = await Promise.race([historyPoll, wsSuccessEvent]);
+  if (firstToComplete === true) {
+    log.info(`Prompt ${id} completed`);
+    poller.setMaxTries(100);
+    poller.setInterval(50);
+    const outputs = await historyPoll;
+    setTimeout(() => {
       delete comfyIDToApiID[promptId];
-    });
-    return outputs;
+    }, 1000);
+    if (outputs) {
+      return outputs;
+    }
+    throw new Error("Failed to get prompt outputs");
+  } else if (firstToComplete === null) {
+    throw new Error("Failed to get prompt outputs");
+  } else if (firstToComplete === false) {
+    throw new Error("Prompt execution failed");
   }
-  throw new Error("Failed to get prompt outputs");
+  setTimeout(() => {
+    delete comfyIDToApiID[promptId];
+  }, 1000);
+  return firstToComplete;
 }
 
 let wsClient: WebSocket | null = null;
