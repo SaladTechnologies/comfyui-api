@@ -159,9 +159,10 @@ export async function getPromptOutputs(
       }
     }
   } else if (status.status_str === "error") {
+    log.error(JSON.stringify(status));
     throw new Error("Prompt execution failed");
   } else {
-    console.log(JSON.stringify(status, null, 2));
+    log.debug(JSON.stringify(status));
     throw new Error("Prompt is not completed");
   }
   await Promise.all(fileLoadPromises);
@@ -235,13 +236,9 @@ class HistoryEndpointPoller {
           this.currentTries
         } of ${this.getMaxTries()}`
       );
-      try {
-        const outputs = await getPromptOutputs(this.promptId, this.log);
-        if (outputs) {
-          return outputs;
-        }
-      } catch (e) {
-        this.log.error(`Failed to get prompt outputs: ${e}`);
+      const outputs = await getPromptOutputs(this.promptId, this.log);
+      if (outputs) {
+        return outputs;
       }
       this.currentTries++;
       this.log.debug(
@@ -283,6 +280,11 @@ class HistoryEndpointPoller {
       this.currentTries = 0;
     }
   }
+
+  stop(): void {
+    this.setMaxTries(this.currentTries);
+    this.setInterval(0);
+  }
 }
 
 export async function runPromptAndGetOutputs(
@@ -315,7 +317,17 @@ export async function runPromptAndGetOutputs(
    * We wait for either the history endpoint to return the outputs, or the websocket
    * to signal that the prompt has completed.
    */
-  const firstToComplete = await Promise.race([historyPoll, wsSuccessEvent]);
+  let firstToComplete: Record<string, Buffer> | boolean | null;
+  try {
+    firstToComplete = await Promise.race([historyPoll, wsSuccessEvent]);
+  } catch (e) {
+    /**
+     * If
+     */
+    log.error(`Error waiting for prompt to complete: ${e}`);
+    firstToComplete = false;
+  }
+
   if (firstToComplete === true) {
     /**
      * If the websocket signals that the prompt has completed (this is typical), we can speed
@@ -339,6 +351,7 @@ export async function runPromptAndGetOutputs(
   } else if (firstToComplete === null) {
     throw new Error("Failed to get prompt outputs");
   } else if (firstToComplete === false) {
+    poller.stop();
     throw new Error("Prompt execution failed");
   }
   /**
