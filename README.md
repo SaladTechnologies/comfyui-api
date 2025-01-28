@@ -1,6 +1,6 @@
 # ComfyUI API - A Stateless and Extendable API for ComfyUI
 
-A simple wrapper that facilitates using ComfyUI as a stateless API, either by receiving images in the response, or by sending completed images to a webhook
+A simple wrapper that facilitates using [ComfyUI](https://github.com/comfyanonymous/ComfyUI/) as a stateless API, either by receiving images in the response, or by sending completed images to a webhook
 
 - [ComfyUI API - A Stateless and Extendable API for ComfyUI](#comfyui-api---a-stateless-and-extendable-api-for-comfyui)
   - [Download and Usage](#download-and-usage)
@@ -31,6 +31,7 @@ A simple wrapper that facilitates using ComfyUI as a stateless API, either by re
   - [Testing](#testing)
     - [Required Models](#required-models)
     - [Running Tests](#running-tests)
+  - [Architecture](#architecture)
 
 ## Download and Usage
 
@@ -44,7 +45,7 @@ If you have your own ComfyUI dockerfile, you can add the comfyui-api server to i
 
 ```dockerfile
 # Change this to the version you want to use
-ARG api_version=1.8.0
+ARG api_version=1.8.2
 
 
 # Download the comfyui-api binary, and make it executable
@@ -94,7 +95,7 @@ This guide provides an overview of how to configure the application using enviro
 ### Environment Variables
 
 The following table lists the available environment variables and their default values.
-The default values mostly assume this will run on top of an [ai-dock](https://github.com/ai-dock/comfyui) image, but can be customized as needed.
+For historical reasons, the default values mostly assume this will run on top of an [ai-dock](https://github.com/ai-dock/comfyui) image, but we currently provide [our own more minimal image](#prebuilt-docker-images) here in this repo.
 
 | Variable                     | Default Value         | Description                                                                                                                                                                                                                                  |
 | ---------------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -114,6 +115,7 @@ The default values mostly assume this will run on top of an [ai-dock](https://gi
 | MODEL_DIR                    | "/opt/ComfyUI/models" | Directory for model files                                                                                                                                                                                                                    |
 | OUTPUT_DIR                   | "/opt/ComfyUI/output" | Directory for output files                                                                                                                                                                                                                   |
 | PORT                         | "3000"                | Wrapper port number                                                                                                                                                                                                                          |
+| PROMPT_WEBHOOK_RETRIES       | "3"                   | Number of times to retry sending a webhook for a prompt                                                                                                                                                                                      |
 | STARTUP_CHECK_INTERVAL_S     | "1"                   | Interval in seconds between startup checks                                                                                                                                                                                                   |
 | STARTUP_CHECK_MAX_TRIES      | "10"                  | Maximum number of startup check attempts                                                                                                                                                                                                     |
 | SYSTEM_META_*                | (not set)             | Any environment variable starting with SYSTEM_META_ will be sent to the system webhook as metadata. i.e. `SYSTEM_META_batch=abc` will add `{"batch": "abc"}` to the `.metadata` field on system webhooks.                                    |
@@ -656,8 +658,12 @@ All of SaladCloud's image and video generation [recipes](https://docs.salad.com/
 
 ## Contributing
 
-Contributions are welcome! Please open an issue or a pull request if you have any suggestions or improvements.
-ComfyUI is a powerful tool with MANY options, and it's likely that not all of them are currently supported by the comfyui-api server. If you find a feature that is missing, please open an issue or a pull request to add it. Let's make productionizing ComfyUI as easy as possible!
+Contributions are welcome!
+ComfyUI is a powerful tool with MANY options, and it's likely that not all of them are currently supported by the `comfyui-api` server.
+Please open an issue with as much information as possible about the problem you're facing or the feature you need.
+If you have encountered a bug, please include the steps to reproduce it, and any relevant logs or error messages.
+If you are able, adding a failing test is the best way to ensure your issue is resolved quickly.
+Let's make productionizing ComfyUI as easy as possible!
 
 ## Testing
 
@@ -746,3 +752,10 @@ npm test
 This will take quite a long time, and requires a minimum of 24gb of RAM.
 I did these tests on my RTX 3080ti Laptop Edition w/ 16gb VRAM, and 24gb WSL RAM.
 It takes about 30 minutes to run all the tests.
+
+## Architecture
+
+The server is built with [Fastify](https://www.fastify.io/), a fast and low overhead web framework for Node.js.
+It sits in front of ComfyUI, and provides a RESTful API for interacting with ComfyUI.
+
+![Architecture Diagram](./ComfyUI%20API%20Diagram.png)

@@ -4,6 +4,8 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { execSync } from "child_process";
 import { z } from "zod";
+import { version } from "../package.json";
+
 const {
   ALWAYS_RESTART_COMFYUI = "false",
   BASE = "ai-dock",
@@ -20,6 +22,7 @@ const {
   MODEL_DIR,
   OUTPUT_DIR,
   PORT = "3000",
+  PROMPT_WEBHOOK_RETRIES = "3",
   SALAD_MACHINE_ID,
   SALAD_CONTAINER_GROUP_ID,
   STARTUP_CHECK_INTERVAL_S = "1",
@@ -37,6 +40,7 @@ const wsClientId = randomUUID();
 const comfyWSURL = `ws://${DIRECT_ADDRESS}:${COMFYUI_PORT_HOST}/ws?clientId=${wsClientId}`;
 const selfURL = `http://localhost:${PORT}`;
 const port = parseInt(PORT, 10);
+const promptWebhookRetries = parseInt(PROMPT_WEBHOOK_RETRIES, 10);
 
 const startupCheckInterval = parseInt(STARTUP_CHECK_INTERVAL_S, 10) * 1000;
 assert(
@@ -124,6 +128,7 @@ if (WARMUP_PROMPT_FILE) {
 interface ComfyDescription {
   samplers: string[];
   schedulers: string[];
+  version: string;
 }
 
 /**
@@ -135,11 +140,13 @@ function getComfyUIDescription(): ComfyDescription {
   const temptComfyFilePath = path.join(comfyDir, "temp_comfy_description.json");
   const pythonCode = `
 import comfy.samplers
+import comfyui_version
 import json
 
 comfy_description = {
     "samplers": comfy.samplers.KSampler.SAMPLERS,
     "schedulers": comfy.samplers.KSampler.SCHEDULERS,
+    "version": comfyui_version.__version__
 }
 
 with open("${temptComfyFilePath}", "w") as f:
@@ -184,11 +191,13 @@ const comfyDescription = getComfyUIDescription();
 
 const config = {
   alwaysRestartComfyUI,
+  apiVersion: version,
   comfyDir,
   comfyHost: DIRECT_ADDRESS,
   comfyLaunchCmd: CMD,
   comfyPort: COMFYUI_PORT_HOST,
   comfyURL,
+  comfyVersion: comfyDescription.version,
   comfyWSURL,
   inputDir: INPUT_DIR ?? path.join(comfyDir, "input"),
   logLevel: LOG_LEVEL.toLowerCase(),
@@ -204,6 +213,7 @@ const config = {
     }
   >,
   outputDir: OUTPUT_DIR ?? path.join(comfyDir, "output"),
+  promptWebhookRetries,
   saladContainerGroupId: SALAD_CONTAINER_GROUP_ID,
   saladMachineId: SALAD_MACHINE_ID,
   samplers: z.enum(comfyDescription.samplers as [string, ...string[]]),
