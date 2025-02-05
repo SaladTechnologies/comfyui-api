@@ -12,6 +12,7 @@ on:
       - "test/**"
       - "example-workflows/**"
       - "docker/**"
+      - "docker-compose.yml"
 
 jobs:
   build:
