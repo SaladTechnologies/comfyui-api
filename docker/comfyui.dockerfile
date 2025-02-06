@@ -1,10 +1,10 @@
 ARG base=runtime
-ARG pytorch_version=2.5.0
-ARG cuda_version=12.1
+ARG pytorch_version=2.6.0
+ARG cuda_version=12.4
 FROM pytorch/pytorch:${pytorch_version}-cuda${cuda_version}-cudnn9-${base}
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get upgrade -y && apt-get install -y \
   curl \
   git \
   unzip \
@@ -15,10 +15,10 @@ RUN apt-get update && apt-get install -y \
 RUN pip install --upgrade pip
 RUN pip install comfy-cli
 WORKDIR /opt
-ARG comfy_version=0.3.12
+ARG comfy_version=0.3.14
 RUN git clone --depth 1 --branch v${comfy_version} https://github.com/comfyanonymous/ComfyUI.git
 WORKDIR /opt/ComfyUI
-RUN pip install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu121
+RUN pip install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu124
 RUN pip install -r requirements.txt
 ENV COMFY_HOME=/opt/ComfyUI
 RUN comfy --skip-prompt tracking disable
