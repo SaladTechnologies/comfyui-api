@@ -20,4 +20,14 @@ for base in "${bases[@]}"; do
     --build-arg cuda_version=$cuda_version \
     --build-arg api_version=$api_version \
     .
+  docker push ghcr.io/saladtechnologies/comfyui-api:comfy$comfy_version-api$api_version-torch$torch_version-cuda$cuda_version-$base
+
+  if [ $base == "runtime" ]; then
+    docker tag ghcr.io/saladtechnologies/comfyui-api:comfy$comfy_version-api$api_version-torch$torch_version-cuda$cuda_version-runtime ghcr.io/saladtechnologies/comfyui-api:latest
+    docker push ghcr.io/saladtechnologies/comfyui-api:latest
+    docker image rm ghcr.io/saladtechnologies/comfyui-api:latest
+  fi
+
+   # Remove the image to make space for the next one. Github actions runners don't get much storage.
+  docker image rm ghcr.io/saladtechnologies/comfyui-api:comfy$comfy_version-api$api_version-torch$torch_version-cuda$cuda_version-$base
 done
