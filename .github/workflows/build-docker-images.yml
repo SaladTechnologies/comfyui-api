@@ -21,11 +21,5 @@ jobs:
 
       - name: Build Docker images
         working-directory: ./docker
-        run: |
-          ./build-api-images
+        run: ./build-api-images
 
-      - name: Push Docker images
-        working-directory: ./docker
-        run: |
-          ./push-api-images
-          
