@@ -18,7 +18,7 @@ WORKDIR /opt
 ARG comfy_version=0.3.14
 RUN git clone --depth 1 --branch v${comfy_version} https://github.com/comfyanonymous/ComfyUI.git
 WORKDIR /opt/ComfyUI
-RUN pip install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu121
+RUN pip install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu124
 RUN pip install -r requirements.txt
 ENV COMFY_HOME=/opt/ComfyUI
 RUN comfy --skip-prompt tracking disable
