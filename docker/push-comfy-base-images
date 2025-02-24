@@ -2,11 +2,11 @@
 
 usage="Usage: $0 [comfy_version] [torch_version] [cuda_version]"
 
-comfy_version=${1:-0.3.14}
+comfy_version=${1:-0.3.15}
 torch_version=${2:-2.6.0}
 cuda_version=${3:-12.4}
 
-bases=("runtime" "devel")
+bases=("devel" "runtime")
 
 for base in "${bases[@]}"; do
   docker push ghcr.io/saladtechnologies/comfyui-api:comfy$comfy_version-torch$torch_version-cuda$cuda_version-$base

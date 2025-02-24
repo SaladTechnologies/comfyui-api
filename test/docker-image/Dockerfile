@@ -1,4 +1,4 @@
-ARG comfy_version=0.3.14
+ARG comfy_version=0.3.15
 FROM ghcr.io/saladtechnologies/comfyui-api:comfy${comfy_version}-torch2.6.0-cuda12.4-devel
 
 RUN apt-get update && apt-get install -y \

@@ -11,7 +11,7 @@ jobs:
     permissions:
       contents: read
       packages: write
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-2core-8gb-75gb
 
     steps:
       - uses: actions/checkout@v4
