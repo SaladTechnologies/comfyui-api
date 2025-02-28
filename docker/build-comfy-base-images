@@ -1,6 +1,6 @@
 #! /usr/bin/bash
 
-comfy_version=${1:-0.3.15}
+comfy_version=${1:-0.3.18}
 torch_version=${2:-2.6.0}
 cuda_version=${3:-12.4}
 bases=("runtime" "devel")
@@ -12,6 +12,5 @@ for base in "${bases[@]}"; do
     --build-arg base=$base \
     --build-arg pytorch_version=$torch_version \
     --build-arg cuda_version=$cuda_version \
-    --no-cache \
     .
 done
