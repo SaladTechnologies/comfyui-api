@@ -76,7 +76,9 @@ export async function processImage(
   }
   // If image is already a local path, return it as an absolute path
   else if (
-    imageInput.startsWith("/") ||
+    (imageInput.startsWith("/") &&
+      imageInput.length < 4096 &&
+      !imageInput.endsWith("==")) ||
     imageInput.startsWith("./") ||
     imageInput.startsWith("../")
   ) {
