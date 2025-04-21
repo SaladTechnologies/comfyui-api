@@ -1,13 +1,14 @@
 #! /usr/bin/bash
 
-comfy_version=${1:-0.3.27}
+comfy_version=${1:-0.3.29}
 torch_version=${2:-nightly}
 cuda_version=${3:-12.8}
-bases=("runtime" "devel")
+bases=("devel" "runtime")
 
 for base in "${bases[@]}"; do
   docker build -t ghcr.io/saladtechnologies/comfyui-api:comfy$comfy_version-torch$torch_version-cuda$cuda_version-$base \
     -f comfyui-cuda12.8.dockerfile \
+    --no-cache \
     --build-arg comfy_version=$comfy_version \
     --build-arg base=$base \
     .
