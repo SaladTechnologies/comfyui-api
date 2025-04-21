@@ -21,7 +21,7 @@ RUN pip install --pre torch torchvision torchaudio \
     --index-url https://download.pytorch.org/whl/nightly/cu128
 RUN pip install comfy-cli
 WORKDIR /opt
-ARG comfy_version=0.3.27
+ARG comfy_version=0.3.29
 RUN git clone --depth 1 --branch v${comfy_version} https://github.com/comfyanonymous/ComfyUI.git
 WORKDIR /opt/ComfyUI
 RUN pip install -r requirements.txt
