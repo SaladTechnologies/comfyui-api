@@ -12,14 +12,14 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y \
   && rm -rf /var/lib/apt/lists/*
 
 # Install comfy-cli, which makes it easy to install custom nodes and other comfy specific functionality.
-RUN pip install --upgrade pip
-RUN pip install comfy-cli
+RUN pip install --no-cache-dir --upgrade pip
+RUN pip install --no-cache-dir comfy-cli
 WORKDIR /opt
 ARG comfy_version=0.3.29
 RUN git clone --depth 1 --branch v${comfy_version} https://github.com/comfyanonymous/ComfyUI.git
 WORKDIR /opt/ComfyUI
-RUN pip install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu124
-RUN pip install -r requirements.txt
+RUN pip install --no-cache-dir torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu124
+RUN pip install --no-cache-dir -r requirements.txt
 ENV COMFY_HOME=/opt/ComfyUI
 RUN comfy --skip-prompt tracking disable
 RUN comfy --skip-prompt set-default ${COMFY_HOME}
