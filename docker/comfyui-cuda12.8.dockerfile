@@ -1,6 +1,9 @@
 ARG base=runtime
 FROM nvcr.io/nvidia/cuda:12.8.1-cudnn-${base}-ubuntu24.04
 ENV DEBIAN_FRONTEND=noninteractive
+ENV PIP_PREFER_BINARY=1
+ENV PYTHONUNBUFFERED=1
+ENV CMAKE_BUILD_PARALLEL_LEVEL=8
 
 RUN apt update -y && apt install -y \
     wget \
@@ -9,8 +12,10 @@ RUN apt update -y && apt install -y \
     python3 \
     python3-pip \
     python3-venv \
-    unzip \
-    && rm -rf /var/lib/apt/lists/*
+    unzip
+
+# Clean up to reduce image size
+RUN apt-get autoremove -y && apt-get clean -y && rm -rf /var/lib/apt/lists/*
 
 RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"

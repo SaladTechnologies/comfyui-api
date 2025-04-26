@@ -3,13 +3,18 @@ ARG pytorch_version=2.6.0
 ARG cuda_version=12.4
 FROM pytorch/pytorch:${pytorch_version}-cuda${cuda_version}-cudnn9-${base}
 ENV DEBIAN_FRONTEND=noninteractive
+ENV PIP_PREFER_BINARY=1
+ENV PYTHONUNBUFFERED=1
+ENV CMAKE_BUILD_PARALLEL_LEVEL=8
 
 RUN apt-get update && apt-get upgrade -y && apt-get install -y \
   curl \
   git \
   unzip \
-  wget \
-  && rm -rf /var/lib/apt/lists/*
+  wget
+
+# Clean up to reduce image size
+RUN apt-get autoremove -y && apt-get clean -y && rm -rf /var/lib/apt/lists/*
 
 # Install comfy-cli, which makes it easy to install custom nodes and other comfy specific functionality.
 RUN pip install --no-cache-dir --upgrade pip
