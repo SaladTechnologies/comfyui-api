@@ -12,10 +12,8 @@ RUN apt update -y && apt install -y \
     python3 \
     python3-pip \
     python3-venv \
-    unzip
-
-# Clean up to reduce image size
-RUN apt-get autoremove -y && apt-get clean -y && rm -rf /var/lib/apt/lists/*
+    unzip \
+    && apt-get clean -y && rm -rf /var/lib/apt/lists/*
 
 RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"

@@ -11,10 +11,8 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y \
   curl \
   git \
   unzip \
-  wget
-
-# Clean up to reduce image size
-RUN apt-get autoremove -y && apt-get clean -y && rm -rf /var/lib/apt/lists/*
+  wget \
+  && apt-get clean -y && rm -rf /var/lib/apt/lists/*
 
 # Install comfy-cli, which makes it easy to install custom nodes and other comfy specific functionality.
 RUN pip install --no-cache-dir --upgrade pip
