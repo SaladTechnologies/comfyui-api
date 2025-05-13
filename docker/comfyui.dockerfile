@@ -20,7 +20,7 @@ WORKDIR /opt
 ARG comfy_version=0.3.34
 RUN git clone --depth 1 --branch v${comfy_version} https://github.com/comfyanonymous/ComfyUI.git
 WORKDIR /opt/ComfyUI
-RUN pip install --no-cache-dir torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu126
+RUN pip install --no-cache-dir torchaudio --extra-index-url https://download.pytorch.org/whl/cu126
 RUN pip install --no-cache-dir -r requirements.txt
 ENV COMFY_HOME=/opt/ComfyUI
 RUN comfy --skip-prompt tracking disable
@@ -31,4 +31,4 @@ ENV INPUT_DIR=${COMFY_HOME}/input
 ENV CMD="comfy --workspace ${COMFY_HOME} launch -- --listen *"
 ENV BASE=""
 
-CMD ["comfy", "--workspace", "${COMFY_HOME}", "launch", "--", "--listen", "*"]
+CMD ["bash", "-c", "comfy --workspace ${COMFY_HOME} launch -- --listen '*'"]
