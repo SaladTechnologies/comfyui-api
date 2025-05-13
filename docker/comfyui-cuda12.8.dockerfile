@@ -1,6 +1,8 @@
 ARG base=runtime
 FROM nvcr.io/nvidia/cuda:12.8.1-cudnn-${base}-ubuntu24.04
 ENV DEBIAN_FRONTEND=noninteractive
+ENV PIP_PREFER_BINARY=1
+ENV CMAKE_BUILD_PARALLEL_LEVEL=8
 
 RUN apt update -y && apt install -y \
     wget \
@@ -10,7 +12,7 @@ RUN apt update -y && apt install -y \
     python3-pip \
     python3-venv \
     unzip \
-    && rm -rf /var/lib/apt/lists/*
+    && apt clean -y && rm -rf /var/lib/apt/lists/*
 
 RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
@@ -21,7 +23,7 @@ RUN pip install --no-cache-dir --pre torch torchvision torchaudio \
     --index-url https://download.pytorch.org/whl/nightly/cu128
 RUN pip install --no-cache-dir comfy-cli
 WORKDIR /opt
-ARG comfy_version=0.3.29
+ARG comfy_version=0.3.34
 RUN git clone --depth 1 --branch v${comfy_version} https://github.com/comfyanonymous/ComfyUI.git
 WORKDIR /opt/ComfyUI
 RUN pip install --no-cache-dir -r requirements.txt
