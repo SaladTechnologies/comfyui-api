@@ -21,11 +21,11 @@ jobs:
 
       - name: Build Docker images for 50xx
         working-directory: ./docker
-        run: ./build-api-images 0.3.34 nightly 12.8
+        run: ./build-api-images 0.3.35 nightly 12.8
 
       - name: Build Docker images for pre-50xx
         working-directory: ./docker
-        run: ./build-api-images 0.3.34 2.7.0 12.6
+        run: ./build-api-images 0.3.35 2.7.0 12.6
 
       
 

@@ -17,7 +17,7 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y \
 RUN pip install --no-cache-dir --upgrade pip
 RUN pip install --no-cache-dir comfy-cli
 WORKDIR /opt
-ARG comfy_version=0.3.34
+ARG comfy_version=0.3.35
 RUN git clone --depth 1 --branch v${comfy_version} https://github.com/comfyanonymous/ComfyUI.git
 WORKDIR /opt/ComfyUI
 RUN pip install --no-cache-dir torchaudio --extra-index-url https://download.pytorch.org/whl/cu126

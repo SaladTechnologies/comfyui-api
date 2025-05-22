@@ -45,7 +45,7 @@ If you have your own ComfyUI dockerfile, you can add the comfyui-api server to i
 
 ```dockerfile
 # Change this to the version you want to use
-ARG api_version=1.8.2
+ARG api_version=1.8.3
 
 
 # Download the comfyui-api binary, and make it executable
