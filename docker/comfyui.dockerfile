@@ -20,7 +20,8 @@ WORKDIR /opt
 ARG comfy_version=0.3.35
 RUN git clone --depth 1 --branch v${comfy_version} https://github.com/comfyanonymous/ComfyUI.git
 WORKDIR /opt/ComfyUI
-RUN pip install --no-cache-dir torchaudio --extra-index-url https://download.pytorch.org/whl/cu126
+ARG cuda_version=12.6
+RUN pip install --no-cache-dir torchaudio --extra-index-url https://download.pytorch.org/whl/cu${cuda_version//./}
 RUN pip install --no-cache-dir -r requirements.txt
 ENV COMFY_HOME=/opt/ComfyUI
 RUN comfy --skip-prompt tracking disable
