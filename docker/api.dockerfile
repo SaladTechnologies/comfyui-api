@@ -1,7 +1,7 @@
 ARG base=runtime
-ARG comfy_version=0.3.29
-ARG pytorch_version=2.6.0
-ARG cuda_version=12.4
+ARG comfy_version=0.3.35
+ARG pytorch_version=2.7.0
+ARG cuda_version=12.6
 FROM ghcr.io/saladtechnologies/comfyui-api:comfy${comfy_version}-torch${pytorch_version}-cuda${cuda_version}-${base}
 
 ENV WORKFLOW_DIR=/workflows

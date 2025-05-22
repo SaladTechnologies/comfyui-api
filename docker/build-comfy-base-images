@@ -1,8 +1,8 @@
 #! /usr/bin/bash
 
-comfy_version=${1:-0.3.29}
-torch_version=${2:-2.6.0}
-cuda_version=${3:-12.4}
+comfy_version=${1:-0.3.35}
+torch_version=${2:-2.7.0}
+cuda_version=${3:-12.6}
 bases=("devel" "runtime")
 
 for base in "${bases[@]}"; do

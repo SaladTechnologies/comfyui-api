@@ -241,7 +241,7 @@
   },
   "35": {
     "inputs": {
-      "ckpt_name": "landscapeRealistic_v20WarmColor.safetensors"
+      "ckpt_name": "landscapePhotoreal_v1.safetensors"
     },
     "class_type": "CheckpointLoaderSimple",
     "_meta": {
