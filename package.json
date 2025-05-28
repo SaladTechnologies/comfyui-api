@@ -30,7 +30,7 @@
     "@fastify/swagger-ui": "^4.1.0",
     "fastify": "^4.26.2",
     "fastify-type-provider-zod": "^2.0.0",
-    "sharp": "^0.33.5",
+    "sharp": "^0.34.2",
     "typescript": "^5.4.5",
     "undici": "^7.2.3",
     "ws": "^8.18.0",
