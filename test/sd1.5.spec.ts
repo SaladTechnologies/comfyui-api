@@ -91,6 +91,7 @@ describe("Stable Diffusion 1.5", () => {
       });
       expect(respBody.filenames.length).toEqual(1);
       expect(respBody.images.length).toEqual(1);
+      expect(respBody.filenames[0].endsWith(".jpeg")).toBeTruthy();
       await checkImage(respBody.filenames[0], respBody.images[0]);
     });
 
@@ -100,6 +101,7 @@ describe("Stable Diffusion 1.5", () => {
       });
       expect(respBody.filenames.length).toEqual(1);
       expect(respBody.images.length).toEqual(1);
+      expect(respBody.filenames[0].endsWith(".webp")).toBeTruthy();
       await checkImage(respBody.filenames[0], respBody.images[0]);
     });
   });
