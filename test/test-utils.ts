@@ -35,13 +35,17 @@ const webhookAddress = "http://host.docker.internal:1234/webhook";
 
 export async function submitPrompt(
   prompt: any,
-  webhook: boolean = false
+  webhook: boolean = false,
+  convert: any = undefined
 ): Promise<any> {
   const body: any = {
     prompt,
   };
   if (webhook) {
     body["webhook"] = webhookAddress;
+  }
+  if (convert) {
+    body["convert_output"] = convert;
   }
   try {
     const resp = await fetch(`http://localhost:3000/prompt`, {
@@ -85,6 +89,8 @@ export async function checkImage(
     expect(metadata.pages).toEqual(options.webpFrames);
   } else if (filename.endsWith(".png")) {
     expect(metadata.format).toEqual("png");
+  } else if (filename.endsWith(".jpeg") || filename.endsWith(".jpg")) {
+    expect(metadata.format).toEqual("jpeg");
   }
 }
 

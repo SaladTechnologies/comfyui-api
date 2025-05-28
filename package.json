@@ -1,6 +1,6 @@
 {
   "name": "comfyui-api",
-  "version": "1.8.3",
+  "version": "1.8.4",
   "description": "Wraps comfyui to make it easier to use as a stateless web service",
   "main": "dist/src/index.js",
   "scripts": {
@@ -30,9 +30,9 @@
     "@fastify/swagger-ui": "^4.1.0",
     "fastify": "^4.26.2",
     "fastify-type-provider-zod": "^2.0.0",
-    "sharp": "^0.33.5",
+    "sharp": "^0.34.2",
     "typescript": "^5.4.5",
-    "undici": "^7.2.3",
+    "undici": "^7.5.0",
     "ws": "^8.18.0",
     "zod": "^3.23.8"
   },

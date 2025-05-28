@@ -37,10 +37,10 @@ export async function downloadImage(
     const fileStream = fs.createWriteStream(outputPath);
 
     // Pipe the response to the file
-    await new Promise((resolve, reject) => {
+    await new Promise<void>((resolve, reject) => {
       Readable.fromWeb(body as any)
         .pipe(fileStream)
-        .on("finish", () => resolve)
+        .on("finish", resolve)
         .on("error", reject);
     });
 
