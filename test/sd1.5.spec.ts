@@ -22,6 +22,10 @@ const inputImage = fs
   .toString("base64");
 sd15Img2Img["10"].inputs.image = inputImage;
 
+const sd15Img2ImgWithUrl = JSON.parse(JSON.stringify(sd15Img2Img));
+sd15Img2ImgWithUrl["10"].inputs.image =
+  "https://salad-benchmark-assets.download/coco2017/train2017/000000000009.jpg";
+
 describe("Stable Diffusion 1.5", () => {
   before(async () => {
     await waitForServerToBeReady();
@@ -53,6 +57,16 @@ describe("Stable Diffusion 1.5", () => {
       });
     });
 
+    it("image2image works with image url", async () => {
+      const respBody = await submitPrompt(sd15Img2ImgWithUrl);
+      expect(respBody.filenames.length).toEqual(1);
+      expect(respBody.images.length).toEqual(1);
+      await checkImage(respBody.filenames[0], respBody.images[0], {
+        width: 640,
+        height: 480,
+      });
+    });
+
     it("works if the workflow has multiple output nodes", async () => {
       const respBody = await submitPrompt(sd15MultiOutput);
       expect(respBody.filenames.length).toEqual(2);
@@ -69,6 +83,24 @@ describe("Stable Diffusion 1.5", () => {
       const respBody = await submitPrompt(sd15Parallel3);
       expect(respBody.filenames.length).toEqual(3);
       expect(respBody.images.length).toEqual(3);
+    });
+
+    it("can convert to jpeg", async () => {
+      const respBody = await submitPrompt(sd15Txt2Img, false, {
+        format: "jpeg",
+      });
+      expect(respBody.filenames.length).toEqual(1);
+      expect(respBody.images.length).toEqual(1);
+      await checkImage(respBody.filenames[0], respBody.images[0]);
+    });
+
+    it("can convert to webp", async () => {
+      const respBody = await submitPrompt(sd15Txt2Img, false, {
+        format: "webp",
+      });
+      expect(respBody.filenames.length).toEqual(1);
+      expect(respBody.images.length).toEqual(1);
+      await checkImage(respBody.filenames[0], respBody.images[0]);
     });
   });
 
