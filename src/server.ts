@@ -16,6 +16,7 @@ import {
   convertImageBuffer,
   getConfiguredWebhookHandlers,
   fetchWithRetries,
+  setDeletionCost,
 } from "./utils";
 import {
   warmupComfyUI,
@@ -562,7 +563,9 @@ process.on("SIGINT", async () => {
 
 async function launchComfyUIAndAPIServerAndWaitForWarmup() {
   warm = false;
-  server.log.info(`Starting ComfyUI API ${config.comfyVersion}`);
+  server.log.info(
+    `Starting ComfyUI API ${config.apiVersion} with ComfyUI ${config.comfyVersion}`
+  );
   launchComfyUI().catch((err: any) => {
     server.log.error(err.message);
     if (config.alwaysRestartComfyUI) {
@@ -574,13 +577,13 @@ async function launchComfyUIAndAPIServerAndWaitForWarmup() {
     }
   });
   await waitForComfyUIToStart(server.log);
-  server.log.info(`ComfyUI API ${config.comfyVersion} started.`);
+  server.log.info(`ComfyUI ${config.comfyVersion} started.`);
   if (!wasEverWarm) {
     await server.ready();
     server.swagger();
     // Start the server
     await server.listen({ port: config.wrapperPort, host: config.wrapperHost });
-    server.log.info(`ComfyUI API ${version} started.`);
+    server.log.info(`ComfyUI API ${config.apiVersion} started.`);
   }
   const handlers = getConfiguredWebhookHandlers(server.log);
   if (handlers.onStatus) {
@@ -588,12 +591,14 @@ async function launchComfyUIAndAPIServerAndWaitForWarmup() {
     handlers.onStatus = (msg) => {
       queueDepth = msg.data.status.exec_info.queue_remaining;
       server.log.debug(`Queue depth: ${queueDepth}`);
+      setDeletionCost(queueDepth);
       originalHandler(msg);
     };
   } else {
     handlers.onStatus = (msg) => {
       queueDepth = msg.data.status.exec_info.queue_remaining;
       server.log.debug(`Queue depth: ${queueDepth}`);
+      setDeletionCost(queueDepth);
     };
   }
   comfyWebsocketClient = await connectToComfyUIWebsocketStream(

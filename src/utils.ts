@@ -9,6 +9,8 @@ import { ZodObject, ZodRawShape, ZodTypeAny, ZodDefault } from "zod";
 import sharp from "sharp";
 import { OutputConversionOptions, WebhookHandlers } from "./types";
 import { fetch, RequestInit, Response } from "undici";
+import { SaladCloudImdsSdk } from "@saladtechnologies-oss/salad-cloud-imds-sdk";
+const imds = new SaladCloudImdsSdk({});
 
 export async function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -289,4 +291,31 @@ export async function fetchWithRetries(
     await sleep(1000);
   }
   throw new Error(`Failed to fetch ${url} after ${maxRetries} retries`);
+}
+
+let _isOnSalad: boolean | null = null;
+export async function isOnSalad(): Promise<boolean> {
+  if (_isOnSalad !== null) {
+    return _isOnSalad;
+  }
+  try {
+    await imds.metadata.getStatus();
+    _isOnSalad = true;
+  } catch (error) {
+    _isOnSalad = false;
+  }
+  return _isOnSalad;
+}
+
+export async function setDeletionCost(cost: number): Promise<void> {
+  if (!(await isOnSalad())) {
+    return;
+  }
+  try {
+    await imds.metadata.replaceDeletionCost({
+      deletionCost: cost,
+    });
+  } catch (error) {
+    console.error("Error setting deletion cost:", error);
+  }
 }
