@@ -103,22 +103,33 @@ export async function downloadImageFromS3(
   }
 }
 
+function createInputStream(fileOrPath: string | Buffer): Readable {
+  if (typeof fileOrPath === "string") {
+    return fs.createReadStream(fileOrPath);
+  } else {
+    return Readable.from(fileOrPath);
+  }
+}
+
 export async function uploadImageToS3(
   bucket: string,
   key: string,
-  filePath: string,
+  fileOrPath: string | Buffer,
+  contentType: string,
   log: FastifyBaseLogger
 ): Promise<void> {
   if (!s3) {
     throw new Error("S3 client is not configured");
   }
+  log.info(`Uploading image to S3 at ${bucket}/${key}`);
 
   try {
-    const fileStream = fs.createReadStream(filePath);
+    const fileStream = createInputStream(fileOrPath);
     const command = new PutObjectCommand({
       Bucket: bucket,
       Key: key,
       Body: fileStream,
+      ContentType: contentType,
     });
     await s3.send(command);
     log.info(`Image uploaded to S3 at ${bucket}/${key}`);

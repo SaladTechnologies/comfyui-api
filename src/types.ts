@@ -129,6 +129,7 @@ export const PromptRequestSchema = z.object({
     .object({
       bucket: z.string(),
       prefix: z.string(),
+      async: z.boolean().optional().default(false),
     })
     .optional(),
   convert_output: OutputConversionOptionsSchema.optional(),

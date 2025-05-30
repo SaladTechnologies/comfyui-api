@@ -17,6 +17,7 @@ import {
   getConfiguredWebhookHandlers,
   fetchWithRetries,
   setDeletionCost,
+  uploadImageToS3,
 } from "./utils";
 import {
   warmupComfyUI,
@@ -202,7 +203,11 @@ server.after(() => {
       },
     },
     async (request, reply) => {
-      let { prompt, id, webhook, convert_output } = request.body;
+      let { prompt, id, webhook, convert_output, s3 } = request.body;
+      let contentType = "image/png";
+      if (convert_output) {
+        contentType = `image/${convert_output.format}`;
+      }
 
       /**
        * Here we go through all the nodes in the prompt to validate it,
@@ -417,13 +422,67 @@ server.after(() => {
             }
           });
         return reply.code(202).send({ status: "ok", id, webhook, prompt });
+      } else if (s3 && s3.async) {
+        runPromptAndGetOutputs(id, prompt, app.log)
+          .then(async (outputs: Record<string, Buffer>) => {
+            /**
+             * If the user has provided an S3 configuration, we upload the images to S3.
+             */
+            const uploadPromises: Promise<void>[] = [];
+            for (const originalFilename in outputs) {
+              let filename = originalFilename;
+              let fileBuffer = outputs[filename];
+              if (convert_output) {
+                try {
+                  fileBuffer = await convertImageBuffer(
+                    fileBuffer,
+                    convert_output
+                  );
+
+                  /**
+                   * If the user has provided an output format, we need to update the filename
+                   */
+                  filename = originalFilename.replace(
+                    /\.[^/.]+$/,
+                    `.${convert_output.format}`
+                  );
+                } catch (e: any) {
+                  app.log.warn(`Failed to convert image: ${e.message}`);
+                }
+              }
+
+              const key = `${s3.prefix}/${filename}`;
+              uploadPromises.push(
+                uploadImageToS3(
+                  s3.bucket,
+                  key,
+                  fileBuffer,
+                  contentType,
+                  app.log
+                )
+              );
+              app.log.info(
+                `Uploading image ${filename} to s3://${s3.bucket}/${key}`
+              );
+
+              // Remove the file after uploading
+              fsPromises.unlink(path.join(config.outputDir, originalFilename));
+            }
+
+            await Promise.all(uploadPromises);
+          })
+          .catch(async (e: any) => {
+            app.log.error(`Failed to generate images: ${e.message}`);
+          });
+        return reply.code(202).send({ status: "ok", id, prompt, s3 });
       } else {
         /**
-         * If the user has not provided a webhook, we wait for the images to be generated
-         * and then send them back in the response.
+         * If the user has not provided a webhook or s3.async is false, we wait for the images to
+         * be generated and then send them back in the response.
          */
         const images: string[] = [];
         const filenames: string[] = [];
+        const uploadPromises: Promise<void>[] = [];
 
         /**
          * Send the prompt to ComfyUI, and wait for the images to be generated.
@@ -448,13 +507,22 @@ server.after(() => {
             }
           }
 
-          const base64File = fileBuffer.toString("base64");
-          images.push(base64File);
-          filenames.push(filename);
+          if (!s3) {
+            const base64File = fileBuffer.toString("base64");
+            images.push(base64File);
+            filenames.push(filename);
+          } else if (s3 && !s3.async) {
+            const key = `${s3.prefix}/${filename}`;
+            uploadPromises.push(
+              uploadImageToS3(s3.bucket, key, fileBuffer, contentType, app.log)
+            );
+            images.push(`s3://${s3.bucket}/${key}`);
+          }
 
           // Remove the file after reading
           fsPromises.unlink(path.join(config.outputDir, originalFilename));
         }
+        await Promise.all(uploadPromises);
 
         return reply.send({ id, prompt, images, filenames });
       }
