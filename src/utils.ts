@@ -1,6 +1,6 @@
 import config from "./config";
 import { FastifyBaseLogger } from "fastify";
-import fs from "fs";
+import fs, { ReadStream } from "fs";
 import fsPromises from "fs/promises";
 import { Readable } from "stream";
 import path from "path";
@@ -9,6 +9,29 @@ import { ZodObject, ZodRawShape, ZodTypeAny, ZodDefault } from "zod";
 import sharp from "sharp";
 import { OutputConversionOptions, WebhookHandlers } from "./types";
 import { fetch, RequestInit, Response } from "undici";
+import { SaladCloudImdsSdk } from "@saladtechnologies-oss/salad-cloud-imds-sdk";
+import {
+  S3Client,
+  GetObjectCommand,
+  PutObjectCommand,
+} from "@aws-sdk/client-s3";
+import { NodeHttpHandler } from "@smithy/node-http-handler";
+import { log } from "console";
+
+// Initialize the Salad Cloud IMDS SDK
+const imds = new SaladCloudImdsSdk({});
+
+export let s3: S3Client | null = null;
+if (config.awsRegion) {
+  s3 = new S3Client({
+    region: config.awsRegion,
+    requestHandler: new NodeHttpHandler({
+      connectionTimeout: 10000, // 10 seconds
+      requestTimeout: 0, // No timeout
+    }),
+    forcePathStyle: true, // Required for LocalStack or custom S3 endpoints
+  });
+}
 
 export async function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -50,6 +73,76 @@ export async function downloadImage(
   }
 }
 
+export async function downloadImageFromS3(
+  bucket: string,
+  key: string,
+  outputPath: string,
+  log: FastifyBaseLogger
+): Promise<string | undefined> {
+  if (!s3) {
+    throw new Error("S3 client is not configured");
+  }
+
+  try {
+    const command = new GetObjectCommand({ Bucket: bucket, Key: key });
+    const response = await s3.send(command);
+
+    if (!response.Body) {
+      throw new Error("Response body is null");
+    }
+
+    const fileStream = fs.createWriteStream(outputPath);
+    await new Promise<void>((resolve, reject) => {
+      (response.Body as Readable)
+        .pipe(fileStream)
+        .on("finish", resolve)
+        .on("error", reject);
+    });
+
+    log.info(`Image downloaded from S3 and saved to ${outputPath}`);
+    return outputPath;
+  } catch (error) {
+    console.error(error);
+    log.error("Error downloading image from S3:", error);
+  }
+}
+
+function createInputStream(fileOrPath: string | Buffer): ReadStream | Buffer {
+  if (typeof fileOrPath === "string") {
+    return fs.createReadStream(fileOrPath);
+  } else {
+    return fileOrPath;
+  }
+}
+
+export async function uploadImageToS3(
+  bucket: string,
+  key: string,
+  fileOrPath: string | Buffer,
+  contentType: string,
+  log: FastifyBaseLogger
+): Promise<void> {
+  if (!s3) {
+    throw new Error("S3 client is not configured");
+  }
+  log.info(`Uploading image to S3 at s3://${bucket}/${key}`);
+
+  try {
+    const fileStream = createInputStream(fileOrPath);
+    const command = new PutObjectCommand({
+      Bucket: bucket,
+      Key: key,
+      Body: fileStream,
+      ContentType: contentType,
+    });
+    await s3.send(command);
+    log.info(`Image uploaded to S3 at s3://${bucket}/${key}`);
+  } catch (error) {
+    console.error(error);
+    log.error("Error uploading image to S3:", error);
+  }
+}
+
 export async function processImage(
   imageInput: string,
   log: FastifyBaseLogger,
@@ -74,6 +167,19 @@ export async function processImage(
     await downloadImage(imageInput, localFilePath, log);
     return localFilePath;
   }
+
+  // If image is an S3 URL, download it
+  else if (imageInput.startsWith("s3://")) {
+    const s3Url = new URL(imageInput);
+    const bucket = s3Url.hostname;
+    const key = s3Url.pathname.slice(1); // Remove leading slash
+    const filepath = await downloadImageFromS3(bucket, key, localFilePath, log);
+    if (!filepath) {
+      throw new Error(`Failed to download image from S3: ${imageInput}`);
+    }
+    return filepath;
+  }
+
   // If image is already a local path, return it as an absolute path
   else if (
     (imageInput.startsWith("/") &&
@@ -83,8 +189,10 @@ export async function processImage(
     imageInput.startsWith("../")
   ) {
     return path.resolve(imageInput);
-  } else {
-    // Assume it's a base64 encoded image
+  }
+
+  // Assume it's a base64 encoded image
+  else {
     try {
       const base64Data = Buffer.from(imageInput, "base64");
       const image = sharp(base64Data);
@@ -289,4 +397,31 @@ export async function fetchWithRetries(
     await sleep(1000);
   }
   throw new Error(`Failed to fetch ${url} after ${maxRetries} retries`);
+}
+
+let _isOnSalad: boolean | null = null;
+export async function isOnSalad(): Promise<boolean> {
+  if (_isOnSalad !== null) {
+    return _isOnSalad;
+  }
+  try {
+    await imds.metadata.getStatus();
+    _isOnSalad = true;
+  } catch (error) {
+    _isOnSalad = false;
+  }
+  return _isOnSalad;
+}
+
+export async function setDeletionCost(cost: number): Promise<void> {
+  if (!(await isOnSalad())) {
+    return;
+  }
+  try {
+    await imds.metadata.replaceDeletionCost({
+      deletionCost: cost,
+    });
+  } catch (error) {
+    console.error("Error setting deletion cost:", error);
+  }
 }

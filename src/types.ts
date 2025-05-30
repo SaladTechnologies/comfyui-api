@@ -125,6 +125,13 @@ export const PromptRequestSchema = z.object({
     .optional()
     .default(() => randomUUID()),
   webhook: z.string().optional(),
+  s3: z
+    .object({
+      bucket: z.string(),
+      prefix: z.string(),
+      async: z.boolean().optional().default(false),
+    })
+    .optional(),
   convert_output: OutputConversionOptionsSchema.optional(),
 });
 

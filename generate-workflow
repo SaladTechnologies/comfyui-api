@@ -11,7 +11,7 @@ if [ -z "$api_key" ]; then
   echo "Please set the ANTHROPIC_API_KEY environment variable"
   exit 1
 fi
-model_id=claude-3-5-sonnet-20241022
+model_id=claude-sonnet-4-20250514
 anthropic_version=2023-06-01
 
 set -f # Disable globbing, there's a * in the input prompt
