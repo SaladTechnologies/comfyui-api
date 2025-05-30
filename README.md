@@ -26,7 +26,7 @@ A simple wrapper that facilitates using [ComfyUI](https://github.com/comfyanonym
     - [execution\_interrupted](#execution_interrupted)
     - [execution\_error](#execution_error)
   - [Generating New Workflow Endpoints](#generating-new-workflow-endpoints)
-    - [Automating with Claude 3.5 Sonnet](#automating-with-claude-35-sonnet)
+    - [Automating with Claude 4 Sonnet](#automating-with-claude-4-sonnet)
   - [Prebuilt Docker Images](#prebuilt-docker-images)
   - [Considerations for Running on SaladCloud](#considerations-for-running-on-saladcloud)
   - [Contributing](#contributing)
@@ -641,14 +641,12 @@ Would yield the following endpoints:
 These endpoints will be present in the swagger docs, and can be used to interact with the API.
 If you provide descriptions in your zod schemas, these will be used to create a table of inputs in the swagger docs.
 
-### Automating with Claude 3.5 Sonnet
+### Automating with Claude 4 Sonnet
 
 > **Note**: This requires having an account with Anthropic, and your anthropic API key in the environment variable `ANTHROPIC_API_KEY`.
 
-Creating these endpoints can be done mostly automatically by [Claude 3.5 Sonnet](https://console.anthropic.com/), given the JSON prompt graph.
-A system prompt to do this is included [here](./claude-endpoint-creation-prompt.md).
-
-A script that uses this prompt to create endpoints is included [here](./generate-workflow). It requires `jq` and `curl` to be installed.
+Creating these endpoints can be done mostly automatically by [Claude 4 Sonnet](https://console.anthropic.com/), given the JSON prompt graph.
+A [system prompt](./claude-endpoint-creation-prompt.md) to do this is included in this repository, as is [a script that uses this prompt](./generate-workflow) to create endpoints. It requires `jq` and `curl` to be installed.
 
 ```shell
 ./generate-workflow <inputFile> <outputFile>
