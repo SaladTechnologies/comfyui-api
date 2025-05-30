@@ -1,6 +1,6 @@
 import config from "./config";
 import { FastifyBaseLogger } from "fastify";
-import fs from "fs";
+import fs, { ReadStream } from "fs";
 import fsPromises from "fs/promises";
 import { Readable } from "stream";
 import path from "path";
@@ -16,11 +16,12 @@ import {
   PutObjectCommand,
 } from "@aws-sdk/client-s3";
 import { NodeHttpHandler } from "@smithy/node-http-handler";
+import { log } from "console";
 
 // Initialize the Salad Cloud IMDS SDK
 const imds = new SaladCloudImdsSdk({});
 
-let s3: S3Client | null = null;
+export let s3: S3Client | null = null;
 if (config.awsRegion) {
   s3 = new S3Client({
     region: config.awsRegion,
@@ -28,6 +29,7 @@ if (config.awsRegion) {
       connectionTimeout: 10000, // 10 seconds
       requestTimeout: 0, // No timeout
     }),
+    forcePathStyle: true, // Required for LocalStack or custom S3 endpoints
   });
 }
 
@@ -76,7 +78,7 @@ export async function downloadImageFromS3(
   key: string,
   outputPath: string,
   log: FastifyBaseLogger
-): Promise<void> {
+): Promise<string | undefined> {
   if (!s3) {
     throw new Error("S3 client is not configured");
   }
@@ -91,23 +93,25 @@ export async function downloadImageFromS3(
 
     const fileStream = fs.createWriteStream(outputPath);
     await new Promise<void>((resolve, reject) => {
-      Readable.fromWeb(response.Body as any)
+      (response.Body as Readable)
         .pipe(fileStream)
         .on("finish", resolve)
         .on("error", reject);
     });
 
     log.info(`Image downloaded from S3 and saved to ${outputPath}`);
+    return outputPath;
   } catch (error) {
+    console.error(error);
     log.error("Error downloading image from S3:", error);
   }
 }
 
-function createInputStream(fileOrPath: string | Buffer): Readable {
+function createInputStream(fileOrPath: string | Buffer): ReadStream | Buffer {
   if (typeof fileOrPath === "string") {
     return fs.createReadStream(fileOrPath);
   } else {
-    return Readable.from(fileOrPath);
+    return fileOrPath;
   }
 }
 
@@ -121,7 +125,7 @@ export async function uploadImageToS3(
   if (!s3) {
     throw new Error("S3 client is not configured");
   }
-  log.info(`Uploading image to S3 at ${bucket}/${key}`);
+  log.info(`Uploading image to S3 at s3://${bucket}/${key}`);
 
   try {
     const fileStream = createInputStream(fileOrPath);
@@ -132,8 +136,9 @@ export async function uploadImageToS3(
       ContentType: contentType,
     });
     await s3.send(command);
-    log.info(`Image uploaded to S3 at ${bucket}/${key}`);
+    log.info(`Image uploaded to S3 at s3://${bucket}/${key}`);
   } catch (error) {
+    console.error(error);
     log.error("Error uploading image to S3:", error);
   }
 }
@@ -168,8 +173,11 @@ export async function processImage(
     const s3Url = new URL(imageInput);
     const bucket = s3Url.hostname;
     const key = s3Url.pathname.slice(1); // Remove leading slash
-    await downloadImageFromS3(bucket, key, localFilePath, log);
-    return localFilePath;
+    const filepath = await downloadImageFromS3(bucket, key, localFilePath, log);
+    if (!filepath) {
+      throw new Error(`Failed to download image from S3: ${imageInput}`);
+    }
+    return filepath;
   }
 
   // If image is already a local path, return it as an absolute path

@@ -451,7 +451,7 @@ server.after(() => {
                 }
               }
 
-              const key = `${s3.prefix}/${filename}`;
+              const key = `${s3.prefix}${filename}`;
               uploadPromises.push(
                 uploadImageToS3(
                   s3.bucket,
@@ -507,12 +507,12 @@ server.after(() => {
             }
           }
 
+          filenames.push(filename);
           if (!s3) {
             const base64File = fileBuffer.toString("base64");
             images.push(base64File);
-            filenames.push(filename);
           } else if (s3 && !s3.async) {
-            const key = `${s3.prefix}/${filename}`;
+            const key = `${s3.prefix}${filename}`;
             uploadPromises.push(
               uploadImageToS3(s3.bucket, key, fileBuffer, contentType, app.log)
             );
