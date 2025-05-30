@@ -3,16 +3,18 @@
 A simple wrapper that facilitates using [ComfyUI](https://github.com/comfyanonymous/ComfyUI/) as a stateless API, either by receiving images in the response, or by sending completed images to a webhook
 
 - [ComfyUI API - A Stateless and Extendable API for ComfyUI](#comfyui-api---a-stateless-and-extendable-api-for-comfyui)
-  - [Download and Usage](#download-and-usage)
+  - [Download and Use](#download-and-use)
   - [Features](#features)
   - [Probes](#probes)
   - [API Configuration Guide](#api-configuration-guide)
     - [Environment Variables](#environment-variables)
     - [Configuration Details](#configuration-details)
     - [Additional Notes](#additional-notes)
+  - [Using Synchronously](#using-synchronously)
   - [Webhooks](#webhooks)
     - [output.complete](#outputcomplete)
     - [prompt.failed](#promptfailed)
+  - [Using with S3](#using-with-s3)
   - [System Events](#system-events)
     - [status](#status)
     - [progress](#progress)
@@ -33,7 +35,7 @@ A simple wrapper that facilitates using [ComfyUI](https://github.com/comfyanonym
     - [Running Tests](#running-tests)
   - [Architecture](#architecture)
 
-## Download and Usage
+## Download and Use
 
 Either use a [pre-built Docker image](#prebuilt-docker-images), or build your own.
 
@@ -45,7 +47,7 @@ If you have your own ComfyUI dockerfile, you can add the comfyui-api server to i
 
 ```dockerfile
 # Change this to the version you want to use
-ARG api_version=1.8.3
+ARG api_version=1.9.0
 
 
 # Download the comfyui-api binary, and make it executable
@@ -68,13 +70,15 @@ The server hosts swagger docs at `/docs`, which can be used to interact with the
 - **Swagger Docs**: The server hosts swagger docs at `/docs`, which can be used to interact with the API.
 - **"Synchronous" Support**: The server will return base64-encoded images directly in the response, if no webhook is provided.
 - **Webhook Support**: The server can send completed images to a webhook, which can be used to store images, or to send them to a user.
-- **Easily Submit Images**: The server can accept images as base64-encoded strings, or as URLs to images. This makes image-to-image workflows much easier to use.
+- **S3 Support**: The server can be configured to upload images to an S3 bucket, and return the S3 URL in the response, or to return 202 immediately and upload the images to S3 in the background.
+- **Easily Submit Images**: The server can accept images as base64-encoded strings, http(s) urls, and s3 urls. This makes image-to-image workflows much easier to use.
 - **Warmup Workflow**: The server can be configured to run a warmup workflow on startup, which can be used to load and warm up models, and to ensure the server is ready to accept requests.
 - **Return Images In PNG (default), JPEG, or WebP**: The server can return images in PNG, JPEG, or WebP format, via a parameter in the API request. Most options supported by [sharp](https://sharp.pixelplumbing.com/) are supported.
 - **Probes**: The server has two probes, `/health` and `/ready`, which can be used to check the server's health and readiness to receive traffic.
 - **Dynamic Workflow Endpoints**: Automatically mount new workflow endpoints by adding conforming `.js` or `.ts` files to the `/workflows` directory in your docker image. See [below](#generating-new-workflow-endpoints) for more information. A [Claude 3.5 Sonnet](https://claude.ai) [prompt](./claude-endpoint-creation-prompt.md) is included to assist in automating this process.
 - **Bring Your Own Models And Extensions**: Use any model or extension you want by adding them to the normal ComfyUI directories `/opt/ComfyUI/`.
 - **Works Great with SaladCloud**: The server is designed to work well with SaladCloud, and can be used to host ComfyUI on the SaladCloud platform. It is likely to work well with other platforms as well.
+  - **Manages Deletion Cost**: *ONLY ON SALAD*. The server will automatically set the instance deletion cost to the queue length, so that busier nodes are less likely to be scaled in while they are processing requests.
 - **Single Binary**: The server is distributed as a single binary, and can be run with no dependencies.
 - **Websocket Events Via Webhook**: The server can forward ComfyUI websocket events to a configured webhook, which can be used to monitor the progress of a workflow.
 - **Friendly License**: The server is distributed under the MIT license, and can be used for any purpose. All of its dependencies are also MIT or Apache 2.0 licensed, except ComfyUI itself, which is GPL-3.0 licensed.
@@ -96,6 +100,8 @@ This guide provides an overview of how to configure the application using enviro
 
 The following table lists the available environment variables and their default values.
 For historical reasons, the default values mostly assume this will run on top of an [ai-dock](https://github.com/ai-dock/comfyui) image, but we currently provide [our own more minimal image](#prebuilt-docker-images) here in this repo.
+
+If you are using the s3 storage functionality, make sure to set all of the appropriate environment variables for your S3 bucket, such as `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_REGION`. The server will automatically use these to upload images to S3.
 
 | Variable                     | Default Value         | Description                                                                                                                                                                                                                                  |
 | ---------------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -166,6 +172,10 @@ For historical reasons, the default values mostly assume this will run on top of
 
 Remember to set these environment variables according to your specific deployment needs before running the application.
 
+## Using Synchronously
+
+The default behavior of the API is to return an array of base64-encoded outputs in the response body. All that is needed to do this is to omit the `.webhook` and `.s3` field in the request body.
+
 ## Webhooks
 
 ComfyUI API sends two types of webhooks: System Events, which are emitted by ComfyUI itself, and Workflow Events, which are emitted by the API server. See [System Events](#system-events) for more information on System Events.
@@ -200,6 +210,24 @@ The webhook event name for a failed request is `prompt.failed`. The webhook will
   "prompt": {}
 }
 ```
+
+## Using with S3
+
+If you want to use S3 to store the outputs of your workflows, you can set the `.s3` field in the request body to an object with the following schema:
+
+```json
+{
+  "bucket": "your-s3-bucket-name",
+  "prefix": "prefix-for-outputs-from-this-request",
+  "async": false
+}
+```
+
+The `bucket` field is the name of the S3 bucket to upload the outputs to, and the `prefix` field is an optional prefix to add to the output filenames. The `async` field is a boolean that determines whether the API should return a 202 response immediately, or wait for the uploads to complete before returning a response.
+
+If `async` is set to `true`, the API will return a 202 response immediately, and the outputs will be uploaded to S3 in the background. You will need to poll S3 or configure bucket events to be notified when the uploads are complete.
+
+If `async` is set to `false`, the API will wait for the uploads to complete before returning a response. The response will include the S3 URLs of the uploaded outputs in the `.images` field, which will be an array of strings.
 
 ## System Events
 
@@ -399,6 +427,10 @@ Since the ComfyUI prompt format is a little obtuse, it's common to wrap the work
 This can be done by adding conforming `.js` or `.ts` files to the `/workflows` directory in your dockerfile.
 You can see some examples in [`./workflows`](./workflows/).
 Typescript files will be automatically transpiled to javascript files, so you can use either.
+
+Endpoints are loaded at runtime via `eval` in the context of `src/workflows`, so you can use any Node.js or TypeScript features you want, including importing other files such as the API config object.
+By loading extra endpoints this way, no rebuild is required to add new endpoints, and you can continue using the pre-built binary.
+You can see many examples of this in the [Salad Recipes](https://github.com/SaladTechnologies/salad-recipes/tree/master/src) repo, where this API powers all of the ComfyUI recipes.
 
 Here is an example text-to-image workflow file.
 
