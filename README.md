@@ -213,7 +213,9 @@ The webhook event name for a failed request is `prompt.failed`. The webhook will
 
 ## Using with S3
 
-If you want to use S3 to store the outputs of your workflows, you can set the `.s3` field in the request body to an object with the following schema:
+You must provide the necessary AWS environment variables for the API to be able to upload images to S3. These include `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_REGION`. The API will use these to upload images to the specified S3 bucket and prefix in the request body.
+
+To use S3 to store the outputs of your workflows, you can set the `.s3` field in the request body to an object with the following schema:
 
 ```json
 {
