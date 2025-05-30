@@ -17,14 +17,20 @@ import sd15Parallel3 from "./workflows/sd1.5-parallel-3.json";
 const sd15Txt2ImgBatch4 = JSON.parse(JSON.stringify(sd15Txt2Img));
 sd15Txt2ImgBatch4["5"].inputs.batch_size = 4;
 
-const inputImage = fs
+const inputPng = fs
   .readFileSync(path.join(__dirname, "input-images", "doodle-girl.png"))
   .toString("base64");
-sd15Img2Img["10"].inputs.image = inputImage;
+sd15Img2Img["10"].inputs.image = inputPng;
 
 const sd15Img2ImgWithUrl = JSON.parse(JSON.stringify(sd15Img2Img));
 sd15Img2ImgWithUrl["10"].inputs.image =
   "https://salad-benchmark-assets.download/coco2017/train2017/000000000009.jpg";
+
+const sd15Img2ImgWithJpeg = JSON.parse(JSON.stringify(sd15Img2Img));
+const inputJpeg = fs
+  .readFileSync(path.join(__dirname, "input-images", "food.jpg"))
+  .toString("base64");
+sd15Img2ImgWithJpeg["10"].inputs.image = inputJpeg;
 
 describe("Stable Diffusion 1.5", () => {
   before(async () => {
@@ -47,13 +53,23 @@ describe("Stable Diffusion 1.5", () => {
       }
     });
 
-    it("image2image works with base64 encoded images", async () => {
+    it("image2image works with base64 encoded png", async () => {
       const respBody = await submitPrompt(sd15Img2Img);
       expect(respBody.filenames.length).toEqual(1);
       expect(respBody.images.length).toEqual(1);
       await checkImage(respBody.filenames[0], respBody.images[0], {
         width: 768,
         height: 768,
+      });
+    });
+
+    it("image2image works with base64 encoded jpeg", async () => {
+      const respBody = await submitPrompt(sd15Img2ImgWithJpeg);
+      expect(respBody.filenames.length).toEqual(1);
+      expect(respBody.images.length).toEqual(1);
+      await checkImage(respBody.filenames[0], respBody.images[0], {
+        width: 640,
+        height: 480,
       });
     });
 
