@@ -319,12 +319,11 @@ describe("Stable Diffusion 1.5", () => {
         Prefix: "sd15-txt2img-batch4-async/",
       });
 
-      const outputs = [];
+      let outputs: string[] = [];
       while (outputs.length < 4) {
         const page = await s3.send(listCmd);
-        for (const obj of page.Contents || []) {
-          outputs.push(obj.Key);
-        }
+        outputs = page.Contents?.map((obj) => obj.Key!) || [];
+
         if (outputs.length < 4) {
           await sleep(1000);
         }
