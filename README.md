@@ -11,7 +11,7 @@ A simple wrapper that facilitates using [ComfyUI](https://github.com/comfyanonym
     - [Configuration Details](#configuration-details)
     - [Additional Notes](#additional-notes)
   - [Using Synchronously](#using-synchronously)
-  - [Webhooks](#webhooks)
+  - [Using with Webhooks](#using-with-webhooks)
     - [output.complete](#outputcomplete)
     - [prompt.failed](#promptfailed)
   - [Using with S3](#using-with-s3)
@@ -176,7 +176,7 @@ Remember to set these environment variables according to your specific deploymen
 
 The default behavior of the API is to return an array of base64-encoded outputs in the response body. All that is needed to do this is to omit the `.webhook` and `.s3` field in the request body.
 
-## Webhooks
+## Using with Webhooks
 
 ComfyUI API sends two types of webhooks: System Events, which are emitted by ComfyUI itself, and Workflow Events, which are emitted by the API server. See [System Events](#system-events) for more information on System Events.
 
