@@ -70,7 +70,7 @@ The server hosts swagger docs at `/docs`, which can be used to interact with the
 - **Swagger Docs**: The server hosts swagger docs at `/docs`, which can be used to interact with the API.
 - **"Synchronous" Support**: The server will return base64-encoded images directly in the response, if no webhook is provided.
 - **Webhook Support**: The server can send completed images to a webhook, which can be used to store images, or to send them to a user.
-- **S3 Support**: The server can be configured to upload images to an S3 bucket, and return the S3 URL in the response, or to return 202 immediately and upload the images to S3 in the background.
+- **S3 Support**: The server can be configured to upload images to an S3-compatible object store, and return the S3 URL in the response, or to return 202 immediately and upload the images to S3 in the background.
 - **Easily Submit Images**: The server can accept images as base64-encoded strings, http(s) urls, and s3 urls. This makes image-to-image workflows much easier to use.
 - **Warmup Workflow**: The server can be configured to run a warmup workflow on startup, which can be used to load and warm up models, and to ensure the server is ready to accept requests.
 - **Return Images In PNG (default), JPEG, or WebP**: The server can return images in PNG, JPEG, or WebP format, via a parameter in the API request. Most options supported by [sharp](https://sharp.pixelplumbing.com/) are supported.
