@@ -5,6 +5,10 @@ A simple wrapper that facilitates using [ComfyUI](https://github.com/comfyanonym
 - [ComfyUI API - A Stateless and Extendable API for ComfyUI](#comfyui-api---a-stateless-and-extendable-api-for-comfyui)
   - [Download and Use](#download-and-use)
   - [Features](#features)
+  - [Full ComfyUI Support](#full-comfyui-support)
+  - [Stateless API](#stateless-api)
+  - [Image To Image Workflows](#image-to-image-workflows)
+  - [Server-side image processing](#server-side-image-processing)
   - [Probes](#probes)
   - [API Configuration Guide](#api-configuration-guide)
     - [Environment Variables](#environment-variables)
@@ -82,6 +86,70 @@ The server hosts swagger docs at `/docs`, which can be used to interact with the
 - **Single Binary**: The server is distributed as a single binary, and can be run with no dependencies.
 - **Websocket Events Via Webhook**: The server can forward ComfyUI websocket events to a configured webhook, which can be used to monitor the progress of a workflow.
 - **Friendly License**: The server is distributed under the MIT license, and can be used for any purpose. All of its dependencies are also MIT or Apache 2.0 licensed, except ComfyUI itself, which is GPL-3.0 licensed.
+
+## Full ComfyUI Support
+
+ComfyUI API sits in front of ComfyUI, and uses the ComfyUI `/prompt` API to execute workflows, so any API-formatted prompt can be executed by the server. Before queueing the prompt, the server will download any required inputs, such as images. It also overrides the `filename_prefix` field in the prompt to ensure that output files are saved with a unique filename. Once the prompt is queued, the server will wait for the prompt to complete, and then return the outputs in the response body, via a webhook, or upload them to S3, depending on the request parameters. Because of this, anything you can run in ComfyUI can be run in the ComfyUI API server, including custom nodes and workflows, and any models ComfyUI supports.
+
+## Stateless API
+
+The ComfyUI API server is designed to be stateless, meaning that it does not store any state between requests. This allows the server to be scaled horizontally behind a load balancer, and to handle more requests by adding more instances of the server. The server uses a configurable warmup workflow to ensure that ComfyUI is ready to accept requests, and to load any required models. The server also self-hosts swagger docs and an openapi spec at `/docs`, which can be used to interact with the API.
+
+## Image To Image Workflows
+
+The ComfyUI API server supports image-to-image workflows, allowing you to submit an image and receive a modified version of that image in response. This is useful for tasks such as image inpainting, style transfer, and other image manipulation tasks.
+
+To use image-to-image workflows, you can submit an image as a base64-encoded string, http(s) URL, or S3 URL. The server will automatically detect the input type and process the image accordingly.
+
+Here's an example of doing this in a `LoadImage` node:
+
+```json
+{
+  "inputs": {
+    "image": "https://salad-benchmark-assets.download/coco2017/train2017/000000000009.jpg",
+    "upload": "image"
+  },
+  "class_type": "LoadImage",
+  "_meta": {
+    "title": "Load Image"
+  }
+}
+```
+
+## Server-side image processing
+
+The ComfyUI API server uses the [sharp](https://sharp.pixelplumbing.com/) library to process images. This allows you to return the images in different, more compact formats, such as JPEG or WebP. This can be accomplished by including the `convert_output` object in the request body, which can contain the following fields:
+
+```json
+{
+  "format": "jpeg|webp",
+  "options": {}
+}
+```
+
+Omitting the `convert_output` object will default to PNG format, which is lossless and has the best quality, but is also the largest in size.
+
+**JPEG options**:
+
+- `quality`: The quality of the JPEG image, between 1 and 100. Default is `80`.
+- `progressive`: Use progressive (interlace) scanning. Default is `false`.
+- `chromaSubsampling`: Set to `4:4:4` to prevent chroma subsampling otherwise defaults to `4:2:0` chroma subsampling.
+- `optimizeCoding`: Optimize the Huffman coding tables. Default is `true`.
+- `mozjpeg`: use mozjpeg defaults, equivalent to `{ trellisQuantisation: true, overshootDeringing: true, optimizeScans: true, quantisationTable: 3 }`
+- `trellisQuantisation`: Use trellis quantization. Default is `false`.
+- `overshootDeringing`: Use overshoot deringing. Default is `false`.
+- `optimizeScans`: Optimize the scan order. Default is `false`.
+- `quantisationTable`: Set the quantization table to use, 1 - 8. Default is `0`.
+
+**WebP options**:
+
+- `quality`: The quality of the WebP image, between 1 and 100. Default is `80`.
+- `alphaQuality`: The quality of the alpha channel, between 0 and 100. Default is `100`.
+- `lossless`: Use lossless compression. Default is `false`.
+- `nearLossless`: Use near-lossless compression. Default is `false`.
+- `smartSubsample`: Use smart subsampling. Default is `false`.
+- `preset`: named preset for preprocessing/filtering, one of `default`, `picture`, `photo`, `drawing`, `icon`, or `text`. Default is `default`.
+- `effort`: CPU effort level, between 0 (fastest) and 6 (slowest). Default is `4`.
 
 ## Probes
 
