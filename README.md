@@ -95,6 +95,32 @@ ComfyUI API sits in front of ComfyUI, and uses the ComfyUI `/prompt` API to exec
 
 The ComfyUI API server is designed to be stateless, meaning that it does not store any state between requests. This allows the server to be scaled horizontally behind a load balancer, and to handle more requests by adding more instances of the server. The server uses a configurable warmup workflow to ensure that ComfyUI is ready to accept requests, and to load any required models. The server also self-hosts swagger docs and an openapi spec at `/docs`, which can be used to interact with the API.
 
+Prompts are submitted to the server via the `POST /prompt` endpoint, which accepts a JSON body containing the prompt graph, as well as any additional parameters such as the webhook URL, S3 bucket and prefix, and image conversion options. A request may look something like:
+
+```json
+{
+  "prompt": {
+    "1": {
+      "inputs": {
+        "image": "https://salad-benchmark-assets.download/coco2017/train2017/000000000009.jpg",
+        "upload": "image"
+      },
+      "class_type": "LoadImage"
+    }
+  },
+  "webhook": "https://example.com/webhook",
+  "convert_output": {
+    "format": "jpeg",
+    "options": {
+      "quality": 80,
+      "progressive": true
+    }
+  },
+}
+```
+
+**Note**: Only the `prompt` field is required. The other fields are optional, and can be omitted if not needed.
+
 ## Image To Image Workflows
 
 The ComfyUI API server supports image-to-image workflows, allowing you to submit an image and receive a modified version of that image in response. This is useful for tasks such as image inpainting, style transfer, and other image manipulation tasks.
