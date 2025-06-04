@@ -9,17 +9,12 @@ import { ZodObject, ZodRawShape, ZodTypeAny, ZodDefault } from "zod";
 import sharp from "sharp";
 import { OutputConversionOptions, WebhookHandlers } from "./types";
 import { fetch, RequestInit, Response } from "undici";
-import { SaladCloudImdsSdk } from "@saladtechnologies-oss/salad-cloud-imds-sdk";
 import {
   S3Client,
   GetObjectCommand,
   PutObjectCommand,
 } from "@aws-sdk/client-s3";
 import { NodeHttpHandler } from "@smithy/node-http-handler";
-import { log } from "console";
-
-// Initialize the Salad Cloud IMDS SDK
-const imds = new SaladCloudImdsSdk({});
 
 export let s3: S3Client | null = null;
 if (config.awsRegion) {
@@ -309,7 +304,7 @@ export async function convertImageBuffer(
 
   if (format === "webp") {
     image = image.webp(conversionOptions);
-  } else {
+  } else if (format === "jpg" || format === "jpeg") {
     image = image.jpeg(conversionOptions);
   }
 
@@ -399,27 +394,21 @@ export async function fetchWithRetries(
   throw new Error(`Failed to fetch ${url} after ${maxRetries} retries`);
 }
 
-let _isOnSalad: boolean | null = null;
-export async function isOnSalad(): Promise<boolean> {
-  if (_isOnSalad !== null) {
-    return _isOnSalad;
-  }
-  try {
-    await imds.metadata.getStatus();
-    _isOnSalad = true;
-  } catch (error) {
-    _isOnSalad = false;
-  }
-  return _isOnSalad;
-}
-
 export async function setDeletionCost(cost: number): Promise<void> {
-  if (!(await isOnSalad())) {
+  if (!(config.saladMachineId && config.saladContainerGroupId)) {
+    console.warn(
+      "setDeletionCost called outside of Salad environment, skipping."
+    );
     return;
   }
   try {
-    await imds.metadata.replaceDeletionCost({
-      deletionCost: cost,
+    await fetch(`http://169.254.169.254/v1/deletion-cost`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Metadata: "true",
+      },
+      body: JSON.stringify({ deletion_cost: cost }),
     });
   } catch (error) {
     console.error("Error setting deletion cost:", error);

@@ -110,7 +110,7 @@ export const WebpOptionsSchema = z.object({
 export type WebpOptions = z.infer<typeof WebpOptionsSchema>;
 
 export const OutputConversionOptionsSchema = z.object({
-  format: z.enum(["jpeg", "webp"]).describe("output format"),
+  format: z.enum(["jpeg", "jpg", "webp"]).describe("output format"),
   options: z.union([JPEGOptionsSchema, WebpOptionsSchema]).optional(),
 });
 
