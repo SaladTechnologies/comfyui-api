@@ -7,6 +7,7 @@ A simple wrapper that facilitates using [ComfyUI](https://github.com/comfyanonym
   - [Features](#features)
   - [Full ComfyUI Support](#full-comfyui-support)
   - [Stateless API](#stateless-api)
+    - [Request Format](#request-format)
   - [Image To Image Workflows](#image-to-image-workflows)
   - [Server-side image processing](#server-side-image-processing)
   - [Probes](#probes)
@@ -95,10 +96,13 @@ ComfyUI API sits in front of ComfyUI, and uses the ComfyUI `/prompt` API to exec
 
 The ComfyUI API server is designed to be stateless, meaning that it does not store any state between requests. This allows the server to be scaled horizontally behind a load balancer, and to handle more requests by adding more instances of the server. The server uses a configurable warmup workflow to ensure that ComfyUI is ready to accept requests, and to load any required models. The server also self-hosts swagger docs and an openapi spec at `/docs`, which can be used to interact with the API.
 
+### Request Format
+
 Prompts are submitted to the server via the `POST /prompt` endpoint, which accepts a JSON body containing the prompt graph, as well as any additional parameters such as the webhook URL, S3 bucket and prefix, and image conversion options. A request may look something like:
 
 ```json
 {
+  "id": "123e4567-e89b-12d3-a456-426614174000",
   "prompt": {
     "1": {
       "inputs": {
@@ -119,7 +123,9 @@ Prompts are submitted to the server via the `POST /prompt` endpoint, which accep
 }
 ```
 
-**Note**: Only the `prompt` field is required. The other fields are optional, and can be omitted if not needed.
+- Only the `prompt` field is required. The other fields are optional, and can be omitted if not needed.
+- Your prompt must be a valid ComfyUI prompt graph, which is a JSON object where each key is a node ID, and the value is an object containing the node's inputs, class type, and optional metadata.
+- Your prompt must include a node that saves an output, such as a `SaveImage` node.
 
 ## Image To Image Workflows
 
