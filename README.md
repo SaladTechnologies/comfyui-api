@@ -3,16 +3,23 @@
 A simple wrapper that facilitates using [ComfyUI](https://github.com/comfyanonymous/ComfyUI/) as a stateless API, either by receiving images in the response, or by sending completed images to a webhook
 
 - [ComfyUI API - A Stateless and Extendable API for ComfyUI](#comfyui-api---a-stateless-and-extendable-api-for-comfyui)
-  - [Download and Usage](#download-and-usage)
+  - [Download and Use](#download-and-use)
   - [Features](#features)
+  - [Full ComfyUI Support](#full-comfyui-support)
+  - [Stateless API](#stateless-api)
+    - [Request Format](#request-format)
+  - [Image To Image Workflows](#image-to-image-workflows)
+  - [Server-side image processing](#server-side-image-processing)
   - [Probes](#probes)
   - [API Configuration Guide](#api-configuration-guide)
     - [Environment Variables](#environment-variables)
     - [Configuration Details](#configuration-details)
     - [Additional Notes](#additional-notes)
-  - [Webhooks](#webhooks)
+  - [Using Synchronously](#using-synchronously)
+  - [Using with Webhooks](#using-with-webhooks)
     - [output.complete](#outputcomplete)
     - [prompt.failed](#promptfailed)
+  - [Using with S3](#using-with-s3)
   - [System Events](#system-events)
     - [status](#status)
     - [progress](#progress)
@@ -24,7 +31,7 @@ A simple wrapper that facilitates using [ComfyUI](https://github.com/comfyanonym
     - [execution\_interrupted](#execution_interrupted)
     - [execution\_error](#execution_error)
   - [Generating New Workflow Endpoints](#generating-new-workflow-endpoints)
-    - [Automating with Claude 3.5 Sonnet](#automating-with-claude-35-sonnet)
+    - [Automating with Claude 4 Sonnet](#automating-with-claude-4-sonnet)
   - [Prebuilt Docker Images](#prebuilt-docker-images)
   - [Considerations for Running on SaladCloud](#considerations-for-running-on-saladcloud)
   - [Contributing](#contributing)
@@ -33,7 +40,7 @@ A simple wrapper that facilitates using [ComfyUI](https://github.com/comfyanonym
     - [Running Tests](#running-tests)
   - [Architecture](#architecture)
 
-## Download and Usage
+## Download and Use
 
 Either use a [pre-built Docker image](#prebuilt-docker-images), or build your own.
 
@@ -45,7 +52,7 @@ If you have your own ComfyUI dockerfile, you can add the comfyui-api server to i
 
 ```dockerfile
 # Change this to the version you want to use
-ARG api_version=1.8.3
+ARG api_version=1.9.0
 
 
 # Download the comfyui-api binary, and make it executable
@@ -68,16 +75,113 @@ The server hosts swagger docs at `/docs`, which can be used to interact with the
 - **Swagger Docs**: The server hosts swagger docs at `/docs`, which can be used to interact with the API.
 - **"Synchronous" Support**: The server will return base64-encoded images directly in the response, if no webhook is provided.
 - **Webhook Support**: The server can send completed images to a webhook, which can be used to store images, or to send them to a user.
-- **Easily Submit Images**: The server can accept images as base64-encoded strings, or as URLs to images. This makes image-to-image workflows much easier to use.
+- **S3 Support**: The server can be configured to upload images to an S3-compatible object store, and return the S3 URL in the response, or to return 202 immediately and upload the images to S3 in the background.
+- **Easily Submit Images**: The server can accept images as base64-encoded strings, http(s) urls, and s3 urls. This makes image-to-image workflows much easier to use.
 - **Warmup Workflow**: The server can be configured to run a warmup workflow on startup, which can be used to load and warm up models, and to ensure the server is ready to accept requests.
 - **Return Images In PNG (default), JPEG, or WebP**: The server can return images in PNG, JPEG, or WebP format, via a parameter in the API request. Most options supported by [sharp](https://sharp.pixelplumbing.com/) are supported.
 - **Probes**: The server has two probes, `/health` and `/ready`, which can be used to check the server's health and readiness to receive traffic.
-- **Dynamic Workflow Endpoints**: Automatically mount new workflow endpoints by adding conforming `.js` or `.ts` files to the `/workflows` directory in your docker image. See [below](#generating-new-workflow-endpoints) for more information. A [Claude 3.5 Sonnet](https://claude.ai) [prompt](./claude-endpoint-creation-prompt.md) is included to assist in automating this process.
+- **Dynamic Workflow Endpoints**: Automatically mount new workflow endpoints by adding conforming `.js` or `.ts` files to the `/workflows` directory in your docker image. See [below](#generating-new-workflow-endpoints) for more information. A [Claude 4 Sonnet](https://claude.ai) [prompt](./claude-endpoint-creation-prompt.md) is included to assist in automating this process.
 - **Bring Your Own Models And Extensions**: Use any model or extension you want by adding them to the normal ComfyUI directories `/opt/ComfyUI/`.
 - **Works Great with SaladCloud**: The server is designed to work well with SaladCloud, and can be used to host ComfyUI on the SaladCloud platform. It is likely to work well with other platforms as well.
+  - **Manages Deletion Cost**: *ONLY ON SALAD*. The server will automatically set the instance deletion cost to the queue length, so that busier nodes are less likely to be scaled in while they are processing requests.
 - **Single Binary**: The server is distributed as a single binary, and can be run with no dependencies.
 - **Websocket Events Via Webhook**: The server can forward ComfyUI websocket events to a configured webhook, which can be used to monitor the progress of a workflow.
 - **Friendly License**: The server is distributed under the MIT license, and can be used for any purpose. All of its dependencies are also MIT or Apache 2.0 licensed, except ComfyUI itself, which is GPL-3.0 licensed.
+
+## Full ComfyUI Support
+
+ComfyUI API sits in front of ComfyUI, and uses the ComfyUI `/prompt` API to execute workflows, so any API-formatted prompt can be executed by the server. Before queueing the prompt, the server will download any required inputs, such as images. It also overrides the `filename_prefix` field in the prompt to ensure that output files are saved with a unique filename. Once the prompt is queued, the server will wait for the prompt to complete, and then return the outputs in the response body, via a webhook, or upload them to S3, depending on the request parameters. Because of this, anything you can run in ComfyUI can be run in the ComfyUI API server, including custom nodes and workflows, and any models ComfyUI supports.
+
+## Stateless API
+
+The ComfyUI API server is designed to be stateless, meaning that it does not store any state between requests. This allows the server to be scaled horizontally behind a load balancer, and to handle more requests by adding more instances of the server. The server uses a configurable warmup workflow to ensure that ComfyUI is ready to accept requests, and to load any required models. The server also self-hosts swagger docs and an openapi spec at `/docs`, which can be used to interact with the API.
+
+### Request Format
+
+Prompts are submitted to the server via the `POST /prompt` endpoint, which accepts a JSON body containing the prompt graph, as well as any additional parameters such as the webhook URL, S3 bucket and prefix, and image conversion options. A request may look something like:
+
+```json
+{
+  "id": "123e4567-e89b-12d3-a456-426614174000",
+  "prompt": {
+    "1": {
+      "inputs": {
+        "image": "https://salad-benchmark-assets.download/coco2017/train2017/000000000009.jpg",
+        "upload": "image"
+      },
+      "class_type": "LoadImage"
+    }
+  },
+  "webhook": "https://example.com/webhook",
+  "convert_output": {
+    "format": "jpeg",
+    "options": {
+      "quality": 80,
+      "progressive": true
+    }
+  },
+}
+```
+
+- Only the `prompt` field is required. The other fields are optional, and can be omitted if not needed.
+- Your prompt must be a valid ComfyUI prompt graph, which is a JSON object where each key is a node ID, and the value is an object containing the node's inputs, class type, and optional metadata.
+- Your prompt must include a node that saves an output, such as a `SaveImage` node.
+
+## Image To Image Workflows
+
+The ComfyUI API server supports image-to-image workflows, allowing you to submit an image and receive a modified version of that image in response. This is useful for tasks such as image inpainting, style transfer, and other image manipulation tasks.
+
+To use image-to-image workflows, you can submit an image as a base64-encoded string, http(s) URL, or S3 URL. The server will automatically detect the input type and process the image accordingly.
+
+Here's an example of doing this in a `LoadImage` node:
+
+```json
+{
+  "inputs": {
+    "image": "https://salad-benchmark-assets.download/coco2017/train2017/000000000009.jpg",
+    "upload": "image"
+  },
+  "class_type": "LoadImage",
+  "_meta": {
+    "title": "Load Image"
+  }
+}
+```
+
+## Server-side image processing
+
+The ComfyUI API server uses the [sharp](https://sharp.pixelplumbing.com/) library to process images. This allows you to return the images in different, more compact formats, such as JPEG or WebP. This can be accomplished by including the `convert_output` object in the request body, which can contain the following fields:
+
+```json
+{
+  "format": "jpeg|webp",
+  "options": {}
+}
+```
+
+Omitting the `convert_output` object will default to PNG format, which is lossless and has the best quality, but is also the largest in size.
+
+**JPEG options**:
+
+- `quality`: The quality of the JPEG image, between 1 and 100. Default is `80`.
+- `progressive`: Use progressive (interlace) scanning. Default is `false`.
+- `chromaSubsampling`: Set to `4:4:4` to prevent chroma subsampling otherwise defaults to `4:2:0` chroma subsampling.
+- `optimizeCoding`: Optimize the Huffman coding tables. Default is `true`.
+- `mozjpeg`: use mozjpeg defaults, equivalent to `{ trellisQuantisation: true, overshootDeringing: true, optimizeScans: true, quantisationTable: 3 }`
+- `trellisQuantisation`: Use trellis quantization. Default is `false`.
+- `overshootDeringing`: Use overshoot deringing. Default is `false`.
+- `optimizeScans`: Optimize the scan order. Default is `false`.
+- `quantisationTable`: Set the quantization table to use, 1 - 8. Default is `0`.
+
+**WebP options**:
+
+- `quality`: The quality of the WebP image, between 1 and 100. Default is `80`.
+- `alphaQuality`: The quality of the alpha channel, between 0 and 100. Default is `100`.
+- `lossless`: Use lossless compression. Default is `false`.
+- `nearLossless`: Use near-lossless compression. Default is `false`.
+- `smartSubsample`: Use smart subsampling. Default is `false`.
+- `preset`: named preset for preprocessing/filtering, one of `default`, `picture`, `photo`, `drawing`, `icon`, or `text`. Default is `default`.
+- `effort`: CPU effort level, between 0 (fastest) and 6 (slowest). Default is `4`.
 
 ## Probes
 
@@ -96,6 +200,8 @@ This guide provides an overview of how to configure the application using enviro
 
 The following table lists the available environment variables and their default values.
 For historical reasons, the default values mostly assume this will run on top of an [ai-dock](https://github.com/ai-dock/comfyui) image, but we currently provide [our own more minimal image](#prebuilt-docker-images) here in this repo.
+
+If you are using the s3 storage functionality, make sure to set all of the appropriate environment variables for your S3 bucket, such as `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_REGION`. The server will automatically use these to upload images to S3.
 
 | Variable                     | Default Value         | Description                                                                                                                                                                                                                                  |
 | ---------------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -166,7 +272,11 @@ For historical reasons, the default values mostly assume this will run on top of
 
 Remember to set these environment variables according to your specific deployment needs before running the application.
 
-## Webhooks
+## Using Synchronously
+
+The default behavior of the API is to return an array of base64-encoded outputs in the response body. All that is needed to do this is to omit the `.webhook` and `.s3` field in the request body.
+
+## Using with Webhooks
 
 ComfyUI API sends two types of webhooks: System Events, which are emitted by ComfyUI itself, and Workflow Events, which are emitted by the API server. See [System Events](#system-events) for more information on System Events.
 
@@ -200,6 +310,26 @@ The webhook event name for a failed request is `prompt.failed`. The webhook will
   "prompt": {}
 }
 ```
+
+## Using with S3
+
+You must provide the necessary AWS environment variables for the API to be able to upload images to S3. These include `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_REGION`. The API will use these to upload images to the specified S3 bucket and prefix in the request body.
+
+To use S3 to store the outputs of your workflows, you can set the `.s3` field in the request body to an object with the following schema:
+
+```json
+{
+  "bucket": "your-s3-bucket-name",
+  "prefix": "prefix-for-outputs-from-this-request",
+  "async": false
+}
+```
+
+The `bucket` field is the name of the S3 bucket to upload the outputs to, and the `prefix` field is an optional prefix to add to the output filenames. The `async` field is a boolean that determines whether the API should return a 202 response immediately, or wait for the uploads to complete before returning a response.
+
+If `async` is set to `true`, the API will return a 202 response immediately, and the outputs will be uploaded to S3 in the background. You will need to poll S3 or configure bucket events to be notified when the uploads are complete.
+
+If `async` is set to `false`, the API will wait for the uploads to complete before returning a response. The response will include the S3 URLs of the uploaded outputs in the `.images` field, which will be an array of strings.
 
 ## System Events
 
@@ -399,6 +529,10 @@ Since the ComfyUI prompt format is a little obtuse, it's common to wrap the work
 This can be done by adding conforming `.js` or `.ts` files to the `/workflows` directory in your dockerfile.
 You can see some examples in [`./workflows`](./workflows/).
 Typescript files will be automatically transpiled to javascript files, so you can use either.
+
+Endpoints are loaded at runtime via `eval` in the context of `src/workflows`, so you can use any Node.js or TypeScript features you want, including importing other files such as the API config object.
+By loading extra endpoints this way, no rebuild is required to add new endpoints, and you can continue using the pre-built binary.
+You can see many examples of this in the [Salad Recipes](https://github.com/SaladTechnologies/salad-recipes/tree/master/src) repo, where this API powers all of the ComfyUI recipes.
 
 Here is an example text-to-image workflow file.
 
@@ -607,14 +741,12 @@ Would yield the following endpoints:
 These endpoints will be present in the swagger docs, and can be used to interact with the API.
 If you provide descriptions in your zod schemas, these will be used to create a table of inputs in the swagger docs.
 
-### Automating with Claude 3.5 Sonnet
+### Automating with Claude 4 Sonnet
 
 > **Note**: This requires having an account with Anthropic, and your anthropic API key in the environment variable `ANTHROPIC_API_KEY`.
 
-Creating these endpoints can be done mostly automatically by [Claude 3.5 Sonnet](https://console.anthropic.com/), given the JSON prompt graph.
-A system prompt to do this is included [here](./claude-endpoint-creation-prompt.md).
-
-A script that uses this prompt to create endpoints is included [here](./generate-workflow). It requires `jq` and `curl` to be installed.
+Creating these endpoints can be done mostly automatically by [Claude 4 Sonnet](https://console.anthropic.com/), given the JSON prompt graph.
+A [system prompt](./claude-endpoint-creation-prompt.md) to do this is included in this repository, as is [a script that uses this prompt](./generate-workflow) to create endpoints. It requires `jq` and `curl` to be installed.
 
 ```shell
 ./generate-workflow <inputFile> <outputFile>

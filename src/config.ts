@@ -31,6 +31,8 @@ const {
   SYSTEM_WEBHOOK_EVENTS,
   WARMUP_PROMPT_FILE,
   WORKFLOW_DIR = "/workflows",
+  AWS_REGION,
+  AWS_DEFAULT_REGION,
 } = process.env;
 
 fs.mkdirSync(WORKFLOW_DIR, { recursive: true });
@@ -192,6 +194,7 @@ const comfyDescription = getComfyUIDescription();
 const config = {
   alwaysRestartComfyUI,
   apiVersion: version,
+  awsRegion: AWS_REGION ?? AWS_DEFAULT_REGION ?? null,
   comfyDir,
   comfyHost: DIRECT_ADDRESS,
   comfyLaunchCmd: CMD,

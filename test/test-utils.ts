@@ -2,6 +2,17 @@ import { expect } from "earl";
 import sharp from "sharp";
 import fastify, { FastifyInstance } from "fastify";
 import { fetch, Agent } from "undici";
+import { S3Client } from "@aws-sdk/client-s3";
+
+export const s3 = new S3Client({
+  region: "us-east-1",
+  endpoint: "http://localhost:4566", // LocalStack endpoint
+  credentials: {
+    accessKeyId: "test",
+    secretAccessKey: "test",
+  },
+  forcePathStyle: true, // Required for LocalStack
+});
 
 export async function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -36,7 +47,8 @@ const webhookAddress = "http://host.docker.internal:1234/webhook";
 export async function submitPrompt(
   prompt: any,
   webhook: boolean = false,
-  convert: any = undefined
+  convert: any = undefined,
+  s3: any = undefined
 ): Promise<any> {
   const body: any = {
     prompt,
@@ -46,6 +58,9 @@ export async function submitPrompt(
   }
   if (convert) {
     body["convert_output"] = convert;
+  }
+  if (s3) {
+    body["s3"] = s3;
   }
   try {
     const resp = await fetch(`http://localhost:3000/prompt`, {

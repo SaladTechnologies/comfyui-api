@@ -110,7 +110,7 @@ export const WebpOptionsSchema = z.object({
 export type WebpOptions = z.infer<typeof WebpOptionsSchema>;
 
 export const OutputConversionOptionsSchema = z.object({
-  format: z.enum(["jpeg", "webp"]).describe("output format"),
+  format: z.enum(["jpeg", "jpg", "webp"]).describe("output format"),
   options: z.union([JPEGOptionsSchema, WebpOptionsSchema]).optional(),
 });
 
@@ -125,6 +125,13 @@ export const PromptRequestSchema = z.object({
     .optional()
     .default(() => randomUUID()),
   webhook: z.string().optional(),
+  s3: z
+    .object({
+      bucket: z.string(),
+      prefix: z.string(),
+      async: z.boolean().optional().default(false),
+    })
+    .optional(),
   convert_output: OutputConversionOptionsSchema.optional(),
 });
 

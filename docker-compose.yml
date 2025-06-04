@@ -1,6 +1,6 @@
 services:
   comfyui:
-    image: ghcr.io/saladtechnologies/comfyui-api:comfy0.3.35-test-image
+    image: ghcr.io/saladtechnologies/comfyui-api:comfy0.3.38-test-image
     volumes:
       - type: bind
         source: ./bin
@@ -13,12 +13,16 @@ services:
       context: ./test/docker-image
       dockerfile: Dockerfile
       args:
-        - comfy_version=0.3.35
+        - comfy_version=0.3.38
     ports:
       - "3000:3000"
       - "8188:8188"
     environment:
       LOG_LEVEL: "debug"
+      AWS_ENDPOINT_URL: "http://localstack:4566"
+      AWS_ACCESS_KEY_ID: "test"
+      AWS_SECRET_ACCESS_KEY: "test"
+      AWS_REGION: "us-east-1"
     #   ALWAYS_RESTART_COMFYUI: "true"
     #   SYSTEM_WEBHOOK_URL: "http://host.docker.internal:1234/system"
     #   SYSTEM_WEBHOOK_EVENTS: all
@@ -29,4 +33,12 @@ services:
             - driver: nvidia
               capabilities: [ gpu ]
               count: all
-
+  localstack:
+    image: localstack/localstack
+    ports:
+      - "4566:4566"  # LocalStack Gateway
+      - "4510-4559:4510-4559"  # External services
+    environment:
+      - SERVICES=s3
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock"

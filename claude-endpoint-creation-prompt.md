@@ -1,3 +1,4 @@
+# Instructions
 Your job is to convert a json workflow graph for ai image generation into a typescript function.
 - You should define a type for the input, using Zod for validation.
 - You should use `.describe` to describe each parameter to the best of your ability.
@@ -7,9 +8,9 @@ Your job is to convert a json workflow graph for ai image generation into a type
 - LoadImage inputs will always be accepted as either a url or base64 encoded string
 - Only output the typescript, with no additional commentary.
 
-Here is an example output:
 
-```typescript
+# Example Output
+
 import { z } from "zod";
 import config from "../config";
 
@@ -183,4 +184,3 @@ const workflow: Workflow = {
 };
 
 export default workflow;
-```
