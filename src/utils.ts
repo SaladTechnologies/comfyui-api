@@ -396,9 +396,7 @@ export async function fetchWithRetries(
 
 export async function setDeletionCost(cost: number): Promise<void> {
   if (!(config.saladMachineId && config.saladContainerGroupId)) {
-    console.warn(
-      "setDeletionCost called outside of Salad environment, skipping."
-    );
+    // If not running in Salad environment, skip setting deletion cost
     return;
   }
   try {
