@@ -1,6 +1,6 @@
 services:
   comfyui:
-    image: ghcr.io/saladtechnologies/comfyui-api:comfy0.3.38-test-image
+    image: ghcr.io/saladtechnologies/comfyui-api:comfy0.3.40-test-image
     volumes:
       - type: bind
         source: ./bin
@@ -13,7 +13,7 @@ services:
       context: ./test/docker-image
       dockerfile: Dockerfile
       args:
-        - comfy_version=0.3.38
+        - comfy_version=0.3.40
     ports:
       - "3000:3000"
       - "8188:8188"

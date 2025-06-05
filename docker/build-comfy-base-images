@@ -1,7 +1,7 @@
 #! /usr/bin/bash
 
-comfy_version=${1:-0.3.38}
-torch_version=${2:-2.7.0}
+comfy_version=${1:-0.3.40}
+torch_version=${2:-2.7.1}
 cuda_version=${3:-12.6}
 bases=("devel" "runtime")
 
