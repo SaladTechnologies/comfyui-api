@@ -1,5 +1,5 @@
 ARG base=runtime
-ARG pytorch_version=2.7.0
+ARG pytorch_version=2.7.1
 ARG cuda_version=12.6
 
 FROM pytorch/pytorch:${pytorch_version}-cuda${cuda_version}-cudnn9-${base}
@@ -24,7 +24,7 @@ RUN uv pip install --no-cache-dir --system comfy-cli
 
 WORKDIR /opt
 
-ARG comfy_version=0.3.38
+ARG comfy_version=0.3.40
 
 RUN git clone --depth 1 --branch v${comfy_version} https://github.com/comfyanonymous/ComfyUI.git
 

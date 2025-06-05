@@ -5,6 +5,7 @@
   "main": "dist/src/index.js",
   "scripts": {
     "test": "mocha --require ts-node/register --timeout=0 test/*.spec.ts",
+    "quick-test": "mocha --require ts-node/register --timeout=0 test/sd1.5.spec.ts",
     "build": "tsc",
     "build-binary": "./build-binary",
     "postinstall": "npm install --cpu=wasm32 sharp"

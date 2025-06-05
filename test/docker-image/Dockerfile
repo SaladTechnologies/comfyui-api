@@ -1,5 +1,5 @@
-ARG comfy_version=0.3.38
-FROM comfy-testing:latest
+ARG comfy_version=0.3.40
+FROM ghcr.io/saladtechnologies/comfyui-api:comfy${comfy_version}-torch2.7.1-cuda12.6-devel
 
 RUN apt-get update && apt-get install -y \
   libgl1 \
