@@ -11,13 +11,13 @@ import fsPromises from "fs/promises";
 import path from "path";
 import config from "./config";
 import {
-  processImage,
+  processImageOrVideo,
   zodToMarkdownTable,
   convertImageBuffer,
   getConfiguredWebhookHandlers,
   fetchWithRetries,
   setDeletionCost,
-  uploadImageToS3,
+  uploadFileToS3,
 } from "./utils";
 import {
   warmupComfyUI,
@@ -214,8 +214,23 @@ server.after(() => {
        * and also to do some pre-processing.
        */
       let hasSaveImage = false;
-      const loadImageNodes = new Set<string>(["LoadImage"]);
-      const loadDirectoryOfImagesNodes = new Set<string>(["VHS_LoadImages"]);
+      const loadImageNodes = new Set<string>([
+        "LoadImage",
+        "LoadImageMask",
+        "LoadImageOutput",
+        "VHS_LoadImagePath",
+      ]);
+      const loadDirectoryOfImagesNodes = new Set<string>([
+        "VHS_LoadImages",
+        "VHS_LoadImagesPath",
+      ]);
+      const loadVideoNodes = new Set<string>([
+        "LoadVideo",
+        "VHS_LoadVideo",
+        "VHS_LoadVideoPath",
+        "VHS_LoadVideoFFmpegPath",
+        "VHS_LoadVideoFFmpeg",
+      ]);
       for (const nodeId in prompt) {
         const node = prompt[nodeId];
         if (
@@ -246,7 +261,7 @@ server.after(() => {
            */
           const imageInput = node.inputs.image;
           try {
-            node.inputs.image = await processImage(imageInput, app.log);
+            node.inputs.image = await processImageOrVideo(imageInput, app.log);
           } catch (e: any) {
             return reply.code(400).send({
               error: e.message,
@@ -273,7 +288,7 @@ server.after(() => {
             );
             const processPromises: Promise<string>[] = [];
             for (const b64 of node.inputs.directory) {
-              processPromises.push(processImage(b64, app.log, id));
+              processPromises.push(processImageOrVideo(b64, app.log, id));
             }
             await Promise.all(processPromises);
             node.inputs.directory = id;
@@ -283,6 +298,42 @@ server.after(() => {
               error: e.message,
               location: `prompt.${nodeId}.inputs.directory`,
               message: "Failed to download images to local directory",
+            });
+          }
+        } else if (
+          loadVideoNodes.has(node.class_type) &&
+          typeof node.inputs.video === "string"
+        ) {
+          /**
+           * If the node is for loading a video, the user will have provided
+           * the video as base64 encoded data, or as a url. we need to download
+           * the video if it's a url, and save it to a local file.
+           */
+          const videoInput = node.inputs.video;
+          try {
+            node.inputs.video = await processImageOrVideo(videoInput, app.log);
+          } catch (e: any) {
+            return reply.code(400).send({
+              error: e.message,
+              location: `prompt.${nodeId}.inputs.video`,
+            });
+          }
+        } else if (
+          loadVideoNodes.has(node.class_type) &&
+          typeof node.inputs.file === "string"
+        ) {
+          /**
+           * If the node is for loading a video file, the user will have provided
+           * the video file as base64 encoded data, or as a url. we need to download
+           * the video if it's a url, and save it to a local file.
+           */
+          const videoInput = node.inputs.file;
+          try {
+            node.inputs.file = await processImageOrVideo(videoInput, app.log);
+          } catch (e: any) {
+            return reply.code(400).send({
+              error: e.message,
+              location: `prompt.${nodeId}.inputs.file`,
             });
           }
         }
@@ -453,13 +504,7 @@ server.after(() => {
 
               const key = `${s3.prefix}${filename}`;
               uploadPromises.push(
-                uploadImageToS3(
-                  s3.bucket,
-                  key,
-                  fileBuffer,
-                  contentType,
-                  app.log
-                )
+                uploadFileToS3(s3.bucket, key, fileBuffer, contentType, app.log)
               );
               app.log.info(
                 `Uploading image ${filename} to s3://${s3.bucket}/${key}`
@@ -514,7 +559,7 @@ server.after(() => {
           } else if (s3 && !s3.async) {
             const key = `${s3.prefix}${filename}`;
             uploadPromises.push(
-              uploadImageToS3(s3.bucket, key, fileBuffer, contentType, app.log)
+              uploadFileToS3(s3.bucket, key, fileBuffer, contentType, app.log)
             );
             images.push(`s3://${s3.bucket}/${key}`);
           }
