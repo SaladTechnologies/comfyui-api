@@ -194,7 +194,7 @@ export async function processImageOrVideo(
       if (!extension) {
         throw new Error("Could not determine file type from base64 data");
       }
-      localFilePath = `${localFilePath}.${extension}}`;
+      localFilePath = `${localFilePath}.${extension}`;
       log.debug(`Saving decoded file to ${localFilePath}`);
       await fsPromises.writeFile(localFilePath, base64Data);
       return localFilePath;
