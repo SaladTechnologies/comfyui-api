@@ -1,19 +1,6 @@
 name: Create Release
 
 on:
-  push:
-    branches:
-      - main
-    paths-ignore:
-      - ".github/**"
-      - "**.md"
-      - "**.png"
-      - ".gitignore"
-      - "generate-workflow"
-      - "**.yml"
-      - "test/**"
-      - "example-workflows/**"
-      - "docker/**"
   workflow_dispatch: {}
 
 jobs:
