@@ -587,6 +587,7 @@ server.after(() => {
           input: node.RequestSchema,
           webhook: z.string().optional(),
           convert_output: OutputConversionOptionsSchema.optional(),
+          s3: PromptRequestSchema.shape.s3.optional(),
         });
 
         type BodyType = z.infer<typeof BodySchema>;
@@ -624,7 +625,7 @@ server.after(() => {
             },
           },
           async (request, reply) => {
-            const { id, input, webhook, convert_output } = request.body;
+            const { id, input, webhook, convert_output, s3 } = request.body;
             const prompt = await node.generateWorkflow(input);
 
             const resp = await fetch(
@@ -634,7 +635,7 @@ server.after(() => {
                 headers: {
                   "Content-Type": "application/json",
                 },
-                body: JSON.stringify({ prompt, id, webhook, convert_output }),
+                body: JSON.stringify({ prompt, id, webhook, convert_output, s3 }),
                 dispatcher: new Agent({
                   headersTimeout: 0,
                   bodyTimeout: 0,
