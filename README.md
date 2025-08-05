@@ -52,7 +52,7 @@ If you have your own ComfyUI dockerfile, you can add the comfyui-api server to i
 
 ```dockerfile
 # Change this to the version you want to use
-ARG api_version=1.9.0
+ARG api_version=1.9.2
 
 
 # Download the comfyui-api binary, and make it executable
@@ -189,8 +189,6 @@ The server has two probes, `/health` and `/ready`.
 
 - The `/health` probe will return a 200 status code once the warmup workflow has completed. It will stay healthy as long as the server is running, even if ComfyUI crashes.
 - The `/ready` probe will also return a 200 status code once the warmup workflow has completed. It will return a 503 status code if ComfyUI is not running, such as in the case it has crashed, but is being automatically restarted. If you have set `MAX_QUEUE_DEPTH` to a non-zero value, it will return a 503 status code if ComfyUI's queue has reached the maximum depth.
-
-Here's a markdown guide to configuring the application based on the provided config.ts file:
 
 ## API Configuration Guide
 
