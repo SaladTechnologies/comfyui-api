@@ -2,8 +2,8 @@
 
 usage="Usage: $0 [comfy_version] [torch_version] [cuda_version] [api_version]"
 
-comfy_version=${1:-0.3.49}
-torch_version=${2:-2.7.1}
+comfy_version=${1:-0.3.51}
+torch_version=${2:-2.8.0}
 cuda_version=${3:-12.6}
 
 current_api_version=$(cat ../package.json | jq -r '.version')
