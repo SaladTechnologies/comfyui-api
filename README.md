@@ -192,8 +192,6 @@ The server has two probes, `/health` and `/ready`.
 
 ## API Configuration Guide
 
-This guide provides an overview of how to configure the application using environment variables.
-
 ### Environment Variables
 
 The following table lists the available environment variables and their default values.
