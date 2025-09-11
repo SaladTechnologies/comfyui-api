@@ -1,6 +1,6 @@
 services:
   comfyui:
-    image: ghcr.io/saladtechnologies/comfyui-api:comfy0.3.55-test-image
+    image: ghcr.io/saladtechnologies/comfyui-api:comfy0.3.59-torch2.8.0-cuda12.6-runtime
     volumes:
       - type: bind
         source: ./bin
@@ -9,11 +9,6 @@ services:
         source: ./test/docker-image/models
         target: /opt/ComfyUI/models
     command: ["/app/bin/comfyui-api"]
-    build:
-      context: ./test/docker-image
-      dockerfile: Dockerfile
-      args:
-        - comfy_version=0.3.55
     ports:
       - "3000:3000"
       - "8188:8188"
