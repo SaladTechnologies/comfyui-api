@@ -1,6 +1,6 @@
 services:
   comfyui:
-    image: ghcr.io/saladtechnologies/comfyui-api:comfy0.3.59-torch2.8.0-cuda12.6-runtime
+    image: ghcr.io/saladtechnologies/comfyui-api:comfy0.3.61-torch2.8.0-cuda12.8-runtime
     volumes:
       - type: bind
         source: ./bin
