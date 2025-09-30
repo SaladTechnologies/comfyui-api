@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import { execSync } from "child_process";
 import { z } from "zod";
 import { version } from "../package.json";
+import yaml from "yaml";
 
 const {
   ALWAYS_RESTART_COMFYUI = "false",
@@ -192,6 +193,74 @@ with open("${temptComfyFilePath}", "w") as f:
 
 const comfyDescription = getComfyUIDescription();
 
+function parseManifest(manifestPath: string): any {
+  if (!fs.existsSync(manifestPath)) {
+    throw new Error(`Manifest file not found at path: ${manifestPath}`);
+  }
+
+  const isYAML =
+    manifestPath.endsWith(".yaml") || manifestPath.endsWith(".yml");
+  const isJSON = manifestPath.endsWith(".json");
+
+  if (!isYAML && !isJSON) {
+    throw new Error("Manifest file must be in JSON or YAML format.");
+  }
+
+  const fileContent = fs.readFileSync(manifestPath, "utf-8");
+
+  if (isYAML) {
+    return yaml.parse(fileContent);
+  }
+
+  return JSON.parse(fileContent);
+}
+
+const modelDownloadConfigSpec = z.object({
+  url: z.string().url(),
+  local_path: z.string(),
+});
+
+const manifestSpec = z.object({
+  apt: z.string().array().optional(),
+  custom_nodes: z.string().array().optional(),
+  models: z.object({
+    before_start: modelDownloadConfigSpec.array().optional(),
+    after_start: modelDownloadConfigSpec.array().optional(),
+  }),
+});
+
+const isValidManifest = (obj: any): obj is z.infer<typeof manifestSpec> => {
+  const result = manifestSpec.safeParse(obj);
+  return result.success;
+};
+
+let manifest: z.infer<typeof manifestSpec> | null = null;
+if (MANIFEST) {
+  manifest = parseManifest(MANIFEST);
+  if (!isValidManifest(manifest)) {
+    throw new Error("Invalid manifest file format.");
+  }
+}
+
+const hfCLIVersion = (() => {
+  try {
+    const version = execSync("hf version", { encoding: "utf-8" }).trim();
+    const [_, ver] = version.split(":");
+    return ver.trim();
+  } catch {
+    return null;
+  }
+})();
+
+const comfyCLIVersion = (() => {
+  try {
+    const version = execSync("comfy --version", { encoding: "utf-8" }).trim();
+    return version;
+  } catch {
+    return null;
+  }
+})();
+
 const config = {
   /**
    * If true, the wrapper will always try to restart ComfyUI when it crashes.
@@ -209,6 +278,11 @@ const config = {
    * (optional) The AWS region to use for S3 operations.
    */
   awsRegion: AWS_REGION ?? AWS_DEFAULT_REGION ?? null,
+
+  /**
+   * The version of the Comfy CLI, if installed. If not installed, null.
+   */
+  comfyCLIVersion,
 
   /**
    * ComfyUI's home directory, specified by COMFY_HOME env var.
@@ -248,6 +322,11 @@ const config = {
   comfyWSURL,
 
   /**
+   * The version of the HuggingFace CLI, if installed. If not installed, null.
+   */
+  hfCLIVersion,
+
+  /**
    * The directory where input files are stored, specified by INPUT_DIR env var.
    * default: {comfyDir}/input
    */
@@ -257,6 +336,11 @@ const config = {
    * The log level for the wrapper, specified by LOG_LEVEL env var.
    */
   logLevel: LOG_LEVEL.toLowerCase(),
+
+  /**
+   * If a manifest file is provided, this is its parsed contents.
+   */
+  manifest,
 
   /**
    * If true, the wrapper will include markdown descriptions in the

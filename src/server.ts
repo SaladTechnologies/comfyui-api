@@ -18,6 +18,9 @@ import {
   fetchWithRetries,
   setDeletionCost,
   uploadFileToS3,
+  downloadModel,
+  installCustomNode,
+  aptInstallPackages,
 } from "./utils";
 import {
   warmupComfyUI,
@@ -635,7 +638,13 @@ server.after(() => {
                 headers: {
                   "Content-Type": "application/json",
                 },
-                body: JSON.stringify({ prompt, id, webhook, convert_output, s3 }),
+                body: JSON.stringify({
+                  prompt,
+                  id,
+                  webhook,
+                  convert_output,
+                  s3,
+                }),
                 dispatcher: new Agent({
                   headersTimeout: 0,
                   bodyTimeout: 0,
@@ -725,15 +734,52 @@ async function launchComfyUIAndAPIServerAndWaitForWarmup() {
   warm = true;
 }
 
+async function downloadAllModels(
+  models: { url: string; local_path: string }[]
+) {
+  for (const model of models) {
+    await downloadModel(model, server.log);
+  }
+}
+
 export async function start() {
   try {
     const start = Date.now();
+    if (config.manifest) {
+      if (config.manifest.apt) {
+        server.log.info(
+          `Installing ${config.manifest.apt.length} apt packages specified in manifest`
+        );
+        await aptInstallPackages(config.manifest.apt, server.log);
+      }
+      if (config.manifest.custom_nodes) {
+        server.log.info(
+          `Installing ${config.manifest.custom_nodes.length} custom nodes specified in manifest`
+        );
+        for (const node of config.manifest.custom_nodes) {
+          await installCustomNode(node, server.log);
+        }
+      }
+      if (config.manifest.models.before_start) {
+        server.log.info(
+          `Downloading ${config.manifest.models.before_start.length} models specified in manifest before startup`
+        );
+        await downloadAllModels(config.manifest.models.before_start);
+      }
+      if (config.manifest.models.after_start) {
+        server.log.info(
+          `Downloading ${config.manifest.models.after_start.length} models specified in manifest after startup`
+        );
+
+        // Don't await, do it in the background
+        downloadAllModels(config.manifest.models.after_start);
+      }
+    }
+
     // Start ComfyUI
     await launchComfyUIAndAPIServerAndWaitForWarmup();
     const warmupTime = Date.now() - start;
-    server.log.info(
-      `Starting Comfy and any warmup workflow took ${warmupTime / 1000}s`
-    );
+    server.log.info(`ComfyUI fully ready in ${warmupTime / 1000}s`);
   } catch (err: any) {
     server.log.error(`Failed to start server: ${err.message}`);
     process.exit(1);

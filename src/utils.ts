@@ -15,6 +15,10 @@ import {
   PutObjectCommand,
 } from "@aws-sdk/client-s3";
 import { NodeHttpHandler } from "@smithy/node-http-handler";
+import { execFile } from "child_process";
+import { promisify } from "util";
+
+const execFilePromise = promisify(execFile);
 
 export let s3: S3Client | null = null;
 if (config.awsRegion) {
@@ -550,4 +554,218 @@ export async function setDeletionCost(cost: number): Promise<void> {
   } catch (error) {
     console.error("Error setting deletion cost:", error);
   }
+}
+
+export async function downloadWithHfCLI(
+  url: URL,
+  outputPath: string,
+  log: FastifyBaseLogger
+): Promise<void> {
+  // url like https://huggingface.co/tencent/Hunyuan3D-2.1/resolve/main/hunyuan3d-dit-v2-1/model.fp16.ckpt?download=true
+  const parts = url.pathname.split("/");
+  if (parts.length >= 3) {
+    const repo = parts[1] + "/" + parts[2];
+    const revision = parts[4];
+    const filePath = parts.slice(5).join("/");
+    const downloadResult = await execFilePromise("hf", [
+      "download",
+      repo,
+      filePath,
+      "--revision",
+      revision,
+    ]);
+
+    const downloadedPath = await fsPromises.realpath(
+      downloadResult.stdout.trim()
+    );
+
+    // Check if path exists
+    const stats = await fsPromises.stat(downloadedPath);
+    if (!stats.isFile()) {
+      throw new Error(
+        `Downloaded path is not a file: ${downloadedPath}, URL: ${url.toString()}`
+      );
+    }
+
+    // Run mv and capture any output
+    await execFilePromise("mv", [downloadedPath, outputPath]);
+  } else {
+    throw new Error(`Invalid HuggingFace URL: ${url.toString()}`);
+  }
+}
+
+export async function downloadModel(
+  modelDownloadConfig: {
+    url: string;
+    local_path: string;
+  },
+  log: FastifyBaseLogger
+): Promise<string | void> {
+  modelDownloadConfig.local_path = path.resolve(
+    config.comfyDir,
+    modelDownloadConfig.local_path
+  );
+  const dir = path.dirname(modelDownloadConfig.local_path);
+  await fsPromises.mkdir(dir, { recursive: true });
+
+  const startTime = Date.now();
+
+  log.info(
+    `Downloading model from ${modelDownloadConfig.url} to ${modelDownloadConfig.local_path}`
+  );
+  const parsedUrl = new URL(modelDownloadConfig.url);
+
+  if (parsedUrl.protocol === "s3:") {
+    if (!s3) {
+      throw new Error("S3 client is not configured");
+    }
+    const bucket = parsedUrl.hostname;
+    const key = parsedUrl.pathname.slice(1); // Remove leading slash
+
+    await downloadFileFromS3(bucket, key, modelDownloadConfig.local_path, log);
+  } else if (
+    parsedUrl.protocol === "http:" ||
+    parsedUrl.protocol === "https:"
+  ) {
+    // If it's a huggingface.co URL, use the hf cli if available
+    if (config.hfCLIVersion && parsedUrl.hostname === "huggingface.co") {
+      await downloadWithHfCLI(parsedUrl, modelDownloadConfig.local_path, log);
+    }
+
+    // Otherwise, use regular download
+    else {
+      await downloadFile(
+        modelDownloadConfig.url,
+        modelDownloadConfig.local_path,
+        log
+      );
+    }
+  } else {
+    throw new Error(
+      `Unsupported model URL protocol: ${parsedUrl.protocol} in URL ${modelDownloadConfig.url}`
+    );
+  }
+  const duration = (Date.now() - startTime) / 1000;
+  const sizeInMB =
+    (await fsPromises.stat(modelDownloadConfig.local_path)).size / 1024 / 1024;
+  const sizeInGB = sizeInMB / 1024;
+
+  const sizeStr =
+    sizeInGB >= 1 ? `${sizeInGB.toFixed(2)} GB` : `${sizeInMB.toFixed(2)} MB`;
+  const speed = sizeInMB / duration;
+
+  log.info(
+    `Model downloaded to ${
+      modelDownloadConfig.local_path
+    } (${sizeStr}, ${speed.toFixed(2)} MB/s) in ${duration.toFixed(2)} seconds`
+  );
+  return modelDownloadConfig.local_path;
+}
+
+export async function cloneToDirectory(
+  repoUrl: string,
+  targetDir: string,
+  log: FastifyBaseLogger
+): Promise<void> {
+  await fsPromises.mkdir(targetDir, { recursive: true });
+  // Clone the url to the custom nodes directory
+  log.info(`Cloning custom node from ${repoUrl} to ${targetDir}`);
+  await execFilePromise("git", ["clone", repoUrl], { cwd: targetDir });
+}
+
+export async function installCustomNode(
+  nodeNameOrUrl: string,
+  log: FastifyBaseLogger
+): Promise<void> {
+  const isUrl =
+    nodeNameOrUrl.startsWith("http://") || nodeNameOrUrl.startsWith("https://");
+  if (!isUrl && config.comfyCLIVersion) {
+    // Install from ComfyUI community nodes if comfy cli is available
+    log.info(`Installing custom node ${nodeNameOrUrl} using comfy cli`);
+    await new Promise<void>((resolve, reject) => {
+      execFile(
+        "comfy",
+        ["node", "install", nodeNameOrUrl, "--fast-deps", "--exit-on-fail"],
+        (error, stdout, stderr) => {
+          if (error) {
+            log.error(`Error installing custom node: ${error.message}`);
+            reject(error);
+            return;
+          }
+          log.info(`Custom node installed`);
+          return resolve();
+        }
+      );
+    });
+  } else if (!isUrl) {
+    throw new Error(
+      "ComfyUI CLI is not available to install custom node by name"
+    );
+  } else {
+    const customNodesDir = path.join(config.comfyDir, "custom_nodes");
+    await cloneToDirectory(nodeNameOrUrl, customNodesDir, log);
+    const repoName = nodeNameOrUrl
+      .substring(nodeNameOrUrl.lastIndexOf("/") + 1)
+      .replace(/\.git$/, "");
+    const customNodePath = path.join(customNodesDir, repoName);
+    await new Promise<void>((resolve, reject) => {
+      execFile(
+        "uv",
+        ["pip", "install", "--system", "-r", "requirements.txt"],
+        { cwd: customNodePath },
+        (error, stdout, stderr) => {
+          if (error) {
+            log.error(
+              `Error installing custom node requirements: ${error.message}`
+            );
+            reject(error);
+            return;
+          }
+          log.info(`Custom node requirements installed`);
+          return resolve();
+        }
+      );
+    });
+  }
+}
+
+export async function aptUpdate(log: FastifyBaseLogger): Promise<void> {
+  log.info(`Running apt-get update`);
+  return new Promise<void>((resolve, reject) => {
+    execFile("apt-get", ["update"], (error, stdout, stderr) => {
+      if (error) {
+        log.error(`Error running apt-get update: ${error.message}`);
+        reject(error);
+        return;
+      }
+      log.info(`apt-get update completed`);
+      return resolve();
+    });
+  });
+}
+
+export async function aptInstallPackages(
+  packages: string[],
+  log: FastifyBaseLogger
+): Promise<void> {
+  if (packages.length === 0) {
+    return;
+  }
+  await aptUpdate(log);
+  log.info(`Installing apt packages: ${packages.join(", ")}`);
+  return new Promise<void>((resolve, reject) => {
+    execFile(
+      "apt-get",
+      ["install", "-y", ...packages],
+      (error, stdout, stderr) => {
+        if (error) {
+          log.error(`Error installing apt packages: ${error.message}`);
+          reject(error);
+          return;
+        }
+        log.info(`Apt packages installed`);
+        return resolve();
+      }
+    );
+  });
 }
