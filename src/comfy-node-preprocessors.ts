@@ -1,10 +1,10 @@
 import path from "path";
-import { randomUUID } from "crypto";
 import { FastifyBaseLogger } from "fastify";
 import { ComfyNode } from "./types";
 import config from "./config";
 import storageManager from "./remote-storage-manager";
 import { isValidUrl } from "./utils";
+import { processImageOrVideo } from "./image-tools";
 
 const configPath = path.join(config.comfyDir, "models", "configs");
 const checkpointPath = path.join(config.comfyDir, "models", "checkpoints");
@@ -16,6 +16,43 @@ const clipPath = path.join(config.comfyDir, "models", "text_encoders");
 const styleModelPath = path.join(config.comfyDir, "models", "style_models");
 const gligenPath = path.join(config.comfyDir, "models", "gligen");
 const upscaleModelPath = path.join(config.comfyDir, "models", "upscale_models");
+
+export const loadImageNodes = new Set<string>([
+  "LoadImage",
+  "LoadImageMask",
+  "LoadImageOutput",
+  "VHS_LoadImagePath",
+]);
+export const loadDirectoryOfImagesNodes = new Set<string>([
+  "VHS_LoadImages",
+  "VHS_LoadImagesPath",
+]);
+export const loadVideoNodes = new Set<string>([
+  "LoadVideo",
+  "VHS_LoadVideo",
+  "VHS_LoadVideoPath",
+  "VHS_LoadVideoFFmpegPath",
+  "VHS_LoadVideoFFmpeg",
+]);
+
+export const modelLoadingNodeTypes = new Set([
+  "CheckpointLoader",
+  "CheckpointLoaderSimple",
+  "DiffusersLoader",
+  "unCLIPCheckpointLoader",
+  "LoraLoader",
+  "LoraLoaderModelOnly",
+  "VAELoader",
+  "ControlNetLoader",
+  "DiffControlNetLoader",
+  "UNETLoader",
+  "CLIPLoader",
+  "DualCLIPLoader",
+  "CLIPVisionLoader",
+  "StyleModelLoader",
+  "GLIGENLoader",
+  "UpscaleModelLoader",
+]);
 
 async function processCheckpointLoaderNode(
   node: ComfyNode,
@@ -262,25 +299,6 @@ async function processUpscaleModelLoaderNode(
   return node;
 }
 
-export const modelLoadingNodeTypes = new Set([
-  "CheckpointLoader",
-  "CheckpointLoaderSimple",
-  "DiffusersLoader",
-  "unCLIPCheckpointLoader",
-  "LoraLoader",
-  "LoraLoaderModelOnly",
-  "VAELoader",
-  "ControlNetLoader",
-  "DiffControlNetLoader",
-  "UNETLoader",
-  "CLIPLoader",
-  "DualCLIPLoader",
-  "CLIPVisionLoader",
-  "StyleModelLoader",
-  "GLIGENLoader",
-  "UpscaleModelLoader",
-]);
-
 export async function processModelLoadingNode(
   node: ComfyNode,
   log: FastifyBaseLogger
@@ -317,4 +335,40 @@ export async function processModelLoadingNode(
     default:
       return node;
   }
+}
+
+export async function processLoadImageNode(
+  node: ComfyNode,
+  log: FastifyBaseLogger
+): Promise<ComfyNode> {
+  node.inputs.image = await processImageOrVideo(node.inputs.image, log);
+  return node;
+}
+
+export async function processLoadDirectoryOfImagesNode(
+  node: ComfyNode,
+  jobId: string,
+  log: FastifyBaseLogger
+): Promise<ComfyNode> {
+  const processPromises: Promise<string>[] = [];
+  for (const imageInput of node.inputs.directory) {
+    processPromises.push(processImageOrVideo(imageInput, log, jobId));
+  }
+  await Promise.all(processPromises);
+  node.inputs.directory = jobId;
+  return node;
+}
+
+export async function processLoadVideoNode(
+  node: ComfyNode,
+  log: FastifyBaseLogger
+): Promise<ComfyNode> {
+  const { video, file } = node.inputs;
+  if (video) {
+    node.inputs.video = await processImageOrVideo(video, log);
+  }
+  if (file) {
+    node.inputs.file = await processImageOrVideo(file, log);
+  }
+  return node;
 }
