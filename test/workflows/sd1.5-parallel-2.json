@@ -136,7 +136,7 @@
   },
   "28": {
     "inputs": {
-      "ckpt_name": "dreamshaperPixelart_v10.safetensors"
+      "ckpt_name": "https://civitai.com/api/download/models/142421?type=Model&format=SafeTensor&size=full&fp=fp16"
     },
     "class_type": "CheckpointLoaderSimple",
     "_meta": {

@@ -35,6 +35,110 @@ function parseS3Url(s3Url: string): { bucket: string; key: string } {
   return { bucket, key };
 }
 
+function getIntendedFileExtensionFromResponse(
+  response: Response
+): string | null {
+  // 1. Try content-disposition header for filename
+  const contentDisposition = response.headers.get("content-disposition");
+  if (contentDisposition) {
+    const match = contentDisposition.match(
+      /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/
+    );
+    if (match != null && match[1]) {
+      const filename = match[1].replace(/['"]/g, "");
+      const ext = path.extname(filename);
+      if (ext) return ext;
+    }
+  }
+
+  // 2. Try to get extension from the URL
+  try {
+    const url = new URL(response.url);
+    const pathname = url.pathname;
+    const ext = path.extname(pathname);
+    // Only use if it looks like a real extension (not empty and reasonable length)
+    if (ext && ext.length <= 15) return ext; // Increased to handle .safetensors
+  } catch {
+    // Invalid URL, continue to next method
+  }
+
+  // 3. Map content-type to common extensions
+  const contentType = response.headers.get("content-type");
+  if (contentType) {
+    const mimeType = contentType.split(";")[0].trim().toLowerCase();
+    const ext = mimeToExtension(mimeType);
+    if (ext) return ext;
+  }
+
+  return null;
+}
+
+function mimeToExtension(mimeType: string): string | null {
+  const mimeMap: Record<string, string> = {
+    // Documents
+    "application/pdf": ".pdf",
+    "application/msword": ".doc",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+      ".docx",
+    "application/vnd.ms-excel": ".xls",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
+      ".xlsx",
+    "application/vnd.ms-powerpoint": ".ppt",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation":
+      ".pptx",
+    "text/plain": ".txt",
+    "text/csv": ".csv",
+    "text/html": ".html",
+    "application/rtf": ".rtf",
+
+    // Images
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/gif": ".gif",
+    "image/webp": ".webp",
+    "image/svg+xml": ".svg",
+    "image/bmp": ".bmp",
+    "image/tiff": ".tiff",
+    "image/x-icon": ".ico",
+
+    // Video
+    "video/mp4": ".mp4",
+    "video/mpeg": ".mpeg",
+    "video/webm": ".webm",
+    "video/quicktime": ".mov",
+    "video/x-msvideo": ".avi",
+
+    // Audio
+    "audio/mpeg": ".mp3",
+    "audio/wav": ".wav",
+    "audio/ogg": ".ogg",
+    "audio/webm": ".weba",
+    "audio/aac": ".aac",
+
+    // Archives
+    "application/zip": ".zip",
+    "application/x-tar": ".tar",
+    "application/gzip": ".gz",
+    "application/x-7z-compressed": ".7z",
+    "application/x-rar-compressed": ".rar",
+
+    // Code/Data
+    "application/json": ".json",
+    "application/xml": ".xml",
+    "text/xml": ".xml",
+    "application/javascript": ".js",
+    "text/javascript": ".js",
+    "text/css": ".css",
+
+    // Binary/ML Model formats
+    "application/octet-stream": ".bin", // Generic binary, but commonly used for model files
+    "application/x-pytorch": ".pt",
+    "application/x-tensorflow": ".pb",
+  };
+
+  return mimeMap[mimeType] || null;
+}
+
 class Upload {
   url: string;
   fileOrPath: string | Buffer;
@@ -145,6 +249,30 @@ class Upload {
   }
 }
 
+async function linkIfDoesNotExist(
+  src: string,
+  dest: string,
+  log: FastifyBaseLogger
+): Promise<void> {
+  return fsPromises
+    .lstat(dest)
+    .then(() => {
+      log.debug(`Link target ${dest} already exists, skipping link`);
+    })
+    .catch(async (err: any) => {
+      if (err.code === "ENOENT") {
+        log.debug(`Linking ${src} to ${dest}`);
+        await fsPromises.symlink(src, dest);
+        log.debug(`Linked ${src} to ${dest}`);
+      } else {
+        log.error(
+          `Error linking ${src} to ${dest}: (${err.code}) ${err.message}`
+        );
+        throw err;
+      }
+    });
+}
+
 class RemoteStorageManager {
   private cache: Record<string, string> = {};
   private activeDownloads: Record<string, Promise<string>> = {};
@@ -167,7 +295,7 @@ class RemoteStorageManager {
         outputDir,
         filenameOverride || path.basename(this.cache[url])
       );
-      await fsPromises.symlink(this.cache[url], finalLocation);
+      await linkIfDoesNotExist(this.cache[url], finalLocation, log);
       log.debug(`Using cached file for ${url}`);
       return finalLocation;
     }
@@ -178,7 +306,7 @@ class RemoteStorageManager {
         outputDir,
         filenameOverride || path.basename(cachedPath)
       );
-      await fsPromises.symlink(cachedPath, finalLocation);
+      await linkIfDoesNotExist(cachedPath, finalLocation, log);
       return finalLocation;
     }
     const start = Date.now();
@@ -206,10 +334,10 @@ class RemoteStorageManager {
           tempFilePath,
           log
         )
-          .then(() => {
-            this.cache[url] = tempFilePath;
+          .then((outputPath) => {
+            this.cache[url] = outputPath;
 
-            return tempFilePath;
+            return outputPath;
           })
           .finally(() => {
             delete this.activeDownloads[url];
@@ -232,15 +360,17 @@ class RemoteStorageManager {
     } else {
       throw new Error(`Unsupported URL scheme for ${url}`);
     }
-    await this.activeDownloads[url];
+    const outputPath = await this.activeDownloads[url];
     const finalLocation = path.join(
       outputDir,
       filenameOverride || path.basename(this.cache[url])
     );
-    await fsPromises.symlink(tempFilePath, finalLocation);
+    await linkIfDoesNotExist(outputPath, finalLocation, log);
 
     const duration = (Date.now() - start) / 1000;
-    const sizeInMB = (await fsPromises.stat(tempFilePath)).size / (1024 * 1024);
+    const sizeInMB =
+      (await fsPromises.stat(await fsPromises.realpath(outputPath))).size /
+      (1024 * 1024);
     const sizeInGB = sizeInMB / 1024;
     const speed = sizeInMB / duration;
     const sizeStr =
@@ -301,7 +431,7 @@ class RemoteStorageManager {
     fileUrl: string,
     outputPath: string,
     log: FastifyBaseLogger
-  ): Promise<void> {
+  ): Promise<string> {
     try {
       // Fetch the image
       const response = await fetch(fileUrl);
@@ -310,11 +440,20 @@ class RemoteStorageManager {
         throw new Error(`Error downloading file: ${response.statusText}`);
       }
 
+      if (path.extname(outputPath) === "") {
+        const ext = getIntendedFileExtensionFromResponse(response) || "";
+        if (ext) {
+          outputPath = outputPath + ext;
+        }
+      }
+
       // Get the response as a readable stream
       const body = response.body;
       if (!body) {
         throw new Error("Response body is null");
       }
+
+      log.info(`Downloading file to ${outputPath}`);
 
       // Create a writable stream to save the file
       const fileStream = fs.createWriteStream(outputPath);
@@ -323,13 +462,15 @@ class RemoteStorageManager {
       await new Promise<void>((resolve, reject) => {
         Readable.fromWeb(body as any)
           .pipe(fileStream)
-          .on("finish", resolve)
+          .on("finish", () => resolve())
           .on("error", reject);
       });
 
       log.info(`File downloaded and saved to ${outputPath}`);
+      return outputPath;
     } catch (error: any) {
       log.error("Error downloading file:", error);
+      throw error;
     }
   }
 

@@ -8,7 +8,7 @@
 #   - https://github.com/visualbruno/ComfyUI-Hunyuan3d-2-1.git
 models:
   before_start:
-    # - url: https://civitai.com/api/download/models/128713?type=Model&format=SafeTensor&size=pruned&fp=fp16
-    #   local_path: models/checkpoints/dreamshaper8.safetensors
-    - url: https://huggingface.co/Lykon/DreamShaper/resolve/main/DreamShaper_5_beta2_noVae_half_pruned.safetensors?download=true
-      local_path: models/checkpoints/dreamshaper5.safetensors
+    - url: https://civitai.com/api/download/models/128713?type=Model&format=SafeTensor&size=pruned&fp=fp16
+      local_path: models/checkpoints/dreamshaper_8.safetensors
+    # - url: https://huggingface.co/Lykon/DreamShaper/resolve/main/DreamShaper_5_beta2_noVae_half_pruned.safetensors?download=true
+    #   local_path: models/checkpoints/dreamshaper5.safetensors
