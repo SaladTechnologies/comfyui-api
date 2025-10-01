@@ -180,6 +180,8 @@ Otherwise, it will attempt to determine the file extension from the `Content-Dis
 
 All downloaded files live in the configured cache directory, and are symbolically linked to the specified local path.
 
+If a download for a given URL is already in progress, any subsequent requests for the same URL will wait for the first download to complete, and then use the downloaded file.
+
 ## Image To Image Workflows
 
 The ComfyUI API server supports image-to-image workflows, allowing you to submit an image and receive a modified version of that image in response. This is useful for tasks such as image inpainting, style transfer, and other image manipulation tasks.
@@ -407,6 +409,9 @@ The `bucket` field is the name of the S3 bucket to upload the outputs to, and th
 If `async` is set to `true`, the API will return a 202 response immediately, and the outputs will be uploaded to S3 in the background. You will need to poll S3 or configure bucket events to be notified when the uploads are complete.
 
 If `async` is set to `false`, the API will wait for the uploads to complete before returning a response. The response will include the S3 URLs of the uploaded outputs in the `.images` field, which will be an array of strings.
+
+If an upload for a particular output is in progress, a subsequent upload to the same output will abort the first request and take over the upload.
+This is rooted in the assumption that you want the latest version of any particular output.
 
 ## System Events
 
