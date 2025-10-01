@@ -741,13 +741,9 @@ async function downloadAllModels(
   models: { url: string; local_path: string }[]
 ) {
   for (const { url, local_path } of models) {
-    try {
-      const dir = path.dirname(local_path);
-      const filename = path.basename(local_path);
-      await remoteStorageManager.downloadFile(url, dir, filename, server.log);
-    } catch (e: any) {
-      server.log.error(`Failed to download model ${url}: ${e.message}`);
-    }
+    const dir = path.dirname(local_path);
+    const filename = path.basename(local_path);
+    await remoteStorageManager.downloadFile(url, dir, filename, server.log);
   }
 }
 
