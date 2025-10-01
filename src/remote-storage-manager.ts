@@ -563,13 +563,11 @@ class RemoteStorageManager {
       log.info(
         `Using hf CLI to download ${filePath} from ${repo} at revision ${revision}`
       );
-      const downloadResult = await execFilePromise("hf", [
-        "download",
-        repo,
-        filePath,
-        "--revision",
-        revision,
-      ]);
+      const downloadResult = await execFilePromise(
+        "hf",
+        ["download", repo, filePath, "--revision", revision],
+        { env: process.env }
+      );
 
       const downloadedPath = await fsPromises.realpath(
         downloadResult.stdout.trim()

@@ -7,8 +7,9 @@ A simple wrapper that facilitates using [ComfyUI](https://github.com/comfyanonym
   - [Features](#features)
   - [Full ComfyUI Support](#full-comfyui-support)
   - [Stateless API](#stateless-api)
-  - [Model Manifest](#model-manifest)
     - [Request Format](#request-format)
+  - [Model Manifest](#model-manifest)
+  - [Downloading Behavior](#downloading-behavior)
   - [Image To Image Workflows](#image-to-image-workflows)
   - [Dynamic Model Loading](#dynamic-model-loading)
   - [Server-side image processing](#server-side-image-processing)
@@ -98,6 +99,37 @@ ComfyUI API sits in front of ComfyUI, and uses the ComfyUI `/prompt` API to exec
 
 The ComfyUI API server is designed to be stateless, meaning that it does not store any state between requests. This allows the server to be scaled horizontally behind a load balancer, and to handle more requests by adding more instances of the server. The server uses a configurable warmup workflow to ensure that ComfyUI is ready to accept requests, and to load any required models. The server also self-hosts swagger docs and an openapi spec at `/docs`, which can be used to interact with the API.
 
+### Request Format
+
+Prompts are submitted to the server via the `POST /prompt` endpoint, which accepts a JSON body containing the prompt graph, as well as any additional parameters such as the webhook URL, S3 bucket and prefix, and image conversion options. A request may look something like:
+
+```json
+{
+  "id": "123e4567-e89b-12d3-a456-426614174000",
+  "prompt": {
+    "1": {
+      "inputs": {
+        "image": "https://salad-benchmark-assets.download/coco2017/train2017/000000000009.jpg",
+        "upload": "image"
+      },
+      "class_type": "LoadImage"
+    }
+  },
+  "webhook": "https://example.com/webhook",
+  "convert_output": {
+    "format": "jpeg",
+    "options": {
+      "quality": 80,
+      "progressive": true
+    }
+  }
+}
+```
+
+- Only the `prompt` field is required. The other fields are optional, and can be omitted if not needed.
+- Your prompt must be a valid ComfyUI prompt graph, which is a JSON object where each key is a node ID, and the value is an object containing the node's inputs, class type, and optional metadata.
+- Your prompt must include a node that saves an output, such as a `SaveImage` node.
+
 ## Model Manifest
 
 The server can be configured to download models and install extensions automatically on startup, by providing a manifest file in either JSON or YAML format. The manifest filepath can be provided via the `MANIFEST` environment variable, or the full manifest as a JSON string via the `MANIFEST_JSON` environment variable. If both are provided, the `MANIFEST_JSON` variable will take precedence.
@@ -129,36 +161,21 @@ If a manifest is provided, the server will perform the following in order:
 3. Download any models listed in the `models.before_start` field, and save them to the specified `local_path`.
 4. Start background downloading any models listed in the `models.after_start` field, and save them to the specified `local_path`. These downloads will be started in the background and will not block the server from accepting requests.
 
-### Request Format
+## Downloading Behavior
 
-Prompts are submitted to the server via the `POST /prompt` endpoint, which accepts a JSON body containing the prompt graph, as well as any additional parameters such as the webhook URL, S3 bucket and prefix, and image conversion options. A request may look something like:
+When downloading files, whether via the manifest, image-to-image workflows, or dynamic model loading, the server will first check if the file already exists at the specified path.
+It does this by hashing the provided URL and looking for a matching file in the cache directory.
+If a matching file is found, it will be used instead of downloading the file again.
+This helps to reduce bandwidth usage and speed up request times.
 
-```json
-{
-  "id": "123e4567-e89b-12d3-a456-426614174000",
-  "prompt": {
-    "1": {
-      "inputs": {
-        "image": "https://salad-benchmark-assets.download/coco2017/train2017/000000000009.jpg",
-        "upload": "image"
-      },
-      "class_type": "LoadImage"
-    }
-  },
-  "webhook": "https://example.com/webhook",
-  "convert_output": {
-    "format": "jpeg",
-    "options": {
-      "quality": 80,
-      "progressive": true
-    }
-  }
-}
-```
+If the url is an S3 URL, the server will use the AWS SDK to download the file.
+This allows the server to access private S3 buckets (or S3-compatible buckets), as long as the appropriate AWS credentials are provided via environment variables.
 
-- Only the `prompt` field is required. The other fields are optional, and can be omitted if not needed.
-- Your prompt must be a valid ComfyUI prompt graph, which is a JSON object where each key is a node ID, and the value is an object containing the node's inputs, class type, and optional metadata.
-- Your prompt must include a node that saves an output, such as a `SaveImage` node.
+If the url is a huggingface URL, the server will use the `hf` cli tool to download the file. This allows you to take advantage of high-speed [xet storage](https://huggingface.co/docs/hub/en/storage-backends#xet), as well as other optimizations provided by huggingface.
+
+If the url is a regular http(s) URL, the server will use `fetch` to stream the file to disk.
+
+All downloaded files live in the configured cache directory, and are symbolically linked to the specified local path.
 
 ## Image To Image Workflows
 
