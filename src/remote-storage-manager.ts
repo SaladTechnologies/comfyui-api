@@ -230,6 +230,34 @@ class RemoteStorageManager {
     );
   }
 
+  async downloadRepo(
+    repoUrl: string,
+    targetDir: string,
+    log: FastifyBaseLogger
+  ): Promise<string> {
+    if (repoUrl in this.cache) {
+      return this.cache[repoUrl];
+    }
+    if (repoUrl in this.activeDownloads) {
+      log.info(`Awaiting in-progress clone for ${repoUrl}`);
+      return this.activeDownloads[repoUrl];
+    }
+    try {
+      this.activeDownloads[repoUrl] = this._cloneWithinDirectory(
+        repoUrl,
+        targetDir,
+        log
+      );
+      const result = await this.activeDownloads[repoUrl];
+      delete this.activeDownloads[repoUrl];
+      this.cache[repoUrl] = result;
+      return result;
+    } catch (error: any) {
+      log.error("Error cloning repository:", error);
+      throw error;
+    }
+  }
+
   async uploadFile(
     url: string,
     fileOrPath: string | Buffer,
@@ -363,6 +391,23 @@ class RemoteStorageManager {
     } else {
       throw new Error(`Invalid HuggingFace URL: ${url.toString()}`);
     }
+  }
+
+  private async _cloneWithinDirectory(
+    repoUrl: string,
+    targetDir: string,
+    log: FastifyBaseLogger
+  ): Promise<string> {
+    await fsPromises.mkdir(targetDir, { recursive: true });
+    // Clone the url to the custom nodes directory
+    log.info(`Cloning ${repoUrl} to ${targetDir}`);
+    await execFilePromise("git", ["clone", repoUrl], { cwd: targetDir });
+
+    const repoName = repoUrl
+      .substring(repoUrl.lastIndexOf("/") + 1)
+      .replace(/\.git$/, "");
+
+    return path.join(targetDir, repoName);
   }
 }
 

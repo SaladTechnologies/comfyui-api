@@ -1,12 +1,12 @@
 import config from "./config";
 import { FastifyBaseLogger } from "fastify";
-import fsPromises from "fs/promises";
 import path from "path";
 import { ZodObject, ZodRawShape, ZodTypeAny, ZodDefault } from "zod";
 import { WebhookHandlers } from "./types";
 import { fetch, RequestInit, Response } from "undici";
 import { execFile } from "child_process";
 import { promisify } from "util";
+import storageManager from "./remote-storage-manager";
 
 const execFilePromise = promisify(execFile);
 
@@ -219,17 +219,6 @@ export async function setDeletionCost(cost: number): Promise<void> {
   }
 }
 
-export async function cloneToDirectory(
-  repoUrl: string,
-  targetDir: string,
-  log: FastifyBaseLogger
-): Promise<void> {
-  await fsPromises.mkdir(targetDir, { recursive: true });
-  // Clone the url to the custom nodes directory
-  log.info(`Cloning custom node from ${repoUrl} to ${targetDir}`);
-  await execFilePromise("git", ["clone", repoUrl], { cwd: targetDir });
-}
-
 export async function installCustomNode(
   nodeNameOrUrl: string,
   log: FastifyBaseLogger
@@ -239,66 +228,31 @@ export async function installCustomNode(
   if (!isUrl && config.comfyCLIVersion) {
     // Install from ComfyUI community nodes if comfy cli is available
     log.info(`Installing custom node ${nodeNameOrUrl} using comfy cli`);
-    await new Promise<void>((resolve, reject) => {
-      execFile(
-        "comfy",
-        ["node", "install", nodeNameOrUrl, "--fast-deps", "--exit-on-fail"],
-        (error, stdout, stderr) => {
-          if (error) {
-            log.error(`Error installing custom node: ${error.message}`);
-            reject(error);
-            return;
-          }
-          log.info(`Custom node installed`);
-          return resolve();
-        }
-      );
-    });
+    await execFilePromise("comfy", [
+      "node",
+      "install",
+      nodeNameOrUrl,
+      "--fast-deps",
+      "--exit-on-fail",
+    ]);
   } else if (!isUrl) {
     throw new Error(
       "ComfyUI CLI is not available to install custom node by name"
     );
   } else {
     const customNodesDir = path.join(config.comfyDir, "custom_nodes");
-    await cloneToDirectory(nodeNameOrUrl, customNodesDir, log);
-    const repoName = nodeNameOrUrl
-      .substring(nodeNameOrUrl.lastIndexOf("/") + 1)
-      .replace(/\.git$/, "");
-    const customNodePath = path.join(customNodesDir, repoName);
-    await new Promise<void>((resolve, reject) => {
-      execFile(
-        "uv",
-        ["pip", "install", "--system", "-r", "requirements.txt"],
-        { cwd: customNodePath },
-        (error, stdout, stderr) => {
-          if (error) {
-            log.error(
-              `Error installing custom node requirements: ${error.message}`
-            );
-            reject(error);
-            return;
-          }
-          log.info(`Custom node requirements installed`);
-          return resolve();
-        }
-      );
-    });
-  }
-}
+    const customNodePath = await storageManager.downloadRepo(
+      nodeNameOrUrl,
+      customNodesDir,
+      log
+    );
 
-export async function aptUpdate(log: FastifyBaseLogger): Promise<void> {
-  log.info(`Running apt-get update`);
-  return new Promise<void>((resolve, reject) => {
-    execFile("apt-get", ["update"], (error, stdout, stderr) => {
-      if (error) {
-        log.error(`Error running apt-get update: ${error.message}`);
-        reject(error);
-        return;
-      }
-      log.info(`apt-get update completed`);
-      return resolve();
-    });
-  });
+    await execFilePromise(
+      "uv",
+      ["pip", "install", "--system", "-r", "requirements.txt"],
+      { cwd: customNodePath }
+    );
+  }
 }
 
 export async function aptInstallPackages(
@@ -308,21 +262,7 @@ export async function aptInstallPackages(
   if (packages.length === 0) {
     return;
   }
-  await aptUpdate(log);
+  await execFilePromise("apt-get", ["update"]);
   log.info(`Installing apt packages: ${packages.join(", ")}`);
-  return new Promise<void>((resolve, reject) => {
-    execFile(
-      "apt-get",
-      ["install", "-y", ...packages],
-      (error, stdout, stderr) => {
-        if (error) {
-          log.error(`Error installing apt packages: ${error.message}`);
-          reject(error);
-          return;
-        }
-        log.info(`Apt packages installed`);
-        return resolve();
-      }
-    );
-  });
+  await execFilePromise("apt-get", ["install", "-y", ...packages]);
 }

@@ -8,6 +8,9 @@ import { isValidUrl } from "./utils";
 
 const configPath = path.join(config.comfyDir, "models", "configs");
 const checkpointPath = path.join(config.comfyDir, "models", "checkpoints");
+const diffusersPath = path.join(config.comfyDir, "models", "diffusers");
+const vaePath = path.join(config.comfyDir, "models", "vae");
+const loraPath = path.join(config.comfyDir, "models", "loras");
 
 export async function processCheckpointLoaderNode(
   node: ComfyNode,
@@ -52,6 +55,24 @@ export async function processCheckpointLoaderSimpleNode(
     );
     await storageManager.downloadFile(ckpt_name, localCkptPath, log);
     node.inputs.ckpt_name = path.basename(localCkptPath);
+  }
+
+  return node;
+}
+
+export async function processDiffusersLoaderNode(
+  node: ComfyNode,
+  log: FastifyBaseLogger
+): Promise<ComfyNode> {
+  const { model_path } = node.inputs;
+
+  if (isValidUrl(model_path)) {
+    const downloadedPath = await storageManager.downloadRepo(
+      model_path,
+      diffusersPath,
+      log
+    );
+    node.inputs.model_path = path.basename(downloadedPath);
   }
 
   return node;
@@ -103,6 +124,8 @@ export async function processModelLoadingNode(
       return processCheckpointLoaderNode(node, log);
     case "CheckpointLoaderSimple":
       return processCheckpointLoaderSimpleNode(node, log);
+    case "DiffusersLoader":
+      return processDiffusersLoaderNode(node, log);
     case "unCLIPCheckpointLoader":
       return processUnCLIPCheckpointLoaderNode(node, log);
     default:
