@@ -164,7 +164,7 @@ If a manifest is provided, the server will perform the following in order:
 ## Downloading Behavior
 
 When downloading files, whether via the manifest, image-to-image workflows, or dynamic model loading, the server will first check if the file already exists at the specified path.
-It does this by hashing the provided URL and looking for a matching file in the cache directory.
+It does this by hashing the provided URL and looking for a matching file in the cache directory (`$HOME/.cache/comfyui-api` by default).
 If a matching file is found, it will be used instead of downloading the file again.
 This helps to reduce bandwidth usage and speed up request times.
 
