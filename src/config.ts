@@ -28,7 +28,7 @@ const {
   SALAD_MACHINE_ID,
   SALAD_CONTAINER_GROUP_ID,
   STARTUP_CHECK_INTERVAL_S = "1",
-  STARTUP_CHECK_MAX_TRIES = "10",
+  STARTUP_CHECK_MAX_TRIES = "20",
   SYSTEM_WEBHOOK_URL,
   SYSTEM_WEBHOOK_EVENTS,
   WARMUP_PROMPT_FILE,
@@ -36,6 +36,7 @@ const {
   AWS_REGION,
   AWS_DEFAULT_REGION,
   MANIFEST,
+  MANIFEST_JSON,
 } = process.env;
 
 fs.mkdirSync(WORKFLOW_DIR, { recursive: true });
@@ -236,7 +237,17 @@ const isValidManifest = (obj: any): obj is z.infer<typeof manifestSpec> => {
 };
 
 let manifest: z.infer<typeof manifestSpec> | null = null;
-if (MANIFEST) {
+if (MANIFEST_JSON) {
+  try {
+    const parsed = JSON.parse(MANIFEST_JSON);
+    if (!isValidManifest(parsed)) {
+      throw new Error("Invalid manifest JSON format.");
+    }
+    manifest = parsed;
+  } catch (e: any) {
+    throw new Error(`Failed to parse MANIFEST_JSON: ${e.message}`);
+  }
+} else if (MANIFEST) {
   manifest = parseManifest(MANIFEST);
   if (!isValidManifest(manifest)) {
     throw new Error("Invalid manifest file format.");
