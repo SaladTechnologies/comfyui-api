@@ -10,6 +10,7 @@ import yaml from "yaml";
 const {
   ALWAYS_RESTART_COMFYUI = "false",
   BASE = "ai-dock",
+  CACHE_DIR = "/tmp/comfyui-api-cache",
   CMD = "init.sh",
   COMFY_HOME = "/opt/ComfyUI",
   COMFYUI_PORT_HOST = "8188",
@@ -278,6 +279,12 @@ const config = {
    * (optional) The AWS region to use for S3 operations.
    */
   awsRegion: AWS_REGION ?? AWS_DEFAULT_REGION ?? null,
+
+  /**
+   * The directory where cached files are stored, specified by CACHE_DIR env var.
+   * default: /tmp/comfyui-api-cache
+   */
+  cacheDir: CACHE_DIR,
 
   /**
    * The version of the Comfy CLI, if installed. If not installed, null.

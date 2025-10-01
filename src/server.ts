@@ -11,17 +11,16 @@ import fsPromises from "fs/promises";
 import path from "path";
 import config from "./config";
 import {
-  processImageOrVideo,
   zodToMarkdownTable,
-  convertImageBuffer,
   getConfiguredWebhookHandlers,
   fetchWithRetries,
   setDeletionCost,
-  uploadFileToS3,
-  downloadModel,
   installCustomNode,
   aptInstallPackages,
 } from "./utils";
+import { processImageOrVideo, convertImageBuffer } from "./image-tools";
+import remoteStorageManager from "./remote-storage-manager";
+import { processModelLoadingNode } from "./comfy-node-preprocessors";
 import {
   warmupComfyUI,
   waitForComfyUIToStart,
@@ -234,6 +233,23 @@ server.after(() => {
         "VHS_LoadVideoFFmpegPath",
         "VHS_LoadVideoFFmpeg",
       ]);
+      const modelLoadingNodes = new Set<string>([
+        "CheckpointLoader",
+        "CheckpointLoaderSimple",
+        "unCLIPCheckpointLoader",
+        "DiffusersLoader",
+        "LoraLoader",
+        "LoraLoaderModelOnly",
+        "VAELoader",
+        "ControlNetLoader",
+        "DiffControlNetLoader",
+        "UNETLoader",
+        "CLIPLoader",
+        "DualCLIPLoader",
+        "CLIPVisionLoader",
+        "StyleModelLoader",
+        "GLIGENLoader",
+      ]);
       for (const nodeId in prompt) {
         const node = prompt[nodeId];
         if (
@@ -290,8 +306,10 @@ server.after(() => {
               `Downloading images to local directory for node ${nodeId}`
             );
             const processPromises: Promise<string>[] = [];
-            for (const b64 of node.inputs.directory) {
-              processPromises.push(processImageOrVideo(b64, app.log, id));
+            for (const imageInput of node.inputs.directory) {
+              processPromises.push(
+                processImageOrVideo(imageInput, app.log, id)
+              );
             }
             await Promise.all(processPromises);
             node.inputs.directory = id;
@@ -337,6 +355,15 @@ server.after(() => {
             return reply.code(400).send({
               error: e.message,
               location: `prompt.${nodeId}.inputs.file`,
+            });
+          }
+        } else if (modelLoadingNodes.has(node.class_type)) {
+          try {
+            Object.assign(node, await processModelLoadingNode(node, app.log));
+          } catch (e: any) {
+            return reply.code(400).send({
+              error: e.message,
+              location: `prompt.${nodeId}`,
             });
           }
         }
@@ -506,8 +533,14 @@ server.after(() => {
               }
 
               const key = `${s3.prefix}${filename}`;
+              const s3Url = `s3://${s3.bucket}/${key}`;
               uploadPromises.push(
-                uploadFileToS3(s3.bucket, key, fileBuffer, contentType, app.log)
+                remoteStorageManager.uploadFile(
+                  s3Url,
+                  fileBuffer,
+                  contentType,
+                  app.log
+                )
               );
               app.log.info(
                 `Uploading image ${filename} to s3://${s3.bucket}/${key}`
@@ -561,9 +594,16 @@ server.after(() => {
             images.push(base64File);
           } else if (s3 && !s3.async) {
             const key = `${s3.prefix}${filename}`;
+            const s3Url = `s3://${s3.bucket}/${key}`;
             uploadPromises.push(
-              uploadFileToS3(s3.bucket, key, fileBuffer, contentType, app.log)
+              remoteStorageManager.uploadFile(
+                s3Url,
+                fileBuffer,
+                contentType,
+                app.log
+              )
             );
+            app.log.info(`Uploading image ${filename} to ${s3Url}`);
             images.push(`s3://${s3.bucket}/${key}`);
           }
 
@@ -737,43 +777,56 @@ async function launchComfyUIAndAPIServerAndWaitForWarmup() {
 async function downloadAllModels(
   models: { url: string; local_path: string }[]
 ) {
-  for (const model of models) {
-    await downloadModel(model, server.log);
+  for (const { url, local_path } of models) {
+    try {
+      await remoteStorageManager.downloadFile(url, local_path, server.log);
+    } catch (e: any) {
+      server.log.error(`Failed to download model ${url}: ${e.message}`);
+    }
+  }
+}
+
+async function processManifest() {
+  if (config.manifest) {
+    if (config.manifest.apt) {
+      server.log.info(
+        `Installing ${config.manifest.apt.length} apt packages specified in manifest`
+      );
+      await aptInstallPackages(config.manifest.apt, server.log);
+    }
+    if (config.manifest.custom_nodes) {
+      server.log.info(
+        `Installing ${config.manifest.custom_nodes.length} custom nodes specified in manifest`
+      );
+      for (const node of config.manifest.custom_nodes) {
+        await installCustomNode(node, server.log);
+      }
+    }
+    if (config.manifest.models.before_start) {
+      server.log.info(
+        `Downloading ${config.manifest.models.before_start.length} models specified in manifest before startup`
+      );
+      await downloadAllModels(config.manifest.models.before_start);
+    }
+    if (config.manifest.models.after_start) {
+      server.log.info(
+        `Downloading ${config.manifest.models.after_start.length} models specified in manifest after startup`
+      );
+
+      // Don't await, do it in the background
+      downloadAllModels(config.manifest.models.after_start);
+    }
   }
 }
 
 export async function start() {
   try {
     const start = Date.now();
+    await processManifest();
     if (config.manifest) {
-      if (config.manifest.apt) {
-        server.log.info(
-          `Installing ${config.manifest.apt.length} apt packages specified in manifest`
-        );
-        await aptInstallPackages(config.manifest.apt, server.log);
-      }
-      if (config.manifest.custom_nodes) {
-        server.log.info(
-          `Installing ${config.manifest.custom_nodes.length} custom nodes specified in manifest`
-        );
-        for (const node of config.manifest.custom_nodes) {
-          await installCustomNode(node, server.log);
-        }
-      }
-      if (config.manifest.models.before_start) {
-        server.log.info(
-          `Downloading ${config.manifest.models.before_start.length} models specified in manifest before startup`
-        );
-        await downloadAllModels(config.manifest.models.before_start);
-      }
-      if (config.manifest.models.after_start) {
-        server.log.info(
-          `Downloading ${config.manifest.models.after_start.length} models specified in manifest after startup`
-        );
-
-        // Don't await, do it in the background
-        downloadAllModels(config.manifest.models.after_start);
-      }
+      server.log.info(
+        `Processed manifest file in ${(Date.now() - start) / 1000}s`
+      );
     }
 
     // Start ComfyUI
