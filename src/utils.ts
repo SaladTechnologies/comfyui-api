@@ -219,6 +219,25 @@ export async function setDeletionCost(cost: number): Promise<void> {
   }
 }
 
+function isPythonVenvActive(): boolean {
+  // Check for VIRTUAL_ENV environment variable (most common indicator)
+  if (process.env.VIRTUAL_ENV) {
+    return true;
+  }
+
+  // Check for CONDA_DEFAULT_ENV (for conda environments)
+  if (process.env.CONDA_DEFAULT_ENV) {
+    return true;
+  }
+
+  // Additional check: VIRTUAL_ENV_PROMPT is set when venv is active
+  if (process.env.VIRTUAL_ENV_PROMPT) {
+    return true;
+  }
+
+  return false;
+}
+
 export async function installCustomNode(
   nodeNameOrUrl: string,
   log: FastifyBaseLogger
@@ -246,12 +265,16 @@ export async function installCustomNode(
       customNodesDir,
       log
     );
+    const activeVenv = isPythonVenvActive();
+    const args = ["pip", "install", "--system", "-r", "requirements.txt"];
+    if (activeVenv) {
+      args.splice(2, 1); // Remove --system if venv is active
+      log.info(
+        `Installing custom node ${nodeNameOrUrl} in active Python virtual environment`
+      );
+    }
 
-    await execFilePromise(
-      "uv",
-      ["pip", "install", "--system", "-r", "requirements.txt"],
-      { cwd: customNodePath }
-    );
+    await execFilePromise("uv", args, { cwd: customNodePath });
   }
 }
 

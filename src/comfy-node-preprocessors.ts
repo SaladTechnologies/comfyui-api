@@ -5,6 +5,7 @@ import config from "./config";
 import storageManager from "./remote-storage-manager";
 import { isValidUrl } from "./utils";
 import { processImageOrVideo } from "./image-tools";
+import { z } from "zod";
 
 const configPath = path.join(config.comfyDir, "models", "configs");
 const checkpointPath = path.join(config.comfyDir, "models", "checkpoints");
@@ -54,6 +55,19 @@ export const modelLoadingNodeTypes = new Set([
   "UpscaleModelLoader",
 ]);
 
+function updateModelsInConfig(modelType: string, modelName: string) {
+  if (config.models[modelType].all.includes(modelName)) {
+    return;
+  }
+  config.models[modelType].all.push(modelName);
+  config.models[modelType].all = Array.from(
+    new Set(config.models[modelType].all)
+  ).sort();
+  config.models[modelType].enum = z.enum(
+    config.models[modelType].all as [string, ...string[]]
+  );
+}
+
 async function processCheckpointLoaderNode(
   node: ComfyNode,
   log: FastifyBaseLogger
@@ -67,7 +81,9 @@ async function processCheckpointLoaderNode(
       null,
       log
     );
-    node.inputs.config_name = path.basename(localConfigPath);
+    const filename = path.basename(localConfigPath);
+    updateModelsInConfig("configs", filename);
+    node.inputs.config_name = filename;
   }
 
   if (isValidUrl(ckpt_name)) {
@@ -77,7 +93,9 @@ async function processCheckpointLoaderNode(
       null,
       log
     );
-    node.inputs.ckpt_name = path.basename(localCkptPath);
+    const filename = path.basename(localCkptPath);
+    updateModelsInConfig("checkpoints", filename);
+    node.inputs.ckpt_name = filename;
   }
 
   return node;
@@ -96,7 +114,9 @@ async function processCheckpointLoaderSimpleNode(
       null,
       log
     );
-    node.inputs.ckpt_name = path.basename(localCkptPath);
+    const filename = path.basename(localCkptPath);
+    updateModelsInConfig("checkpoints", filename);
+    node.inputs.ckpt_name = filename;
   }
 
   return node;
@@ -114,7 +134,9 @@ async function processDiffusersLoaderNode(
       diffusersPath,
       log
     );
-    node.inputs.model_path = path.basename(downloadedPath);
+    const filename = path.basename(downloadedPath);
+    updateModelsInConfig("diffusers", filename);
+    node.inputs.model_path = filename;
   }
 
   return node;
@@ -133,7 +155,9 @@ async function processLoraLoaderNode(
       null,
       log
     );
-    node.inputs.lora_name = path.basename(localLoraPath);
+    const filename = path.basename(localLoraPath);
+    updateModelsInConfig("loras", filename);
+    node.inputs.lora_name = filename;
   }
 
   return node;
@@ -152,7 +176,9 @@ async function processVAELoaderNode(
       null,
       log
     );
-    node.inputs.vae_name = path.basename(localVaePath);
+    const filename = path.basename(localVaePath);
+    updateModelsInConfig("vae", filename);
+    node.inputs.vae_name = filename;
   }
 
   return node;
@@ -171,7 +197,9 @@ async function processControlNetLoaderNode(
       null,
       log
     );
-    node.inputs.control_net_name = path.basename(localControlNetPath);
+    const filename = path.basename(localControlNetPath);
+    updateModelsInConfig("controlnet", filename);
+    node.inputs.control_net_name = filename;
   }
 
   return node;
@@ -190,7 +218,9 @@ async function processUNETLoaderNode(
       null,
       log
     );
-    node.inputs.unet_name = path.basename(localUNETPath);
+    const filename = path.basename(localUNETPath);
+    updateModelsInConfig("diffusers", filename);
+    node.inputs.unet_name = filename;
   }
 
   return node;
@@ -209,7 +239,9 @@ async function processCLIPLoaderNode(
       null,
       log
     );
-    node.inputs.clip_name = path.basename(localCLIPPath);
+    const filename = path.basename(localCLIPPath);
+    updateModelsInConfig("text_encoders", filename);
+    node.inputs.clip_name = filename;
   }
 
   return node;
@@ -227,7 +259,9 @@ async function processDualCLIPLoaderNode(
       null,
       log
     );
-    node.inputs.clip_name1 = path.basename(localCLIPPath1);
+    const filename = path.basename(localCLIPPath1);
+    updateModelsInConfig("text_encoders", filename);
+    node.inputs.clip_name1 = filename;
   }
   if (isValidUrl(clip_name2)) {
     const localCLIPPath2 = await storageManager.downloadFile(
@@ -236,7 +270,9 @@ async function processDualCLIPLoaderNode(
       null,
       log
     );
-    node.inputs.clip_name2 = path.basename(localCLIPPath2);
+    const filename = path.basename(localCLIPPath2);
+    updateModelsInConfig("text_encoders", filename);
+    node.inputs.clip_name2 = filename;
   }
 
   return node;
@@ -255,7 +291,9 @@ async function processStyleModelLoaderNode(
       null,
       log
     );
-    node.inputs.style_model_name = path.basename(localStyleModelPath);
+    const filename = path.basename(localStyleModelPath);
+    updateModelsInConfig("style_models", filename);
+    node.inputs.style_model_name = filename;
   }
 
   return node;
@@ -274,7 +312,9 @@ async function processGLIGENLoaderNode(
       null,
       log
     );
-    node.inputs.gligen_name = path.basename(localGLIGENPath);
+    const filename = path.basename(localGLIGENPath);
+    updateModelsInConfig("gligen", filename);
+    node.inputs.gligen_name = filename;
   }
 
   return node;
@@ -293,7 +333,9 @@ async function processUpscaleModelLoaderNode(
       null,
       log
     );
-    node.inputs.model_name = path.basename(localModelPath);
+    const filename = path.basename(localModelPath);
+    updateModelsInConfig("upscale_models", filename);
+    node.inputs.model_name = filename;
   }
 
   return node;

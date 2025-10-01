@@ -74,11 +74,6 @@ for (const modelType in config.models) {
 const ModelResponseSchema = z.object(modelSchema);
 type ModelResponse = z.infer<typeof ModelResponseSchema>;
 
-const modelResponse: ModelResponse = {};
-for (const modelType in config.models) {
-  modelResponse[modelType] = config.models[modelType].all;
-}
-
 let warm = false;
 let wasEverWarm = false;
 let queueDepth = 0;
@@ -184,6 +179,10 @@ server.after(() => {
       },
     },
     async (request, reply) => {
+      const modelResponse: ModelResponse = {};
+      for (const modelType in config.models) {
+        modelResponse[modelType] = config.models[modelType].all;
+      }
       return modelResponse;
     }
   );

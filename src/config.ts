@@ -9,8 +9,8 @@ import yaml from "yaml";
 
 const {
   ALWAYS_RESTART_COMFYUI = "false",
-  BASE = "ai-dock",
-  CACHE_DIR = "/tmp/comfyui-api-cache",
+  BASE = "",
+  CACHE_DIR = `${process.env.HOME}/.cache/comfyui-api`,
   CMD = "init.sh",
   COMFY_HOME = "/opt/ComfyUI",
   COMFYUI_PORT_HOST = "8188",
@@ -504,7 +504,8 @@ for (const modelType of modelSubDirs) {
   if (fs.statSync(model_path).isDirectory()) {
     const all = fs
       .readdirSync(model_path)
-      .filter((f) => !(f.startsWith("put_") && f.endsWith("_here")));
+      .filter((f) => !(f.startsWith("put_") && f.endsWith("_here")))
+      .sort();
     config.models[modelType] = {
       dir: model_path,
       all,
