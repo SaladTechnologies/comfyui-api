@@ -4,7 +4,7 @@ import fs, { ReadStream } from "fs";
 import fsPromises from "fs/promises";
 import { Readable } from "stream";
 import path from "path";
-import { randomUUID } from "crypto";
+import crypto from "crypto";
 import {
   S3Client,
   GetObjectCommand,
@@ -273,6 +273,23 @@ async function linkIfDoesNotExist(
     });
 }
 
+function hashUrlBase64(url: string, length = 32): string {
+  return crypto
+    .createHash("sha256")
+    .update(url)
+    .digest("base64url") // URL-safe base64
+    .substring(0, length);
+}
+
+async function getFileByPrefix(
+  dir: string,
+  prefix: string
+): Promise<string | null> {
+  const files = await fsPromises.readdir(dir);
+  const matchingFile = files.find((file) => file.startsWith(prefix));
+  return matchingFile ? path.join(dir, matchingFile) : null;
+}
+
 class RemoteStorageManager {
   private cache: Record<string, string> = {};
   private activeDownloads: Record<string, Promise<string>> = {};
@@ -309,9 +326,24 @@ class RemoteStorageManager {
       await linkIfDoesNotExist(cachedPath, finalLocation, log);
       return finalLocation;
     }
+
+    const hashedUrl = hashUrlBase64(url);
+    const preDownloadedFile = await getFileByPrefix(this.cacheDir, hashedUrl);
+    if (preDownloadedFile) {
+      log.debug(`Found ${preDownloadedFile} for ${url} in cache dir`);
+      this.cache[url] = preDownloadedFile;
+      const finalLocation = path.join(
+        outputDir,
+        filenameOverride || path.basename(this.cache[url])
+      );
+      await linkIfDoesNotExist(this.cache[url], finalLocation, log);
+      return finalLocation;
+    }
+
     const start = Date.now();
-    const tempFilename = `${randomUUID()}${path.extname(url)}`;
+    const tempFilename = `${hashedUrl}${path.extname(url)}`;
     const tempFilePath = path.join(this.cacheDir, tempFilename);
+
     if (url.startsWith("http")) {
       if (config.hfCLIVersion && url.includes("huggingface.co")) {
         log.info(`Downloading ${url} using hf CLI`);
