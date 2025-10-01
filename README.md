@@ -7,8 +7,10 @@ A simple wrapper that facilitates using [ComfyUI](https://github.com/comfyanonym
   - [Features](#features)
   - [Full ComfyUI Support](#full-comfyui-support)
   - [Stateless API](#stateless-api)
+  - [Model Manifest](#model-manifest)
     - [Request Format](#request-format)
   - [Image To Image Workflows](#image-to-image-workflows)
+  - [Dynamic Model Loading](#dynamic-model-loading)
   - [Server-side image processing](#server-side-image-processing)
   - [Probes](#probes)
   - [API Configuration Guide](#api-configuration-guide)
@@ -24,12 +26,12 @@ A simple wrapper that facilitates using [ComfyUI](https://github.com/comfyanonym
     - [status](#status)
     - [progress](#progress)
     - [executing](#executing)
-    - [execution_start](#execution_start)
-    - [execution_cached](#execution_cached)
+    - [execution\_start](#execution_start)
+    - [execution\_cached](#execution_cached)
     - [executed](#executed)
-    - [execution_success](#execution_success)
-    - [execution_interrupted](#execution_interrupted)
-    - [execution_error](#execution_error)
+    - [execution\_success](#execution_success)
+    - [execution\_interrupted](#execution_interrupted)
+    - [execution\_error](#execution_error)
   - [Generating New Workflow Endpoints](#generating-new-workflow-endpoints)
     - [Automating with Claude 4 Sonnet](#automating-with-claude-4-sonnet)
   - [Prebuilt Docker Images](#prebuilt-docker-images)
@@ -81,6 +83,7 @@ The server hosts swagger docs at `/docs`, which can be used to interact with the
 - **Probes**: The server has two probes, `/health` and `/ready`, which can be used to check the server's health and readiness to receive traffic.
 - **Dynamic Workflow Endpoints**: Automatically mount new workflow endpoints by adding conforming `.js` or `.ts` files to the `/workflows` directory in your docker image. See [below](#generating-new-workflow-endpoints) for more information. A [Claude 4 Sonnet](https://claude.ai) [prompt](./claude-endpoint-creation-prompt.md) is included to assist in automating this process.
 - **Bring Your Own Models And Extensions**: Use any model or extension you want by adding them to the normal ComfyUI directories `/opt/ComfyUI/`. You can configure a [manifest file](#model-manifest) to download models and install extensions automatically on startup.
+- **Dynamic Model Loading**: If you provide a URL in a model-loading node, the server will locally cache the model automatically before executing the workflow.
 - **Works Great with SaladCloud**: The server is designed to work well with SaladCloud, and can be used to host ComfyUI on the SaladCloud platform. It is likely to work well with other platforms as well.
   - **Manages Deletion Cost**: _ONLY ON SALAD_. The server will automatically set the instance deletion cost to the queue length, so that busier nodes are less likely to be scaled in while they are processing requests.
 - **Single Binary**: The server is distributed as a single binary, and can be run with no dependencies.
@@ -176,6 +179,25 @@ Here's an example of doing this in a `LoadImage` node:
     "title": "Load Image"
   }
 }
+```
+
+## Dynamic Model Loading
+
+The ComfyUI API server supports dynamic model loading, allowing you to specify a model URL in a model-loading node, and the server will automatically download and cache the model before executing the workflow.
+This is useful for workflows that need to potentially use a different model for each request.
+An example may be headshot generation, which would specify a LoRA per person.
+The LoRA may be generated on-the-fly by another service, and provided to the ComfyUI API server via a URL.
+
+```json
+{
+  "inputs": {
+    "ckpt_name": "https://civitai.com/api/download/models/76750?type=Model&format=SafeTensor&size=pruned&fp=fp16"
+  },
+  "class_type": "CheckpointLoaderSimple",
+  "_meta": {
+    "title": "Load Checkpoint"
+  }
+},
 ```
 
 ## Server-side image processing
