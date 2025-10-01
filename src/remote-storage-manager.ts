@@ -5,7 +5,6 @@ import fsPromises from "fs/promises";
 import { Readable } from "stream";
 import path from "path";
 import { randomUUID } from "crypto";
-
 import {
   S3Client,
   GetObjectCommand,
@@ -120,7 +119,7 @@ class Upload {
       await s3.send(command, { abortSignal: abortSignal });
       this.state = "completed";
       log.info(`File uploaded to S3 at s3://${bucket}/${key}`);
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
       this.state = "failed";
       log.error("Error uploading file to S3:", error);
@@ -329,7 +328,7 @@ class RemoteStorageManager {
       });
 
       log.info(`File downloaded and saved to ${outputPath}`);
-    } catch (error) {
+    } catch (error: any) {
       log.error("Error downloading file:", error);
     }
   }
@@ -362,7 +361,7 @@ class RemoteStorageManager {
 
       log.info(`File downloaded from S3 and saved to ${outputPath}`);
       return;
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
       log.error("Error downloading file from S3:", error);
     }

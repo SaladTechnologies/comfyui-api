@@ -142,7 +142,7 @@ export async function sendSystemWebhook(
       if (!response.ok) {
         log.error(`Failed to send system webhook: ${await response.text()}`);
       }
-    } catch (error) {
+    } catch (error: any) {
       log.error("Error sending system webhook:", error);
     }
   }
