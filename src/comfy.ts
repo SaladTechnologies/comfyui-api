@@ -17,6 +17,8 @@ import {
   WebhookHandlers,
   ComfyPromptResponse,
   ComfyHistoryResponse,
+  ExecutionStats,
+  isExecutionStats,
 } from "./types";
 import path from "path";
 import fsPromises from "fs/promises";
@@ -169,41 +171,65 @@ export async function getPromptOutputs(
   return allOutputs;
 }
 
-export async function waitForPromptToComplete(
-  promptId: string
-): Promise<boolean> {
+async function collectExecutionStats(
+  promptId: string,
+  log: FastifyBaseLogger
+): Promise<ExecutionStats> {
+  let start = Date.now();
   return new Promise((resolve, reject) => {
+    const stats: ExecutionStats = {
+      comfy_execution: { start, end: 0, duration: 0, nodes: {} },
+    };
     const handleMessage = (event: MessageEvent) => {
       const { data } = event;
       if (typeof data === "string") {
         const message = JSON.parse(data) as ComfyWSMessage;
-        if (
-          isExecutionSuccessMessage(message) &&
-          message.data.prompt_id === promptId
-        ) {
-          wsClient?.removeEventListener("close", onClose);
-          wsClient?.removeEventListener("message", handleMessage);
-          return resolve(true);
-        } else if (
-          isExecutionErrorMessage(message) &&
-          message.data.prompt_id === promptId
-        ) {
-          return reject(new Error("Prompt execution failed"));
-        } else if (
-          isExecutionInterruptedMessage(message) &&
-          message.data.prompt_id === promptId
-        ) {
-          return reject(new Error("Prompt execution interrupted"));
+        if (isExecutionStartMessage(message)) {
+          if (message.data.prompt_id === promptId) {
+            start = Date.now();
+            stats.comfy_execution.start = start;
+            log.info(`Prompt ${promptId} started execution`);
+          }
+        } else if (isExecutingMessage(message)) {
+          if (message.data.prompt_id === promptId) {
+            const nodeId = message.data.node;
+            if (!nodeId) return;
+            stats.comfy_execution.nodes[nodeId] = {
+              start: Date.now(),
+            };
+          }
+        } else if (isExecutionSuccessMessage(message)) {
+          if (message.data.prompt_id === promptId) {
+            stats.comfy_execution.end = Date.now();
+            stats.comfy_execution.duration =
+              stats.comfy_execution.end - stats.comfy_execution.start;
+            wsClient?.removeEventListener("close", onClose);
+            wsClient?.removeEventListener("message", handleMessage);
+            log.info(`Prompt ${promptId} completed execution`);
+            return resolve(stats);
+          }
+        } else if (isExecutionErrorMessage(message)) {
+          if (message.data.prompt_id === promptId) {
+            wsClient?.removeEventListener("close", onClose);
+            wsClient?.removeEventListener("message", handleMessage);
+            return reject(new Error("Prompt execution failed"));
+          }
+        } else if (isExecutionInterruptedMessage(message)) {
+          if (message.data.prompt_id === promptId) {
+            wsClient?.removeEventListener("close", onClose);
+            wsClient?.removeEventListener("message", handleMessage);
+            return reject(new Error("Prompt execution interrupted"));
+          }
         }
       }
     };
-    wsClient?.addEventListener("message", handleMessage);
 
     const onClose = () => {
       wsClient?.removeEventListener("message", handleMessage);
       wsClient?.removeEventListener("close", onClose);
       return reject(new Error("Websocket closed"));
     };
+    wsClient?.addEventListener("message", handleMessage);
     wsClient?.addEventListener("close", onClose);
   });
 }
@@ -287,11 +313,16 @@ class HistoryEndpointPoller {
   }
 }
 
+type PromptOutputsWithStats = {
+  outputs: Record<string, Buffer>;
+  stats: ExecutionStats;
+};
+
 export async function runPromptAndGetOutputs(
   id: string,
   prompt: ComfyPrompt,
   log: FastifyBaseLogger
-): Promise<Record<string, Buffer>> {
+): Promise<PromptOutputsWithStats> {
   const promptId = await queuePrompt(prompt);
   comfyIDToApiID[promptId] = id;
   log.debug(`Prompt ${id} queued as comfy prompt id: ${promptId}`);
@@ -311,32 +342,32 @@ export async function runPromptAndGetOutputs(
   /**
    * We also listen to the websocket stream for the prompt to complete.
    */
-  const wsSuccessEvent = waitForPromptToComplete(promptId);
+  const executionStatsPromise = collectExecutionStats(promptId, log);
 
   /**
    * We wait for either the history endpoint to return the outputs, or the websocket
    * to signal that the prompt has completed.
    */
-  let firstToComplete: Record<string, Buffer> | boolean | null;
+  let firstToComplete: Record<string, Buffer> | ExecutionStats | null;
   try {
-    firstToComplete = await Promise.race([historyPoll, wsSuccessEvent]);
+    firstToComplete = await Promise.race([historyPoll, executionStatsPromise]);
   } catch (e) {
     /**
      * If an error is thrown by either of those processes, we stop the polling and
      * throw an error.
      */
     log.error(`Error waiting for prompt to complete: ${e}`);
-    firstToComplete = false;
+    firstToComplete = null;
   }
 
-  if (firstToComplete === true) {
+  if (isExecutionStats(firstToComplete)) {
     /**
      * If the websocket signals that the prompt has completed (this is typical), we can speed
      * up the history endpoint polling, as it should only need 1-2 tries to get the outputs.
      */
     log.info(`Prompt ${id} completed`);
     poller.setMaxTries(100);
-    poller.setInterval(50);
+    poller.setInterval(30);
     const outputs = await historyPoll;
     /**
      * We delete the comfyIDToApiID mapping after a short delay to prevent
@@ -346,14 +377,12 @@ export async function runPromptAndGetOutputs(
       delete comfyIDToApiID[promptId];
     }, 1000);
     if (outputs) {
-      return outputs;
+      return { outputs, stats: firstToComplete };
     }
     throw new Error("Failed to get prompt outputs");
   } else if (firstToComplete === null) {
-    throw new Error("Failed to get prompt outputs");
-  } else if (firstToComplete === false) {
     poller.stop();
-    throw new Error("Prompt execution failed");
+    throw new Error("Failed to get prompt outputs");
   }
   /**
    * If we reach this point, it means that the history endpoint returned the outputs
@@ -367,7 +396,9 @@ export async function runPromptAndGetOutputs(
      */
     delete comfyIDToApiID[promptId];
   }, 1000);
-  return firstToComplete;
+  const outputs = firstToComplete as Record<string, Buffer>;
+  const stats = await executionStatsPromise;
+  return { outputs, stats };
 }
 
 let wsClient: WebSocket | null = null;

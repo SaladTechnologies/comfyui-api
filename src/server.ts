@@ -225,6 +225,7 @@ server.after(() => {
        */
       let hasSaveImage = false;
 
+      const start = Date.now();
       for (const nodeId in prompt) {
         const node = prompt[nodeId];
         if (
@@ -309,6 +310,7 @@ server.after(() => {
           }
         }
       }
+      const preprocessTime = Date.now();
 
       /**
        * If the prompt has no outputs, there's no point in running it.
@@ -330,7 +332,10 @@ server.after(() => {
             /**
              * This function does not block returning the 202 response to the user.
              */
-            async (outputs: Record<string, Buffer>) => {
+            async ({ outputs, stats }) => {
+              stats.preprocess_time = preprocessTime - start;
+              stats.total_time = Date.now() - start;
+              app.log.debug({ id, ...stats });
               for (const originalFilename in outputs) {
                 let filename = originalFilename;
                 let fileBuffer = outputs[filename];
@@ -353,6 +358,7 @@ server.after(() => {
                   }
                 }
                 const base64File = fileBuffer.toString("base64");
+
                 app.log.info(
                   `Sending image ${filename} to webhook: ${webhook}`
                 );
@@ -369,6 +375,7 @@ server.after(() => {
                       id,
                       filename,
                       prompt,
+                      stats,
                     }),
                     dispatcher: new Agent({
                       headersTimeout: 0,
@@ -446,10 +453,12 @@ server.after(() => {
         return reply.code(202).send({ status: "ok", id, webhook, prompt });
       } else if (s3 && s3.async) {
         runPromptAndGetOutputs(id, prompt, app.log)
-          .then(async (outputs: Record<string, Buffer>) => {
+          .then(async ({ outputs, stats }) => {
             /**
              * If the user has provided an S3 configuration, we upload the images to S3.
              */
+            stats.preprocess_time = preprocessTime - start;
+            const comfyTime = Date.now();
             const uploadPromises: Promise<void>[] = [];
             for (const originalFilename in outputs) {
               let filename = originalFilename;
@@ -492,6 +501,9 @@ server.after(() => {
             }
 
             await Promise.all(uploadPromises);
+            stats.upload_time = Date.now() - comfyTime;
+            stats.total_time = Date.now() - start;
+            app.log.debug({ id, ...stats });
           })
           .catch(async (e: any) => {
             app.log.error(`Failed to generate images: ${e.message}`);
@@ -509,7 +521,12 @@ server.after(() => {
         /**
          * Send the prompt to ComfyUI, and wait for the images to be generated.
          */
-        const allOutputs = await runPromptAndGetOutputs(id, prompt, app.log);
+        const { outputs: allOutputs, stats } = await runPromptAndGetOutputs(
+          id,
+          prompt,
+          app.log
+        );
+        const comfyTime = Date.now();
         for (const originalFilename in allOutputs) {
           let fileBuffer = allOutputs[originalFilename];
           let filename = originalFilename;
@@ -552,8 +569,13 @@ server.after(() => {
           fsPromises.unlink(path.join(config.outputDir, originalFilename));
         }
         await Promise.all(uploadPromises);
+        stats.preprocess_time = preprocessTime - start;
+        stats.upload_time = Date.now() - comfyTime;
+        stats.total_time = Date.now() - start;
 
-        return reply.send({ id, prompt, images, filenames });
+        app.log.debug({ id, ...stats });
+
+        return reply.send({ id, prompt, images, filenames, stats });
       }
     }
   );
