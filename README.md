@@ -171,9 +171,12 @@ This helps to reduce bandwidth usage and speed up request times.
 If the url is an S3 URL, the server will use the AWS SDK to download the file.
 This allows the server to access private S3 buckets (or S3-compatible buckets), as long as the appropriate AWS credentials are provided via environment variables.
 
-If the url is a huggingface URL, the server will use the `hf` cli tool to download the file. This allows you to take advantage of high-speed [xet storage](https://huggingface.co/docs/hub/en/storage-backends#xet), as well as other optimizations provided by huggingface.
+If the url is a huggingface URL, the server will use the `hf` cli tool to download the file.
+This allows you to take advantage of high-speed [xet storage](https://huggingface.co/docs/hub/en/storage-backends#xet), as well as other optimizations provided by huggingface.
 
 If the url is a regular http(s) URL, the server will use `fetch` to stream the file to disk.
+If the url has a file extension, the server will use that extension when saving the file.
+Otherwise, it will attempt to determine the file extension from the `Content-Disposition` or `Content-Type` headers.
 
 All downloaded files live in the configured cache directory, and are symbolically linked to the specified local path.
 
