@@ -20,7 +20,10 @@ import {
 } from "./utils";
 import { processImageOrVideo, convertImageBuffer } from "./image-tools";
 import remoteStorageManager from "./remote-storage-manager";
-import { processModelLoadingNode } from "./comfy-node-preprocessors";
+import {
+  processModelLoadingNode,
+  modelLoadingNodeTypes,
+} from "./comfy-node-preprocessors";
 import {
   warmupComfyUI,
   waitForComfyUIToStart,
@@ -233,23 +236,6 @@ server.after(() => {
         "VHS_LoadVideoFFmpegPath",
         "VHS_LoadVideoFFmpeg",
       ]);
-      const modelLoadingNodes = new Set<string>([
-        "CheckpointLoader",
-        "CheckpointLoaderSimple",
-        "unCLIPCheckpointLoader",
-        "DiffusersLoader",
-        "LoraLoader",
-        "LoraLoaderModelOnly",
-        "VAELoader",
-        "ControlNetLoader",
-        "DiffControlNetLoader",
-        "UNETLoader",
-        "CLIPLoader",
-        "DualCLIPLoader",
-        "CLIPVisionLoader",
-        "StyleModelLoader",
-        "GLIGENLoader",
-      ]);
       for (const nodeId in prompt) {
         const node = prompt[nodeId];
         if (
@@ -357,7 +343,7 @@ server.after(() => {
               location: `prompt.${nodeId}.inputs.file`,
             });
           }
-        } else if (modelLoadingNodes.has(node.class_type)) {
+        } else if (modelLoadingNodeTypes.has(node.class_type)) {
           try {
             Object.assign(node, await processModelLoadingNode(node, app.log));
           } catch (e: any) {
@@ -779,7 +765,14 @@ async function downloadAllModels(
 ) {
   for (const { url, local_path } of models) {
     try {
-      await remoteStorageManager.downloadFile(url, local_path, server.log);
+      const dir = path.dirname(local_path);
+      const filename = path.basename(local_path);
+      await remoteStorageManager.downloadFile(
+        url,
+        local_path,
+        filename,
+        server.log
+      );
     } catch (e: any) {
       server.log.error(`Failed to download model ${url}: ${e.message}`);
     }

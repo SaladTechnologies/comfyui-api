@@ -159,20 +159,28 @@ class RemoteStorageManager {
 
   async downloadFile(
     url: string,
-    outputPath: string,
+    outputDir: string,
+    filenameOverride: string | null,
     log: FastifyBaseLogger
-  ): Promise<void> {
+  ): Promise<string> {
     if (this.cache[url]) {
-      // symlink cached file to outputPath
-      await fsPromises.symlink(this.cache[url], outputPath);
+      const finalLocation = path.join(
+        outputDir,
+        filenameOverride || path.basename(this.cache[url])
+      );
+      await fsPromises.symlink(this.cache[url], finalLocation);
       log.debug(`Using cached file for ${url}`);
-      return;
+      return finalLocation;
     }
     if (url in this.activeDownloads) {
       log.info(`Awaiting in-progress download for ${url}`);
       const cachedPath = await this.activeDownloads[url];
-      await fsPromises.symlink(cachedPath, outputPath);
-      return;
+      const finalLocation = path.join(
+        outputDir,
+        filenameOverride || path.basename(cachedPath)
+      );
+      await fsPromises.symlink(cachedPath, finalLocation);
+      return finalLocation;
     }
     const start = Date.now();
     const tempFilename = `${randomUUID()}${path.extname(url)}`;
@@ -184,38 +192,53 @@ class RemoteStorageManager {
           new URL(url),
           tempFilePath,
           log
-        ).then(() => {
-          this.cache[url] = tempFilePath;
-          delete this.activeDownloads[url];
-          return tempFilePath;
-        });
+        )
+          .then(() => {
+            this.cache[url] = tempFilePath;
+            return tempFilePath;
+          })
+          .finally(() => {
+            delete this.activeDownloads[url];
+          });
       } else {
         log.info(`Downloading ${url} using HTTP`);
         this.activeDownloads[url] = this._downloadFileHttp(
           url,
           tempFilePath,
           log
-        ).then(() => {
-          this.cache[url] = tempFilePath;
-          delete this.activeDownloads[url];
-          return tempFilePath;
-        });
+        )
+          .then(() => {
+            this.cache[url] = tempFilePath;
+
+            return tempFilePath;
+          })
+          .finally(() => {
+            delete this.activeDownloads[url];
+          });
       }
     } else if (url.startsWith("s3://")) {
       this.activeDownloads[url] = this._downloadFileS3Url(
         url,
         tempFilePath,
         log
-      ).then(() => {
-        this.cache[url] = tempFilePath;
-        delete this.activeDownloads[url];
-        return tempFilePath;
-      });
+      )
+        .then(() => {
+          this.cache[url] = tempFilePath;
+
+          return tempFilePath;
+        })
+        .finally(() => {
+          delete this.activeDownloads[url];
+        });
     } else {
       throw new Error(`Unsupported URL scheme for ${url}`);
     }
     await this.activeDownloads[url];
-    await fsPromises.symlink(tempFilePath, outputPath);
+    const finalLocation = path.join(
+      outputDir,
+      filenameOverride || path.basename(this.cache[url])
+    );
+    await fsPromises.symlink(tempFilePath, finalLocation);
 
     const duration = (Date.now() - start) / 1000;
     const sizeInMB = (await fsPromises.stat(tempFilePath)).size / (1024 * 1024);
@@ -228,6 +251,8 @@ class RemoteStorageManager {
         2
       )}s (${speed.toFixed(2)} MB/s)`
     );
+
+    return finalLocation;
   }
 
   async downloadRepo(

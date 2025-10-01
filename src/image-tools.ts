@@ -36,8 +36,8 @@ export async function processImageOrVideo(
   ) {
     return path.resolve(fileInput);
   } else if (isValidUrl(fileInput)) {
-    await storageManager.downloadFile(fileInput, localFilePath, log);
-    return localFilePath;
+    const dir = path.dirname(localFilePath);
+    return storageManager.downloadFile(fileInput, dir, null, log);
   } else {
     // Assume it's base64 encoded data
     try {
