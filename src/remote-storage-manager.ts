@@ -341,7 +341,8 @@ class RemoteStorageManager {
     }
 
     const start = Date.now();
-    const tempFilename = `${hashedUrl}${path.extname(url)}`;
+    const ext = path.extname(new URL(url).pathname);
+    const tempFilename = `${hashedUrl}${ext}`;
     const tempFilePath = path.join(this.cacheDir, tempFilename);
 
     if (url.startsWith("http")) {
