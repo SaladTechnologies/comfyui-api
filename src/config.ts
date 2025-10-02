@@ -5,10 +5,12 @@ import { randomUUID } from "node:crypto";
 import { execSync } from "child_process";
 import { z } from "zod";
 import { version } from "../package.json";
+import yaml from "yaml";
 
 const {
   ALWAYS_RESTART_COMFYUI = "false",
-  BASE = "ai-dock",
+  BASE = "",
+  CACHE_DIR = `${process.env.HOME}/.cache/comfyui-api`,
   CMD = "init.sh",
   COMFY_HOME = "/opt/ComfyUI",
   COMFYUI_PORT_HOST = "8188",
@@ -26,13 +28,15 @@ const {
   SALAD_MACHINE_ID,
   SALAD_CONTAINER_GROUP_ID,
   STARTUP_CHECK_INTERVAL_S = "1",
-  STARTUP_CHECK_MAX_TRIES = "10",
+  STARTUP_CHECK_MAX_TRIES = "20",
   SYSTEM_WEBHOOK_URL,
   SYSTEM_WEBHOOK_EVENTS,
   WARMUP_PROMPT_FILE,
   WORKFLOW_DIR = "/workflows",
   AWS_REGION,
   AWS_DEFAULT_REGION,
+  MANIFEST,
+  MANIFEST_JSON,
 } = process.env;
 
 fs.mkdirSync(WORKFLOW_DIR, { recursive: true });
@@ -191,22 +195,205 @@ with open("${temptComfyFilePath}", "w") as f:
 
 const comfyDescription = getComfyUIDescription();
 
+function parseManifest(manifestPath: string): any {
+  if (!fs.existsSync(manifestPath)) {
+    throw new Error(`Manifest file not found at path: ${manifestPath}`);
+  }
+
+  const isYAML =
+    manifestPath.endsWith(".yaml") || manifestPath.endsWith(".yml");
+  const isJSON = manifestPath.endsWith(".json");
+
+  if (!isYAML && !isJSON) {
+    throw new Error("Manifest file must be in JSON or YAML format.");
+  }
+
+  const fileContent = fs.readFileSync(manifestPath, "utf-8");
+
+  if (isYAML) {
+    return yaml.parse(fileContent);
+  }
+
+  return JSON.parse(fileContent);
+}
+
+const modelDownloadConfigSpec = z.object({
+  url: z.string().url(),
+  local_path: z.string(),
+});
+
+const manifestSpec = z.object({
+  apt: z.string().array().optional(),
+  pip: z.string().array().optional(),
+  custom_nodes: z.string().array().optional(),
+  models: z.object({
+    before_start: modelDownloadConfigSpec.array().optional(),
+    after_start: modelDownloadConfigSpec.array().optional(),
+  }),
+});
+
+const isValidManifest = (obj: any): obj is z.infer<typeof manifestSpec> => {
+  const result = manifestSpec.safeParse(obj);
+  return result.success;
+};
+
+let manifest: z.infer<typeof manifestSpec> | null = null;
+if (MANIFEST_JSON) {
+  try {
+    const parsed = JSON.parse(MANIFEST_JSON);
+    if (!isValidManifest(parsed)) {
+      throw new Error("Invalid manifest JSON format.");
+    }
+    manifest = parsed;
+  } catch (e: any) {
+    throw new Error(`Failed to parse MANIFEST_JSON: ${e.message}`);
+  }
+} else if (MANIFEST) {
+  manifest = parseManifest(MANIFEST);
+  if (!isValidManifest(manifest)) {
+    throw new Error("Invalid manifest file format.");
+  }
+}
+
+const hfCLIVersion = (() => {
+  try {
+    const version = execSync("hf version", { encoding: "utf-8" }).trim();
+    const [_, ver] = version.split(":");
+    return ver.trim();
+  } catch {
+    return null;
+  }
+})();
+
+const comfyCLIVersion = (() => {
+  try {
+    const version = execSync("comfy --version", { encoding: "utf-8" }).trim();
+    return version;
+  } catch {
+    return null;
+  }
+})();
+
+const uvInstalled = (() => {
+  try {
+    execSync("uv --version", { encoding: "utf-8" }).trim();
+    return true;
+  } catch {
+    return false;
+  }
+})();
+
 const config = {
+  /**
+   * If true, the wrapper will always try to restart ComfyUI when it crashes.
+   * Specified by ALWAYS_RESTART_COMFYUI env var.
+   * default: false
+   */
   alwaysRestartComfyUI,
+
+  /**
+   * The version of ComfyUI-API. From package.json
+   */
   apiVersion: version,
+
+  /**
+   * (optional) The AWS region to use for S3 operations.
+   */
   awsRegion: AWS_REGION ?? AWS_DEFAULT_REGION ?? null,
+
+  /**
+   * The directory where cached files are stored, specified by CACHE_DIR env var.
+   * default: /tmp/comfyui-api-cache
+   */
+  cacheDir: CACHE_DIR,
+
+  /**
+   * The version of the Comfy CLI, if installed. If not installed, null.
+   */
+  comfyCLIVersion,
+
+  /**
+   * ComfyUI's home directory, specified by COMFY_HOME env var.
+   */
   comfyDir,
+
+  /**
+   * The address to directly access ComfyUI, specified by DIRECT_ADDRESS env var.
+   */
   comfyHost: DIRECT_ADDRESS,
+
+  /**
+   * The command to launch ComfyUI, specified by CMD env var.
+   * It should be a command that can be executed in a shell.
+   */
   comfyLaunchCmd: CMD,
+
+  /**
+   * The port that ComfyUI is listening on the host machine,
+   * specified by COMFYUI_PORT_HOST env var.
+   */
   comfyPort: COMFYUI_PORT_HOST,
+
+  /**
+   * ComfyUI's HTTP URL, constructed from comfyHost and comfyPort.
+   */
   comfyURL,
+
+  /**
+   * The version of ComfyUI, fetched from the ComfyUI codebase.
+   */
   comfyVersion: comfyDescription.version,
+
+  /**
+   * ComfyUI's WebSocket URL, constructed from comfyHost, comfyPort, and a random client ID.
+   */
   comfyWSURL,
+
+  /**
+   * The version of the HuggingFace CLI, if installed. If not installed, null.
+   */
+  hfCLIVersion,
+
+  /**
+   * The directory where input files are stored, specified by INPUT_DIR env var.
+   * default: {comfyDir}/input
+   */
   inputDir: INPUT_DIR ?? path.join(comfyDir, "input"),
+
+  /**
+   * The log level for the wrapper, specified by LOG_LEVEL env var.
+   */
   logLevel: LOG_LEVEL.toLowerCase(),
+
+  /**
+   * If a manifest file is provided, this is its parsed contents.
+   */
+  manifest,
+
+  /**
+   * If true, the wrapper will include markdown descriptions in the
+   * generated JSON schema. Specified by MARKDOWN_SCHEMA_DESCRIPTIONS env var.
+   * default: true
+   */
   markdownSchemaDescriptions: MARKDOWN_SCHEMA_DESCRIPTIONS === "true",
+
+  /**
+   * The maximum size of request bodies, in bytes.
+   * Specified by MAX_BODY_SIZE_MB env var.
+   * default: 100MB
+   */
   maxBodySize,
+
+  /**
+   * The maximum number of requests allowed in the queue.
+   * Specified by MAX_QUEUE_DEPTH env var.
+   * default: 0 (unlimited)
+   */
   maxQueueDepth,
+
+  /**
+   * The contents of the models directory
+   */
   models: {} as Record<
     string,
     {
@@ -215,23 +402,124 @@ const config = {
       enum: z.ZodEnum<[string, ...string[]]>;
     }
   >,
+
+  /**
+   * The directory where output files are stored, specified by OUTPUT_DIR env var.
+   * default: {comfyDir}/output
+   */
   outputDir: OUTPUT_DIR ?? path.join(comfyDir, "output"),
+
+  /**
+   * The number of times to retry a post-prompt webhook if it fails.
+   * Specified by PROMPT_WEBHOOK_RETRIES env var.
+   * default: 3
+   */
   promptWebhookRetries,
+
+  /**
+   * (optional) The Salad container group ID, specified by SALAD_CONTAINER_GROUP_ID env var.
+   * This is provided automatically in SaladCloud's environment.
+   */
   saladContainerGroupId: SALAD_CONTAINER_GROUP_ID,
+
+  /**
+   * (optional) The Salad machine ID, specified by SALAD_MACHINE_ID env var.
+   * This is provided automatically in SaladCloud's environment.
+   */
   saladMachineId: SALAD_MACHINE_ID,
+
+  /**
+   * The list of samplers supported by ComfyUI, fetched from the ComfyUI codebase.
+   * Does not include custom nodes.
+   */
   samplers: z.enum(comfyDescription.samplers as [string, ...string[]]),
+
+  /**
+   * The list of schedulers supported by ComfyUI, fetched from the ComfyUI codebase.
+   * Does not include custom nodes.
+   */
   schedulers: z.enum(comfyDescription.schedulers as [string, ...string[]]),
+
+  /**
+   * The URL of this wrapper, constructed from HOST and PORT env vars.
+   */
   selfURL,
+
+  /**
+   * The interval between startup checks, in milliseconds.
+   * Specified by STARTUP_CHECK_INTERVAL_S env var.
+   * default: 1000ms
+   */
   startupCheckInterval,
+
+  /**
+   * The maximum number of tries for startup checks.
+   * Specified by STARTUP_CHECK_MAX_TRIES env var.
+   * default: 10
+   */
   startupCheckMaxTries,
+
+  /**
+   * (Optional) Any metadata to include in system webhooks. Provided by SYSTEM_META_* env vars.
+   * For example, SYSTEM_META_foo=bar will include "foo": "bar" in the metadata.
+   */
   systemMetaData: {} as Record<string, string>,
+
+  /**
+   * (Optional) The URL of to send webhooks of system events to.
+   * Specified by SYSTEM_WEBHOOK_URL env var.
+   * If not specified, no webhooks will be sent.
+   */
   systemWebhook,
+
+  /**
+   * The list of system events to send webhooks for.
+   * Specified by SYSTEM_WEBHOOK_EVENTS env var.
+   * default: [] (no events)
+   * Supported events: all, status, progress, executing, execution_start,
+   * execution_cached, executed, execution_success, execution_interrupted, execution_error
+   * If SYSTEM_WEBHOOK_EVENTS=all, all events will be sent.
+   * Otherwise, it should be a comma-separated list of events.
+   */
   systemWebhookEvents,
+
+  /**
+   * If true, uv is installed and available to use.
+   */
+  uvInstalled,
+
+  /**
+   * If a warmup prompt is available, this is the checkpoint from it.
+   */
   warmupCkpt,
+
+  /**
+   * If a warmup prompt file is provided, this is its parsed contents.
+   */
   warmupPrompt,
+
+  /**
+   * The directory where custom workflows are stored, specified by WORKFLOW_DIR env var.
+   * default: /workflows
+   */
   workflowDir: WORKFLOW_DIR,
+
+  /**
+   * The host address that the wrapper listens on, specified by HOST env var.
+   * default: ::
+   */
   wrapperHost: HOST,
+
+  /**
+   * The port that the wrapper listens on, specified by PORT env var.
+   * default: 8080
+   */
   wrapperPort: port,
+
+  /**
+   * A unique ID for this WebSocket client connection to ComfyUI.
+   * Generated randomly on each startup.
+   */
   wsClientId,
 };
 
@@ -242,7 +530,8 @@ for (const modelType of modelSubDirs) {
   if (fs.statSync(model_path).isDirectory()) {
     const all = fs
       .readdirSync(model_path)
-      .filter((f) => !(f.startsWith("put_") && f.endsWith("_here")));
+      .filter((f) => !(f.startsWith("put_") && f.endsWith("_here")))
+      .sort();
     config.models[modelType] = {
       dir: model_path,
       all,

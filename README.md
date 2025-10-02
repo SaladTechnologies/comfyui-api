@@ -8,7 +8,11 @@ A simple wrapper that facilitates using [ComfyUI](https://github.com/comfyanonym
   - [Full ComfyUI Support](#full-comfyui-support)
   - [Stateless API](#stateless-api)
     - [Request Format](#request-format)
+    - [Response Format](#response-format)
+  - [Model Manifest](#model-manifest)
+  - [Downloading Behavior](#downloading-behavior)
   - [Image To Image Workflows](#image-to-image-workflows)
+  - [Dynamic Model Loading](#dynamic-model-loading)
   - [Server-side image processing](#server-side-image-processing)
   - [Probes](#probes)
   - [API Configuration Guide](#api-configuration-guide)
@@ -52,8 +56,7 @@ If you have your own ComfyUI dockerfile, you can add the comfyui-api server to i
 
 ```dockerfile
 # Change this to the version you want to use
-ARG api_version=1.9.2
-
+ARG api_version=1.10.0
 
 # Download the comfyui-api binary, and make it executable
 ADD https://github.com/SaladTechnologies/comfyui-api/releases/download/${api_version}/comfyui-api .
@@ -81,9 +84,11 @@ The server hosts swagger docs at `/docs`, which can be used to interact with the
 - **Return Images In PNG (default), JPEG, or WebP**: The server can return images in PNG, JPEG, or WebP format, via a parameter in the API request. Most options supported by [sharp](https://sharp.pixelplumbing.com/) are supported.
 - **Probes**: The server has two probes, `/health` and `/ready`, which can be used to check the server's health and readiness to receive traffic.
 - **Dynamic Workflow Endpoints**: Automatically mount new workflow endpoints by adding conforming `.js` or `.ts` files to the `/workflows` directory in your docker image. See [below](#generating-new-workflow-endpoints) for more information. A [Claude 4 Sonnet](https://claude.ai) [prompt](./claude-endpoint-creation-prompt.md) is included to assist in automating this process.
-- **Bring Your Own Models And Extensions**: Use any model or extension you want by adding them to the normal ComfyUI directories `/opt/ComfyUI/`.
+- **Bring Your Own Models And Extensions**: Use any model or extension you want by adding them to the normal ComfyUI directories `/opt/ComfyUI/`. You can configure a [manifest file](#model-manifest) to download models and install extensions automatically on startup.
+- **Dynamic Model Loading**: If you provide a URL in a model-loading node, the server will locally cache the model automatically before executing the workflow.
+- **Execution Stats**: The server will return [execution stats in the response](#response-format).
 - **Works Great with SaladCloud**: The server is designed to work well with SaladCloud, and can be used to host ComfyUI on the SaladCloud platform. It is likely to work well with other platforms as well.
-  - **Manages Deletion Cost**: *ONLY ON SALAD*. The server will automatically set the instance deletion cost to the queue length, so that busier nodes are less likely to be scaled in while they are processing requests.
+  - **Manages Deletion Cost**: _ONLY ON SALAD_. The server will automatically set the instance deletion cost to the queue length, so that busier nodes are less likely to be scaled in while they are processing requests.
 - **Single Binary**: The server is distributed as a single binary, and can be run with no dependencies.
 - **Websocket Events Via Webhook**: The server can forward ComfyUI websocket events to a configured webhook, which can be used to monitor the progress of a workflow.
 - **Friendly License**: The server is distributed under the MIT license, and can be used for any purpose. All of its dependencies are also MIT or Apache 2.0 licensed, except ComfyUI itself, which is GPL-3.0 licensed.
@@ -119,13 +124,113 @@ Prompts are submitted to the server via the `POST /prompt` endpoint, which accep
       "quality": 80,
       "progressive": true
     }
-  },
+  }
 }
 ```
 
 - Only the `prompt` field is required. The other fields are optional, and can be omitted if not needed.
 - Your prompt must be a valid ComfyUI prompt graph, which is a JSON object where each key is a node ID, and the value is an object containing the node's inputs, class type, and optional metadata.
 - Your prompt must include a node that saves an output, such as a `SaveImage` node.
+
+### Response Format
+
+For async requests (i.e. when a webhook or S3 upload is used), the server will return a `202 Accepted` response immediately, and the outputs will be sent to the webhook or uploaded to S3 in the background.
+
+For synchronous requests (i.e. no webhook or s3.async is false), the server will return a `200 OK` response once the prompt has completed, with a body containing the outputs. The response body will have the following format:
+
+```json
+{
+  "id": "123e4567-e89b-12d3-a456-426614174000",
+  "prompt": { ... },
+  "images": [
+    "base64-encoded-image-1",
+    "base64-encoded-image-2"
+  ],
+  "filenames": [
+    "output-filename-1.png",
+    "output-filename-2.png"
+  ],
+  "stats": {
+    "comfy_execution": {
+      "total": {
+        "start": 1625247600000,
+        "end": 1625247605000,
+        "duration": 5000
+      },
+      "nodes": {
+        "1": {
+          "start": 1625247600000
+        },
+        "2": {
+          "start": 1625247601000
+        }
+      }
+    },
+    "preprocess_time": 1500,
+    "upload_time": 1,
+    "total_time": 6576
+  }
+}
+```
+
+If you requested image conversion, the images will be in the requested format (e.g. JPEG or WebP) instead of PNG.
+
+## Model Manifest
+
+The server can be configured to download models and install extensions automatically on startup, by providing a manifest file in either JSON or YAML format. The manifest filepath can be provided via the `MANIFEST` environment variable, or the full manifest as a JSON string via the `MANIFEST_JSON` environment variable. If both are provided, the `MANIFEST_JSON` variable will take precedence.
+
+The manifest file should have the following format (all fields are optional):
+
+```yaml
+apt:
+  - package1
+  - package2
+pip:
+  - package3
+  - package4
+custom_nodes:
+  - node-name-from-comfy-registry
+  - https://github.com/username/repo
+models:
+  before_start:
+    - url: https://example.com/model.ckpt
+      local_path: /opt/ComfyUI/models/checkpoints/model1.ckpt
+    - url: s3://my-bucket/path/to/model.safetensors
+      local_path: /opt/ComfyUI/models/checkpoints/model2.safetensors
+  after_start:
+    - url: https://example.com/another-model.ckpt
+      local_path: /opt/ComfyUI/models/checkpoints/model3.ckpt
+```
+
+If a manifest is provided, the server will perform the following in order:
+
+1. Install any apt packages listed in the `apt` field.
+2. Install any pip packages listed in the `pip` field. Uses `uv`, otherwise falls back to `pip`.
+3. Install any custom nodes listed in the `custom_nodes` field, using the `comfy` cli tool if available and a plain string is provided, or by cloning the provided git repository if a URL is provided. If cloned, `requirements.txt` will be installed if it exists, using `uv` if available, otherwise falling back to `pip`.
+4. Download any models listed in the `models.before_start` field, and save them to the specified `local_path`.
+5. Start background downloading any models listed in the `models.after_start` field, and save them to the specified `local_path`. These downloads will be started in the background and will not block the server from accepting requests. This is useful for preloading less frequently used models.
+
+## Downloading Behavior
+
+When downloading files, whether via the manifest, image-to-image workflows, or dynamic model loading, the server will first check if the file already exists at the specified path.
+It does this by hashing the provided URL and looking for a matching file in the cache directory (`$HOME/.cache/comfyui-api` by default).
+For example, the url `https://civitai.com/api/download/models/128713?type=Model&format=SafeTensor&size=pruned&fp=fp16` will always be saved in the cache as `Pk6VSKLStckZydwGhX0bM8TqaqHEW9yt.safetensors`.
+If a matching file is found, it will be used instead of downloading the file again.
+This helps to reduce bandwidth usage and speed up request times.
+
+If the url is an S3 URL, the server will use the AWS SDK to download the file.
+This allows the server to access private S3 buckets (or S3-compatible buckets), as long as the appropriate AWS credentials are provided via environment variables.
+
+If the url is a huggingface URL, the server will use the `hf` cli tool to download the file.
+This allows you to take advantage of high-speed [xet storage](https://huggingface.co/docs/hub/en/storage-backends#xet), as well as other optimizations provided by huggingface.
+
+If the url is a regular http(s) URL, the server will use `fetch` to stream the file to disk.
+If the url has a file extension, the server will use that extension when saving the file.
+Otherwise, it will attempt to determine the file extension from the `Content-Disposition` or `Content-Type` headers.
+
+All downloaded files live in the configured cache directory with a name taken as the first 32 characters of the URL hash plus the file extension, and are symbolically linked to the specified local path.
+
+If a download for a given URL is already in progress, any subsequent requests for the same URL will wait for the first download to complete, and then use the downloaded file.
 
 ## Image To Image Workflows
 
@@ -146,6 +251,25 @@ Here's an example of doing this in a `LoadImage` node:
     "title": "Load Image"
   }
 }
+```
+
+## Dynamic Model Loading
+
+The ComfyUI API server supports dynamic model loading, allowing you to specify a model URL in a model-loading node, and the server will automatically download and cache the model before executing the workflow.
+This is useful for workflows that need to potentially use a different model for each request.
+An example may be headshot generation, which would specify a LoRA per person.
+The LoRA may be generated on-the-fly by another service, and provided to the ComfyUI API server via a URL.
+
+```json
+{
+  "inputs": {
+    "ckpt_name": "https://civitai.com/api/download/models/76750?type=Model&format=SafeTensor&size=pruned&fp=fp16"
+  },
+  "class_type": "CheckpointLoaderSimple",
+  "_meta": {
+    "title": "Load Checkpoint"
+  }
+},
 ```
 
 ## Server-side image processing
@@ -199,49 +323,56 @@ For historical reasons, the default values mostly assume this will run on top of
 
 If you are using the s3 storage functionality, make sure to set all of the appropriate environment variables for your S3 bucket, such as `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_REGION`. The server will automatically use these to upload images to S3.
 
-| Variable                     | Default Value         | Description                                                                                                                                                                                                                                  |
-| ---------------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| ALWAYS_RESTART_COMFYUI       | "false"               | If set to "true", the ComfyUI process will be automatically restarted if it exits. Otherwise, the API server will exit when ComfyUI exits.                                                                                                   |
-| BASE                         | "ai-dock"             | There are different ways to load the comfyui environment for determining config values that vary with the base image. Currently only "ai-dock" has preset values. Set to empty string to not use this.                                       |
-| CMD                          | "init.sh"             | Command to launch ComfyUI                                                                                                                                                                                                                    |
-| COMFY_HOME                   | "/opt/ComfyUI"        | ComfyUI home directory                                                                                                                                                                                                                       |
-| COMFYUI_PORT_HOST            | "8188"                | ComfyUI port number                                                                                                                                                                                                                          |
-| DIRECT_ADDRESS               | "127.0.0.1"           | Direct address for ComfyUI                                                                                                                                                                                                                   |
-| HOST                         | "::"                  | Wrapper host address                                                                                                                                                                                                                         |
-| INPUT_DIR                    | "/opt/ComfyUI/input"  | Directory for input files                                                                                                                                                                                                                    |
-| LOG_LEVEL                    | "info"                | Log level for the application. One of "trace", "debug", "info", "warn", "error", "fatal".                                                                                                                                                    |
-| MARKDOWN_SCHEMA_DESCRIPTIONS | "true"                | If set to "true", the server will use the descriptions in the zod schemas to generate markdown tables in the swagger docs.                                                                                                                   |
-| MAX_BODY_SIZE_MB             | "100"                 | Maximum body size in MB                                                                                                                                                                                                                      |
-| MAX_BODY_SIZE_MB             | "100"                 | Maximum request body size in MB                                                                                                                                                                                                              |
-| MAX_QUEUE_DEPTH              | "0"                   | Maximum number of queued requests before the readiness probe will return 503. 0 indicates no limit.                                                                                                                                          |
-| MODEL_DIR                    | "/opt/ComfyUI/models" | Directory for model files                                                                                                                                                                                                                    |
-| OUTPUT_DIR                   | "/opt/ComfyUI/output" | Directory for output files                                                                                                                                                                                                                   |
-| PORT                         | "3000"                | Wrapper port number                                                                                                                                                                                                                          |
-| PROMPT_WEBHOOK_RETRIES       | "3"                   | Number of times to retry sending a webhook for a prompt                                                                                                                                                                                      |
-| STARTUP_CHECK_INTERVAL_S     | "1"                   | Interval in seconds between startup checks                                                                                                                                                                                                   |
-| STARTUP_CHECK_MAX_TRIES      | "10"                  | Maximum number of startup check attempts                                                                                                                                                                                                     |
-| SYSTEM_META_*                | (not set)             | Any environment variable starting with SYSTEM_META_ will be sent to the system webhook as metadata. i.e. `SYSTEM_META_batch=abc` will add `{"batch": "abc"}` to the `.metadata` field on system webhooks.                                    |
-| SYSTEM_WEBHOOK_EVENTS        | (not set)             | Comma separated list of events to send to the webhook. Only selected events will be sent. If not set, no events will be sent. See [System Events](#system-events). You may also use the special value `all` to subscribe to all event types. |
-| SYSTEM_WEBHOOK_URL           | (not set)             | Optionally receive via webhook the events that ComfyUI emits on websocket. This includes progress events.                                                                                                                                    |
-| WARMUP_PROMPT_FILE           | (not set)             | Path to warmup prompt file (optional)                                                                                                                                                                                                        |
-| WORKFLOW_DIR                 | "/workflows"          | Directory for workflow files                                                                                                                                                                                                                 |
+| Variable                     | Default Value              | Description                                                                                                                                                                                                                                  |
+| ---------------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ALWAYS_RESTART_COMFYUI       | "false"                    | If set to "true", the ComfyUI process will be automatically restarted if it exits. Otherwise, the API server will exit when ComfyUI exits.                                                                                                   |
+| BASE                         | (not set)                  | There are different ways to load the comfyui environment for determining config values that vary with the base image. Currently only "ai-dock" has a special preset value.                                                                   |
+| CACHE_DIR                    | "$HOME/.cache/comfyui-api" | Directory to use for caching downloaded models and other files.                                                                                                                                                                              |
+| CMD                          | "init.sh"                  | Command to launch ComfyUI                                                                                                                                                                                                                    |
+| COMFY_HOME                   | "/opt/ComfyUI"             | ComfyUI home directory                                                                                                                                                                                                                       |
+| COMFYUI_PORT_HOST            | "8188"                     | ComfyUI port number                                                                                                                                                                                                                          |
+| DIRECT_ADDRESS               | "127.0.0.1"                | Direct address for ComfyUI                                                                                                                                                                                                                   |
+| HOST                         | "::"                       | Wrapper host address                                                                                                                                                                                                                         |
+| INPUT_DIR                    | "/opt/ComfyUI/input"       | Directory for input files                                                                                                                                                                                                                    |
+| LOG_LEVEL                    | "info"                     | Log level for the application. One of "trace", "debug", "info", "warn", "error", "fatal".                                                                                                                                                    |
+| MANIFEST                     | (not set)                  | Path to the [manifest file](#model-manifest) (optional). Can be yml or json.                                                                                                                                                                 |
+| MANIFEST_JSON                | (not set)                  | A JSON string representing the [manifest](#model-manifest). If set, this will take precedence over the MANIFEST variable.                                                                                                                    |
+| MARKDOWN_SCHEMA_DESCRIPTIONS | "true"                     | If set to "true", the server will use the descriptions in the zod schemas to generate markdown tables in the swagger docs.                                                                                                                   |
+| MAX_BODY_SIZE_MB             | "100"                      | Maximum body size in MB                                                                                                                                                                                                                      |
+| MAX_BODY_SIZE_MB             | "100"                      | Maximum request body size in MB                                                                                                                                                                                                              |
+| MAX_QUEUE_DEPTH              | "0"                        | Maximum number of queued requests before the readiness probe will return 503. 0 indicates no limit.                                                                                                                                          |
+| MODEL_DIR                    | "/opt/ComfyUI/models"      | Directory for model files                                                                                                                                                                                                                    |
+| OUTPUT_DIR                   | "/opt/ComfyUI/output"      | Directory for output files                                                                                                                                                                                                                   |
+| PORT                         | "3000"                     | Wrapper port number                                                                                                                                                                                                                          |
+| PROMPT_WEBHOOK_RETRIES       | "3"                        | Number of times to retry sending a webhook for a prompt                                                                                                                                                                                      |
+| STARTUP_CHECK_INTERVAL_S     | "1"                        | Interval in seconds between startup checks                                                                                                                                                                                                   |
+| STARTUP_CHECK_MAX_TRIES      | "20"                       | Maximum number of startup check attempts                                                                                                                                                                                                     |
+| SYSTEM_META\_\*              | (not set)                  | Any environment variable starting with SYSTEM*META* will be sent to the system webhook as metadata. i.e. `SYSTEM_META_batch=abc` will add `{"batch": "abc"}` to the `.metadata` field on system webhooks.                                    |
+| SYSTEM_WEBHOOK_EVENTS        | (not set)                  | Comma separated list of events to send to the webhook. Only selected events will be sent. If not set, no events will be sent. See [System Events](#system-events). You may also use the special value `all` to subscribe to all event types. |
+| SYSTEM_WEBHOOK_URL           | (not set)                  | Optionally receive via webhook the events that ComfyUI emits on websocket. This includes progress events.                                                                                                                                    |
+| WARMUP_PROMPT_FILE           | (not set)                  | Path to warmup prompt file (optional)                                                                                                                                                                                                        |
+| WORKFLOW_DIR                 | "/workflows"               | Directory for workflow files                                                                                                                                                                                                                 |
 
 ### Configuration Details
 
 1. **ComfyUI Settings**:
+
    - The application uses the `CMD` environment variable to specify the command for launching ComfyUI.
    - ComfyUI is accessed at `http://${DIRECT_ADDRESS}:${COMFYUI_PORT_HOST}`.
 
 2. **Wrapper Settings**:
+
    - The wrapper API listens on `HOST:PORT`.
    - It can be accessed at `http://localhost:${PORT}`.
    - Use an IPv6 address for `HOST` when deploying on Salad. This is the default behavior.
 
 3. **Startup Checks**:
+
    - The application performs startup checks at intervals specified by `STARTUP_CHECK_INTERVAL_S`.
    - It will attempt up to `STARTUP_CHECK_MAX_TRIES` before giving up.
 
 4. **Directories**:
+
    - The application uses the `COMFY_HOME` environment variable to locate the ComfyUI installation.
    - Output files are stored in `OUTPUT_DIR`.
    - Input files are read from `INPUT_DIR`.
@@ -249,17 +380,19 @@ If you are using the s3 storage functionality, make sure to set all of the appro
    - Workflow files are stored in `WORKFLOW_DIR`. See [below](#generating-new-workflow-endpoints) for more information.
 
 5. **Warmup Prompt**:
+
    - If `WARMUP_PROMPT_FILE` is set, the application will load and parse a warmup prompt from this file.
    - The checkpoint used in this prompt can be used as the default for workflow models.
 
 6. **Models**:
+
    - The application scans the `MODEL_DIR` for subdirectories and creates configurations for each model type found.
    - Each model type will have its directory path, list of available models, and a Zod enum for validation.
    - The model names are exposed via the `GET /models` endpoint, and via the config object throughout the application.
 
 7. **ComfyUI Description**:
-   - The application retrieves available samplers and schedulers from ComfyUI itself.
-   - This information is used to create Zod enums for validation.
+   - The application retrieves available samplers and schedulers from ComfyUI itself at startup. It does not take custom nodes or extensions into account.
+   - This information is used to create Zod enums for validation in workflows, but is otherwise not used by the application.
 
 ### Additional Notes
 
@@ -326,6 +459,9 @@ The `bucket` field is the name of the S3 bucket to upload the outputs to, and th
 If `async` is set to `true`, the API will return a 202 response immediately, and the outputs will be uploaded to S3 in the background. You will need to poll S3 or configure bucket events to be notified when the uploads are complete.
 
 If `async` is set to `false`, the API will wait for the uploads to complete before returning a response. The response will include the S3 URLs of the uploaded outputs in the `.images` field, which will be an array of strings.
+
+If an upload for a particular output is in progress, a subsequent upload to the same output will abort the first request and take over the upload.
+This is rooted in the assumption that you want the latest version of any particular output.
 
 ## System Events
 
@@ -821,7 +957,6 @@ Automated tests for this project require model files to be present in the `./tes
 - `oldt5_xxl_fp8_e4m3fn_scaled.safetensors` - https://huggingface.co/comfyanonymous/cosmos_1.0_text_encoder_and_VAE_ComfyUI/tree/main/text_encoders
 - `cosmos_cv8x8x8_1.0.safetensors` - https://huggingface.co/comfyanonymous/cosmos_1.0_text_encoder_and_VAE_ComfyUI/blob/main/vae/cosmos_cv8x8x8_1.0.safetensors
 - `Cosmos-1_0-Diffusion-7B-Text2World.safetensors` - https://huggingface.co/mcmonkey/cosmos-1.0/blob/main/Cosmos-1_0-Diffusion-7B-Text2World.safetensors
-
 
 They should be in the correct comfyui directory structure, like so:
 

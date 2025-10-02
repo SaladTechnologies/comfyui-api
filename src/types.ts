@@ -118,6 +118,27 @@ export type OutputConversionOptions = z.infer<
   typeof OutputConversionOptionsSchema
 >;
 
+export const ExecutionStatsSchema = z.object({
+  comfy_execution: z.object({
+    start: z.number(),
+    end: z.number(),
+    duration: z.number(),
+    nodes: z.record(
+      z.object({
+        start: z.number(),
+      })
+    ),
+  }),
+  preprocess_time: z.number().optional(),
+  upload_time: z.number().optional(),
+  total_time: z.number().optional(),
+});
+
+export type ExecutionStats = z.infer<typeof ExecutionStatsSchema>;
+export function isExecutionStats(obj: any): obj is ExecutionStats {
+  return ExecutionStatsSchema.safeParse(obj).success;
+}
+
 export const PromptRequestSchema = z.object({
   prompt: z.record(ComfyNodeSchema),
   id: z
@@ -145,6 +166,7 @@ export const PromptResponseSchema = z.object({
   webhook: z.string().optional(),
   convert_output: OutputConversionOptionsSchema.optional(),
   status: z.enum(["ok"]).optional(),
+  stats: ExecutionStatsSchema.optional(),
 });
 
 export type PromptResponse = z.infer<typeof PromptResponseSchema>;
@@ -176,27 +198,15 @@ export interface WorkflowTree {
   [key: string]: WorkflowTree | Workflow;
 }
 
-export const WorkflowRequestSchema = z.object({
-  id: z
-    .string()
-    .optional()
-    .default(() => randomUUID()),
+export const WorkflowRequestSchema = PromptRequestSchema.extend({
   input: z.record(z.any()),
-  webhook: z.string().optional(),
-  convert_output: OutputConversionOptionsSchema.optional(),
+  prompt: z.never(),
 });
 
 export type WorkflowRequest = z.infer<typeof WorkflowRequestSchema>;
 
-export const WorkflowResponseSchema = z.object({
-  id: z.string(),
+export const WorkflowResponseSchema = PromptResponseSchema.extend({
   input: z.record(z.any()),
-  prompt: z.record(ComfyNodeSchema),
-  images: z.array(z.string()).optional(),
-  filenames: z.array(z.string()).optional(),
-  webhook: z.string().optional(),
-  convert_output: OutputConversionOptionsSchema.optional(),
-  status: z.enum(["ok"]).optional(),
 });
 
 export interface ComfyWSMessage {

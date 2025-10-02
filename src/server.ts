@@ -11,14 +11,26 @@ import fsPromises from "fs/promises";
 import path from "path";
 import config from "./config";
 import {
-  processImageOrVideo,
   zodToMarkdownTable,
-  convertImageBuffer,
   getConfiguredWebhookHandlers,
   fetchWithRetries,
   setDeletionCost,
-  uploadFileToS3,
+  installCustomNode,
+  aptInstallPackages,
+  pipInstallPackages,
 } from "./utils";
+import { convertImageBuffer } from "./image-tools";
+import remoteStorageManager from "./remote-storage-manager";
+import {
+  processModelLoadingNode,
+  modelLoadingNodeTypes,
+  loadImageNodes,
+  loadDirectoryOfImagesNodes,
+  loadVideoNodes,
+  processLoadImageNode,
+  processLoadDirectoryOfImagesNode,
+  processLoadVideoNode,
+} from "./comfy-node-preprocessors";
 import {
   warmupComfyUI,
   waitForComfyUIToStart,
@@ -62,11 +74,6 @@ for (const modelType in config.models) {
 
 const ModelResponseSchema = z.object(modelSchema);
 type ModelResponse = z.infer<typeof ModelResponseSchema>;
-
-const modelResponse: ModelResponse = {};
-for (const modelType in config.models) {
-  modelResponse[modelType] = config.models[modelType].all;
-}
 
 let warm = false;
 let wasEverWarm = false;
@@ -173,6 +180,10 @@ server.after(() => {
       },
     },
     async (request, reply) => {
+      const modelResponse: ModelResponse = {};
+      for (const modelType in config.models) {
+        modelResponse[modelType] = config.models[modelType].all;
+      }
       return modelResponse;
     }
   );
@@ -214,23 +225,8 @@ server.after(() => {
        * and also to do some pre-processing.
        */
       let hasSaveImage = false;
-      const loadImageNodes = new Set<string>([
-        "LoadImage",
-        "LoadImageMask",
-        "LoadImageOutput",
-        "VHS_LoadImagePath",
-      ]);
-      const loadDirectoryOfImagesNodes = new Set<string>([
-        "VHS_LoadImages",
-        "VHS_LoadImagesPath",
-      ]);
-      const loadVideoNodes = new Set<string>([
-        "LoadVideo",
-        "VHS_LoadVideo",
-        "VHS_LoadVideoPath",
-        "VHS_LoadVideoFFmpegPath",
-        "VHS_LoadVideoFFmpeg",
-      ]);
+
+      const start = Date.now();
       for (const nodeId in prompt) {
         const node = prompt[nodeId];
         if (
@@ -259,9 +255,8 @@ server.after(() => {
            * the image as base64 encoded data, or as a url. we need to download
            * the image if it's a url, and save it to a local file.
            */
-          const imageInput = node.inputs.image;
           try {
-            node.inputs.image = await processImageOrVideo(imageInput, app.log);
+            Object.assign(node, await processLoadImageNode(node, app.log));
           } catch (e: any) {
             return reply.code(400).send({
               error: e.message,
@@ -280,19 +275,10 @@ server.after(() => {
            * to be the local directory.
            */
           try {
-            /**
-             * We need to download each image to a local file.
-             */
-            app.log.debug(
-              `Downloading images to local directory for node ${nodeId}`
+            Object.assign(
+              node,
+              await processLoadDirectoryOfImagesNode(node, id, app.log)
             );
-            const processPromises: Promise<string>[] = [];
-            for (const b64 of node.inputs.directory) {
-              processPromises.push(processImageOrVideo(b64, app.log, id));
-            }
-            await Promise.all(processPromises);
-            node.inputs.directory = id;
-            app.log.debug(`Saved images to local directory for node ${nodeId}`);
           } catch (e: any) {
             return reply.code(400).send({
               error: e.message,
@@ -300,44 +286,32 @@ server.after(() => {
               message: "Failed to download images to local directory",
             });
           }
-        } else if (
-          loadVideoNodes.has(node.class_type) &&
-          typeof node.inputs.video === "string"
-        ) {
+        } else if (loadVideoNodes.has(node.class_type)) {
           /**
            * If the node is for loading a video, the user will have provided
            * the video as base64 encoded data, or as a url. we need to download
            * the video if it's a url, and save it to a local file.
            */
-          const videoInput = node.inputs.video;
           try {
-            node.inputs.video = await processImageOrVideo(videoInput, app.log);
+            Object.assign(node, await processLoadVideoNode(node, app.log));
           } catch (e: any) {
             return reply.code(400).send({
               error: e.message,
               location: `prompt.${nodeId}.inputs.video`,
             });
           }
-        } else if (
-          loadVideoNodes.has(node.class_type) &&
-          typeof node.inputs.file === "string"
-        ) {
-          /**
-           * If the node is for loading a video file, the user will have provided
-           * the video file as base64 encoded data, or as a url. we need to download
-           * the video if it's a url, and save it to a local file.
-           */
-          const videoInput = node.inputs.file;
+        } else if (modelLoadingNodeTypes.has(node.class_type)) {
           try {
-            node.inputs.file = await processImageOrVideo(videoInput, app.log);
+            Object.assign(node, await processModelLoadingNode(node, app.log));
           } catch (e: any) {
             return reply.code(400).send({
               error: e.message,
-              location: `prompt.${nodeId}.inputs.file`,
+              location: `prompt.${nodeId}`,
             });
           }
         }
       }
+      const preprocessTime = Date.now();
 
       /**
        * If the prompt has no outputs, there's no point in running it.
@@ -359,7 +333,10 @@ server.after(() => {
             /**
              * This function does not block returning the 202 response to the user.
              */
-            async (outputs: Record<string, Buffer>) => {
+            async ({ outputs, stats }) => {
+              stats.preprocess_time = preprocessTime - start;
+              stats.total_time = Date.now() - start;
+              app.log.debug({ id, ...stats });
               for (const originalFilename in outputs) {
                 let filename = originalFilename;
                 let fileBuffer = outputs[filename];
@@ -382,6 +359,7 @@ server.after(() => {
                   }
                 }
                 const base64File = fileBuffer.toString("base64");
+
                 app.log.info(
                   `Sending image ${filename} to webhook: ${webhook}`
                 );
@@ -398,6 +376,7 @@ server.after(() => {
                       id,
                       filename,
                       prompt,
+                      stats,
                     }),
                     dispatcher: new Agent({
                       headersTimeout: 0,
@@ -475,10 +454,12 @@ server.after(() => {
         return reply.code(202).send({ status: "ok", id, webhook, prompt });
       } else if (s3 && s3.async) {
         runPromptAndGetOutputs(id, prompt, app.log)
-          .then(async (outputs: Record<string, Buffer>) => {
+          .then(async ({ outputs, stats }) => {
             /**
              * If the user has provided an S3 configuration, we upload the images to S3.
              */
+            stats.preprocess_time = preprocessTime - start;
+            const comfyTime = Date.now();
             const uploadPromises: Promise<void>[] = [];
             for (const originalFilename in outputs) {
               let filename = originalFilename;
@@ -503,8 +484,14 @@ server.after(() => {
               }
 
               const key = `${s3.prefix}${filename}`;
+              const s3Url = `s3://${s3.bucket}/${key}`;
               uploadPromises.push(
-                uploadFileToS3(s3.bucket, key, fileBuffer, contentType, app.log)
+                remoteStorageManager.uploadFile(
+                  s3Url,
+                  fileBuffer,
+                  contentType,
+                  app.log
+                )
               );
               app.log.info(
                 `Uploading image ${filename} to s3://${s3.bucket}/${key}`
@@ -515,6 +502,9 @@ server.after(() => {
             }
 
             await Promise.all(uploadPromises);
+            stats.upload_time = Date.now() - comfyTime;
+            stats.total_time = Date.now() - start;
+            app.log.debug({ id, ...stats });
           })
           .catch(async (e: any) => {
             app.log.error(`Failed to generate images: ${e.message}`);
@@ -532,7 +522,12 @@ server.after(() => {
         /**
          * Send the prompt to ComfyUI, and wait for the images to be generated.
          */
-        const allOutputs = await runPromptAndGetOutputs(id, prompt, app.log);
+        const { outputs: allOutputs, stats } = await runPromptAndGetOutputs(
+          id,
+          prompt,
+          app.log
+        );
+        const comfyTime = Date.now();
         for (const originalFilename in allOutputs) {
           let fileBuffer = allOutputs[originalFilename];
           let filename = originalFilename;
@@ -558,9 +553,16 @@ server.after(() => {
             images.push(base64File);
           } else if (s3 && !s3.async) {
             const key = `${s3.prefix}${filename}`;
+            const s3Url = `s3://${s3.bucket}/${key}`;
             uploadPromises.push(
-              uploadFileToS3(s3.bucket, key, fileBuffer, contentType, app.log)
+              remoteStorageManager.uploadFile(
+                s3Url,
+                fileBuffer,
+                contentType,
+                app.log
+              )
             );
+            app.log.info(`Uploading image ${filename} to ${s3Url}`);
             images.push(`s3://${s3.bucket}/${key}`);
           }
 
@@ -568,8 +570,13 @@ server.after(() => {
           fsPromises.unlink(path.join(config.outputDir, originalFilename));
         }
         await Promise.all(uploadPromises);
+        stats.preprocess_time = preprocessTime - start;
+        stats.upload_time = Date.now() - comfyTime;
+        stats.total_time = Date.now() - start;
 
-        return reply.send({ id, prompt, images, filenames });
+        app.log.debug({ id, ...stats });
+
+        return reply.send({ id, prompt, images, filenames, stats });
       }
     }
   );
@@ -635,7 +642,13 @@ server.after(() => {
                 headers: {
                   "Content-Type": "application/json",
                 },
-                body: JSON.stringify({ prompt, id, webhook, convert_output, s3 }),
+                body: JSON.stringify({
+                  prompt,
+                  id,
+                  webhook,
+                  convert_output,
+                  s3,
+                }),
                 dispatcher: new Agent({
                   headersTimeout: 0,
                   bodyTimeout: 0,
@@ -725,15 +738,69 @@ async function launchComfyUIAndAPIServerAndWaitForWarmup() {
   warm = true;
 }
 
+async function downloadAllModels(
+  models: { url: string; local_path: string }[]
+) {
+  for (const { url, local_path } of models) {
+    const dir = path.dirname(local_path);
+    const filename = path.basename(local_path);
+    await remoteStorageManager.downloadFile(url, dir, filename, server.log);
+  }
+}
+
+async function processManifest() {
+  if (config.manifest) {
+    if (config.manifest.apt) {
+      server.log.info(
+        `Installing ${config.manifest.apt.length} apt packages specified in manifest`
+      );
+      await aptInstallPackages(config.manifest.apt, server.log);
+    }
+    if (config.manifest.pip) {
+      server.log.info(
+        `Installing ${config.manifest.pip.length} pip packages specified in manifest`
+      );
+      await pipInstallPackages(config.manifest.pip, server.log);
+    }
+    if (config.manifest.custom_nodes) {
+      server.log.info(
+        `Installing ${config.manifest.custom_nodes.length} custom nodes specified in manifest`
+      );
+      for (const node of config.manifest.custom_nodes) {
+        await installCustomNode(node, server.log);
+      }
+    }
+    if (config.manifest.models.before_start) {
+      server.log.info(
+        `Downloading ${config.manifest.models.before_start.length} models specified in manifest before startup`
+      );
+      await downloadAllModels(config.manifest.models.before_start);
+    }
+    if (config.manifest.models.after_start) {
+      server.log.info(
+        `Downloading ${config.manifest.models.after_start.length} models specified in manifest after startup`
+      );
+
+      // Don't await, do it in the background
+      downloadAllModels(config.manifest.models.after_start);
+    }
+  }
+}
+
 export async function start() {
   try {
     const start = Date.now();
+    await processManifest();
+    if (config.manifest) {
+      server.log.info(
+        `Processed manifest file in ${(Date.now() - start) / 1000}s`
+      );
+    }
+
     // Start ComfyUI
     await launchComfyUIAndAPIServerAndWaitForWarmup();
     const warmupTime = Date.now() - start;
-    server.log.info(
-      `Starting Comfy and any warmup workflow took ${warmupTime / 1000}s`
-    );
+    server.log.info(`ComfyUI fully ready in ${warmupTime / 1000}s`);
   } catch (err: any) {
     server.log.error(`Failed to start server: ${err.message}`);
     process.exit(1);

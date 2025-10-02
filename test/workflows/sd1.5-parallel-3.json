@@ -136,7 +136,7 @@
   },
   "28": {
     "inputs": {
-      "ckpt_name": "dreamshaperPixelart_v10.safetensors"
+      "ckpt_name": "https://civitai.com/api/download/models/142421?type=Model&format=SafeTensor&size=full&fp=fp16"
     },
     "class_type": "CheckpointLoaderSimple",
     "_meta": {
@@ -241,7 +241,7 @@
   },
   "35": {
     "inputs": {
-      "ckpt_name": "landscapePhotoreal_v1.safetensors"
+      "ckpt_name": "https://huggingface.co/Lykon/DreamShaper/resolve/main/DreamShaper_5_beta2_noVae_half_pruned.safetensors?download=true"
     },
     "class_type": "CheckpointLoaderSimple",
     "_meta": {
