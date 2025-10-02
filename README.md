@@ -8,6 +8,7 @@ A simple wrapper that facilitates using [ComfyUI](https://github.com/comfyanonym
   - [Full ComfyUI Support](#full-comfyui-support)
   - [Stateless API](#stateless-api)
     - [Request Format](#request-format)
+    - [Response Format](#response-format)
   - [Model Manifest](#model-manifest)
   - [Downloading Behavior](#downloading-behavior)
   - [Image To Image Workflows](#image-to-image-workflows)
@@ -130,11 +131,53 @@ Prompts are submitted to the server via the `POST /prompt` endpoint, which accep
 - Your prompt must be a valid ComfyUI prompt graph, which is a JSON object where each key is a node ID, and the value is an object containing the node's inputs, class type, and optional metadata.
 - Your prompt must include a node that saves an output, such as a `SaveImage` node.
 
+### Response Format
+
+For async requests (i.e. when a webhook or S3 upload is used), the server will return a `202 Accepted` response immediately, and the outputs will be sent to the webhook or uploaded to S3 in the background.
+
+For synchronous requests (i.e. no webhook or s3.async is false), the server will return a `200 OK` response once the prompt has completed, with a body containing the outputs. The response body will have the following format:
+
+```json
+{
+  "id": "123e4567-e89b-12d3-a456-426614174000",
+  "prompt": { ... },
+  "images": [
+    "base64-encoded-image-1",
+    "base64-encoded-image-2"
+  ],
+  "filenames": [
+    "output-filename-1.png",
+    "output-filename-2.png"
+  ],
+  "stats": {
+    "comfy_execution": {
+      "total": {
+        "start": 1625247600000,
+        "end": 1625247605000,
+        "duration": 5000
+      },
+      "nodes": {
+        "1": {
+          "start": 1625247600000
+        },
+        "2": {
+          "start": 1625247601000
+        }
+      }
+    },
+    "preprocess_time": 1500,
+    "total_time": 6576
+  }
+}
+```
+
+If you used s3 to upload the outputs, the `images` field will contain the S3 URLs of the uploaded images instead of base64-encoded images, and stats will include an `upload_time` field.
+
 ## Model Manifest
 
 The server can be configured to download models and install extensions automatically on startup, by providing a manifest file in either JSON or YAML format. The manifest filepath can be provided via the `MANIFEST` environment variable, or the full manifest as a JSON string via the `MANIFEST_JSON` environment variable. If both are provided, the `MANIFEST_JSON` variable will take precedence.
 
-The manifest file should have the following format:
+The manifest file should have the following format (all fields are optional):
 
 ```yaml
 apt:
@@ -169,6 +212,7 @@ If a manifest is provided, the server will perform the following in order:
 
 When downloading files, whether via the manifest, image-to-image workflows, or dynamic model loading, the server will first check if the file already exists at the specified path.
 It does this by hashing the provided URL and looking for a matching file in the cache directory (`$HOME/.cache/comfyui-api` by default).
+For example, the url `https://civitai.com/api/download/models/128713?type=Model&format=SafeTensor&size=pruned&fp=fp16` will always be saved in the cache as `Pk6VSKLStckZydwGhX0bM8TqaqHEW9yt.safetensors`.
 If a matching file is found, it will be used instead of downloading the file again.
 This helps to reduce bandwidth usage and speed up request times.
 
@@ -182,7 +226,7 @@ If the url is a regular http(s) URL, the server will use `fetch` to stream the f
 If the url has a file extension, the server will use that extension when saving the file.
 Otherwise, it will attempt to determine the file extension from the `Content-Disposition` or `Content-Type` headers.
 
-All downloaded files live in the configured cache directory, and are symbolically linked to the specified local path.
+All downloaded files live in the configured cache directory with a name taken as the first 32 characters of the URL hash plus the file extension, and are symbolically linked to the specified local path.
 
 If a download for a given URL is already in progress, any subsequent requests for the same URL will wait for the first download to complete, and then use the downloaded file.
 
