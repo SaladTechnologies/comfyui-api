@@ -184,42 +184,33 @@ async function collectExecutionStats(
       const { data } = event;
       if (typeof data === "string") {
         const message = JSON.parse(data) as ComfyWSMessage;
+        if (message?.data?.prompt_id !== promptId) return;
         if (isExecutionStartMessage(message)) {
-          if (message.data.prompt_id === promptId) {
-            start = Date.now();
-            stats.comfy_execution.start = start;
-            log.info(`Prompt ${promptId} started execution`);
-          }
+          start = Date.now();
+          stats.comfy_execution.start = start;
+          log.info(`Prompt ${promptId} started execution`);
         } else if (isExecutingMessage(message)) {
-          if (message.data.prompt_id === promptId) {
-            const nodeId = message.data.node;
-            if (!nodeId) return;
-            stats.comfy_execution.nodes[nodeId] = {
-              start: Date.now(),
-            };
-          }
+          const nodeId = message.data.node;
+          if (!nodeId) return;
+          stats.comfy_execution.nodes[nodeId] = {
+            start: Date.now(),
+          };
         } else if (isExecutionSuccessMessage(message)) {
-          if (message.data.prompt_id === promptId) {
-            stats.comfy_execution.end = Date.now();
-            stats.comfy_execution.duration =
-              stats.comfy_execution.end - stats.comfy_execution.start;
-            wsClient?.removeEventListener("close", onClose);
-            wsClient?.removeEventListener("message", handleMessage);
-            log.info(`Prompt ${promptId} completed execution`);
-            return resolve(stats);
-          }
+          stats.comfy_execution.end = Date.now();
+          stats.comfy_execution.duration =
+            stats.comfy_execution.end - stats.comfy_execution.start;
+          wsClient?.removeEventListener("close", onClose);
+          wsClient?.removeEventListener("message", handleMessage);
+          log.info(`Prompt ${promptId} completed execution`);
+          return resolve(stats);
         } else if (isExecutionErrorMessage(message)) {
-          if (message.data.prompt_id === promptId) {
-            wsClient?.removeEventListener("close", onClose);
-            wsClient?.removeEventListener("message", handleMessage);
-            return reject(new Error("Prompt execution failed"));
-          }
+          wsClient?.removeEventListener("close", onClose);
+          wsClient?.removeEventListener("message", handleMessage);
+          return reject(new Error("Prompt execution failed"));
         } else if (isExecutionInterruptedMessage(message)) {
-          if (message.data.prompt_id === promptId) {
-            wsClient?.removeEventListener("close", onClose);
-            wsClient?.removeEventListener("message", handleMessage);
-            return reject(new Error("Prompt execution interrupted"));
-          }
+          wsClient?.removeEventListener("close", onClose);
+          wsClient?.removeEventListener("message", handleMessage);
+          return reject(new Error("Prompt execution interrupted"));
         }
       }
     };

@@ -167,12 +167,13 @@ For synchronous requests (i.e. no webhook or s3.async is false), the server will
       }
     },
     "preprocess_time": 1500,
+    "upload_time": 1,
     "total_time": 6576
   }
 }
 ```
 
-If you used s3 to upload the outputs, the `images` field will contain the S3 URLs of the uploaded images instead of base64-encoded images, and stats will include an `upload_time` field.
+If you requested image conversion, the images will be in the requested format (e.g. JPEG or WebP) instead of PNG.
 
 ## Model Manifest
 
