@@ -274,7 +274,9 @@ export async function installCustomNode(
       );
     }
 
-    await execFilePromise("uv", args, { cwd: customNodePath });
+    const cmd = config.uvInstalled ? "uv" : (args.shift() as string);
+
+    await execFilePromise(cmd, args, { cwd: customNodePath });
   }
 }
 
@@ -288,4 +290,29 @@ export async function aptInstallPackages(
   await execFilePromise("apt-get", ["update"]);
   log.info(`Installing apt packages: ${packages.join(", ")}`);
   await execFilePromise("apt-get", ["install", "-y", ...packages]);
+}
+
+export async function pipInstallPackages(
+  packages: string[],
+  log: FastifyBaseLogger
+): Promise<void> {
+  if (packages.length === 0) {
+    return;
+  }
+  const activeVenv = isPythonVenvActive();
+  const args = ["pip", "install", "--system", ...packages];
+  if (activeVenv) {
+    args.splice(2, 1); // Remove --system if venv is active
+    log.info(
+      `Installing pip packages in active Python virtual environment: ${packages.join(
+        ", "
+      )}`
+    );
+  } else {
+    log.info(`Installing pip packages: ${packages.join(", ")}`);
+  }
+
+  const cmd = config.uvInstalled ? "uv" : (args.shift() as string);
+
+  await execFilePromise(cmd, args);
 }

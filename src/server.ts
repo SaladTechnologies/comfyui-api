@@ -17,6 +17,7 @@ import {
   setDeletionCost,
   installCustomNode,
   aptInstallPackages,
+  pipInstallPackages,
 } from "./utils";
 import { convertImageBuffer } from "./image-tools";
 import remoteStorageManager from "./remote-storage-manager";
@@ -754,6 +755,12 @@ async function processManifest() {
         `Installing ${config.manifest.apt.length} apt packages specified in manifest`
       );
       await aptInstallPackages(config.manifest.apt, server.log);
+    }
+    if (config.manifest.pip) {
+      server.log.info(
+        `Installing ${config.manifest.pip.length} pip packages specified in manifest`
+      );
+      await pipInstallPackages(config.manifest.pip, server.log);
     }
     if (config.manifest.custom_nodes) {
       server.log.info(

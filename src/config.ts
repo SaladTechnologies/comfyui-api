@@ -224,6 +224,7 @@ const modelDownloadConfigSpec = z.object({
 
 const manifestSpec = z.object({
   apt: z.string().array().optional(),
+  pip: z.string().array().optional(),
   custom_nodes: z.string().array().optional(),
   models: z.object({
     before_start: modelDownloadConfigSpec.array().optional(),
@@ -270,6 +271,15 @@ const comfyCLIVersion = (() => {
     return version;
   } catch {
     return null;
+  }
+})();
+
+const uvInstalled = (() => {
+  try {
+    execSync("uv --version", { encoding: "utf-8" }).trim();
+    return true;
+  } catch {
+    return false;
   }
 })();
 
@@ -472,6 +482,11 @@ const config = {
    * Otherwise, it should be a comma-separated list of events.
    */
   systemWebhookEvents,
+
+  /**
+   * If true, uv is installed and available to use.
+   */
+  uvInstalled,
 
   /**
    * If a warmup prompt is available, this is the checkpoint from it.

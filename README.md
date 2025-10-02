@@ -140,6 +140,9 @@ The manifest file should have the following format:
 apt:
   - package1
   - package2
+pip:
+  - package3
+  - package4
 custom_nodes:
   - node-name-from-comfy-registry
   - https://github.com/username/repo
@@ -157,9 +160,10 @@ models:
 If a manifest is provided, the server will perform the following in order:
 
 1. Install any apt packages listed in the `apt` field.
-2. Install any custom nodes listed in the `custom_nodes` field, using the `comfy` cli tool if available and a plain string is provided, or by cloning the provided git repository if a URL is provided. If cloned, `requirements.txt` will be installed if it exists.
-3. Download any models listed in the `models.before_start` field, and save them to the specified `local_path`.
-4. Start background downloading any models listed in the `models.after_start` field, and save them to the specified `local_path`. These downloads will be started in the background and will not block the server from accepting requests.
+2. Install any pip packages listed in the `pip` field. Uses `uv`, otherwise falls back to `pip`.
+3. Install any custom nodes listed in the `custom_nodes` field, using the `comfy` cli tool if available and a plain string is provided, or by cloning the provided git repository if a URL is provided. If cloned, `requirements.txt` will be installed if it exists, using `uv` if available, otherwise falling back to `pip`.
+4. Download any models listed in the `models.before_start` field, and save them to the specified `local_path`.
+5. Start background downloading any models listed in the `models.after_start` field, and save them to the specified `local_path`. These downloads will be started in the background and will not block the server from accepting requests. This is useful for preloading less frequently used models.
 
 ## Downloading Behavior
 

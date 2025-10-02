@@ -6,6 +6,8 @@
 #   - https://github.com/Comfy-Org/ComfyUI-Manager
 #   - comfyui-kjnodes
 #   - https://github.com/visualbruno/ComfyUI-Hunyuan3d-2-1.git
+# pip:
+#   - numpy
 models:
   before_start:
     - url: https://civitai.com/api/download/models/128713?type=Model&format=SafeTensor&size=pruned&fp=fp16
