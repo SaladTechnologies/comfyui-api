@@ -198,16 +198,6 @@ export interface WorkflowTree {
   [key: string]: WorkflowTree | Workflow;
 }
 
-// export const WorkflowRequestSchema = z.object({
-//   id: z
-//     .string()
-//     .optional()
-//     .default(() => randomUUID()),
-//   input: z.record(z.any()),
-//   webhook: z.string().optional(),
-//   convert_output: OutputConversionOptionsSchema.optional(),
-// });
-
 export const WorkflowRequestSchema = PromptRequestSchema.extend({
   input: z.record(z.any()),
   prompt: z.never(),
