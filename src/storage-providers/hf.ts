@@ -12,7 +12,7 @@ export class HFStorageProvider implements StorageProvider {
   log: FastifyBaseLogger;
 
   constructor(log: FastifyBaseLogger) {
-    this.log = log.child({ module: "HFStorageProvider" });
+    this.log = log.child({ provider: "HFStorageProvider" });
   }
 
   testUrl(url: string): boolean {

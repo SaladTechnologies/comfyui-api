@@ -40,7 +40,7 @@ export class S3Upload implements Upload {
     this.url = url;
     this.fileOrPath = fileOrPath;
     this.contentType = contentType;
-    this.log = log;
+    this.log = log.child({ uploader: "S3Upload" });
     this.state = "in-progress";
   }
 
@@ -128,7 +128,7 @@ export class S3StorageProvider implements StorageProvider {
   log: FastifyBaseLogger;
   s3: S3Client;
   constructor(log: FastifyBaseLogger) {
-    this.log = log.child({ module: "S3StorageProvider" });
+    this.log = log.child({ provider: "S3StorageProvider" });
     if (!config.awsRegion) {
       throw new Error("AWS_REGION is not configured");
     }

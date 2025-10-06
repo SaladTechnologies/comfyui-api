@@ -1,8 +1,95 @@
 import path from "path";
 import { StorageProvider, Upload } from "../types";
 import { FastifyBaseLogger } from "fastify";
-import fs from "fs";
+import fs, { ReadStream } from "fs";
 import { Readable } from "stream";
+
+class HTTPUpload implements Upload {
+  url: string;
+  fileOrPath: string | Buffer;
+  contentType: string;
+  log: FastifyBaseLogger;
+  state: "in-progress" | "completed" | "failed" | "aborted" = "in-progress";
+  private abortController: AbortController | null = null;
+
+  constructor(
+    url: string,
+    fileOrPath: string | Buffer,
+    contentType: string,
+    log: FastifyBaseLogger
+  ) {
+    this.url = url;
+    this.fileOrPath = fileOrPath;
+    this.contentType = contentType;
+    this.log = log.child({ uploader: "HTTPUpload" });
+    this.state = "in-progress";
+  }
+
+  async upload(): Promise<void> {
+    if (this.state !== "in-progress") {
+      throw new Error(`Cannot upload: state is ${this.state}`);
+    }
+
+    this.abortController = new AbortController();
+
+    try {
+      this.log.info({ url: this.url }, "Starting upload");
+
+      let body: Buffer | ReadStream;
+
+      if (Buffer.isBuffer(this.fileOrPath)) {
+        body = this.fileOrPath;
+      } else {
+        body = fs.createReadStream(this.fileOrPath);
+      }
+
+      const response = await fetch(this.url, {
+        method: "PUT",
+        headers: {
+          "Content-Type": this.contentType,
+        },
+        body: body as any,
+        signal: this.abortController.signal,
+      });
+
+      if (!response.ok) {
+        throw new Error(
+          `Upload failed with status ${response.status}: ${response.statusText}`
+        );
+      }
+
+      this.state = "completed";
+      this.log.info({ url: this.url }, "Upload completed successfully");
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        this.state = "aborted";
+        this.log.info({ url: this.url }, "Upload aborted");
+      } else {
+        this.state = "failed";
+        this.log.error({ url: this.url, error }, "Upload failed");
+        throw error;
+      }
+    } finally {
+      this.abortController = null;
+    }
+  }
+
+  async abort(): Promise<void> {
+    if (this.state !== "in-progress") {
+      this.log.warn(
+        { state: this.state },
+        "Cannot abort: upload is not in progress"
+      );
+      return;
+    }
+
+    if (this.abortController) {
+      this.log.info({ url: this.url }, "Aborting upload");
+      this.abortController.abort();
+      this.state = "aborted";
+    }
+  }
+}
 
 function mimeToExtension(mimeType: string): string | null {
   const mimeMap: Record<string, string> = {
@@ -117,6 +204,14 @@ export class HTTPStorageProvider implements StorageProvider {
 
   testUrl(url: string): boolean {
     return url.startsWith("http://") || url.startsWith("https://");
+  }
+
+  uploadFile(
+    url: string,
+    fileOrPath: string | Buffer,
+    contentType: string
+  ): HTTPUpload {
+    return new HTTPUpload(url, fileOrPath, contentType, this.log);
   }
 
   async downloadFile(
