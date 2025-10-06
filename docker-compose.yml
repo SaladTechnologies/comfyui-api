@@ -11,6 +11,7 @@ services:
       - type: bind
         source: ./manifest.yml
         target: /app/manifest.yml
+      - ./cache:/root/.cache/comfyui-api
     command: ["/app/bin/comfyui-api"]
     ports:
       - "3000:3000"

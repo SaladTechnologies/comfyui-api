@@ -1,6 +1,6 @@
 import path from "path";
 import { FastifyBaseLogger } from "fastify";
-import { ComfyNode } from "./types";
+import { ComfyNode, ComfyPrompt } from "./types";
 import config from "./config";
 import storageManager from "./remote-storage-manager";
 import { isValidUrl } from "./utils";
@@ -17,43 +17,6 @@ const clipPath = path.join(config.comfyDir, "models", "text_encoders");
 const styleModelPath = path.join(config.comfyDir, "models", "style_models");
 const gligenPath = path.join(config.comfyDir, "models", "gligen");
 const upscaleModelPath = path.join(config.comfyDir, "models", "upscale_models");
-
-export const loadImageNodes = new Set<string>([
-  "LoadImage",
-  "LoadImageMask",
-  "LoadImageOutput",
-  "VHS_LoadImagePath",
-]);
-export const loadDirectoryOfImagesNodes = new Set<string>([
-  "VHS_LoadImages",
-  "VHS_LoadImagesPath",
-]);
-export const loadVideoNodes = new Set<string>([
-  "LoadVideo",
-  "VHS_LoadVideo",
-  "VHS_LoadVideoPath",
-  "VHS_LoadVideoFFmpegPath",
-  "VHS_LoadVideoFFmpeg",
-]);
-
-export const modelLoadingNodeTypes = new Set([
-  "CheckpointLoader",
-  "CheckpointLoaderSimple",
-  "DiffusersLoader",
-  "unCLIPCheckpointLoader",
-  "LoraLoader",
-  "LoraLoaderModelOnly",
-  "VAELoader",
-  "ControlNetLoader",
-  "DiffControlNetLoader",
-  "UNETLoader",
-  "CLIPLoader",
-  "DualCLIPLoader",
-  "CLIPVisionLoader",
-  "StyleModelLoader",
-  "GLIGENLoader",
-  "UpscaleModelLoader",
-]);
 
 function updateModelsInConfig(modelType: string, modelName: string) {
   if (config.models[modelType].all.includes(modelName)) {
@@ -413,4 +376,141 @@ export async function processLoadVideoNode(
     node.inputs.file = await processImageOrVideo(file, log);
   }
   return node;
+}
+
+const loadDirectoryOfImagesNodes = new Set<string>([
+  "VHS_LoadImages",
+  "VHS_LoadImagesPath",
+]);
+const loadVideoNodes = new Set<string>([
+  "LoadVideo",
+  "VHS_LoadVideo",
+  "VHS_LoadVideoPath",
+  "VHS_LoadVideoFFmpegPath",
+  "VHS_LoadVideoFFmpeg",
+]);
+
+const modelLoadingNodeTypes = new Set([
+  "CheckpointLoader",
+  "CheckpointLoaderSimple",
+  "DiffusersLoader",
+  "unCLIPCheckpointLoader",
+  "LoraLoader",
+  "LoraLoaderModelOnly",
+  "VAELoader",
+  "ControlNetLoader",
+  "DiffControlNetLoader",
+  "UNETLoader",
+  "CLIPLoader",
+  "DualCLIPLoader",
+  "CLIPVisionLoader",
+  "StyleModelLoader",
+  "GLIGENLoader",
+  "UpscaleModelLoader",
+]);
+
+export type NodeProcessError = Error & {
+  code?: number;
+  location?: string;
+  message?: string;
+};
+
+export async function preprocessNodes(
+  prompt: ComfyPrompt,
+  id: string,
+  log: FastifyBaseLogger
+): Promise<{ prompt: ComfyPrompt; hasSaveImage: boolean }> {
+  let hasSaveImage = false;
+  for (const nodeId in prompt) {
+    const node = prompt[nodeId];
+    if (
+      node.inputs.filename_prefix &&
+      typeof node.inputs.filename_prefix === "string"
+    ) {
+      /**
+       * If the node is for saving files, we want to set the filename_prefix
+       * to the id of the prompt. This ensures no collisions between prompts
+       * from different users.
+       */
+      node.inputs.filename_prefix = config.prependFilenames
+        ? id + "_" + node.inputs.filename_prefix
+        : id;
+      if (
+        typeof node.inputs.save_output !== "undefined" &&
+        !node.inputs.save_output
+      ) {
+        continue;
+      }
+      hasSaveImage = true;
+    } else if (node?.inputs?.image && typeof node.inputs.image === "string") {
+      /**
+       * If the node is for loading an image, the user will have provided
+       * the image as base64 encoded data, or as a url. we need to download
+       * the image if it's a url, and save it to a local file.
+       */
+      try {
+        Object.assign(node, await processLoadImageNode(node, log));
+      } catch (e: any) {
+        const err = new Error(
+          `Failed to download image for node ${nodeId}: ${e.message}`
+        ) as NodeProcessError;
+        err.code = 400;
+        err.location = `prompt.${nodeId}.inputs.image`;
+        throw err;
+      }
+    } else if (
+      loadDirectoryOfImagesNodes.has(node.class_type) &&
+      Array.isArray(node.inputs.directory) &&
+      node.inputs.directory.every((x: any) => typeof x === "string")
+    ) {
+      /**
+       * If the node is for loading a directory of images, the user will have
+       * provided the local directory as a string or an array of strings. If it's an
+       * array, we need to download each image to a local file, and update the input
+       * to be the local directory.
+       */
+      try {
+        Object.assign(
+          node,
+          await processLoadDirectoryOfImagesNode(node, id, log)
+        );
+      } catch (e: any) {
+        const err = new Error(
+          `Failed to download images for node ${nodeId}: ${e.message}`
+        ) as NodeProcessError;
+        err.code = 400;
+        err.location = `prompt.${nodeId}.inputs.directory`;
+        throw err;
+      }
+    } else if (loadVideoNodes.has(node.class_type)) {
+      /**
+       * If the node is for loading a video, the user will have provided
+       * the video as base64 encoded data, or as a url. we need to download
+       * the video if it's a url, and save it to a local file.
+       */
+      try {
+        Object.assign(node, await processLoadVideoNode(node, log));
+      } catch (e: any) {
+        const err = new Error(
+          `Failed to download video for node ${nodeId}: ${e.message}`
+        ) as NodeProcessError;
+        err.code = 400;
+        err.location = `prompt.${nodeId}.inputs.video`;
+        throw err;
+      }
+    } else if (modelLoadingNodeTypes.has(node.class_type)) {
+      try {
+        Object.assign(node, await processModelLoadingNode(node, log));
+      } catch (e: any) {
+        const err = new Error(
+          `Failed to process model for node ${nodeId}: ${e.message}`
+        ) as NodeProcessError;
+        err.code = 400;
+        err.location = `prompt.${nodeId}.inputs`;
+        throw err;
+      }
+    }
+  }
+
+  return { prompt, hasSaveImage };
 }

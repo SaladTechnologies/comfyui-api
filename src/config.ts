@@ -9,6 +9,8 @@ import yaml from "yaml";
 
 const {
   ALWAYS_RESTART_COMFYUI = "false",
+  AWS_DEFAULT_REGION,
+  AWS_REGION,
   BASE = "",
   CACHE_DIR = `${process.env.HOME}/.cache/comfyui-api`,
   CMD = "init.sh",
@@ -18,25 +20,24 @@ const {
   HOST = "::",
   INPUT_DIR,
   LOG_LEVEL = "info",
+  MANIFEST_JSON,
+  MANIFEST,
   MARKDOWN_SCHEMA_DESCRIPTIONS = "true",
   MAX_BODY_SIZE_MB = "100",
   MAX_QUEUE_DEPTH = "0",
   MODEL_DIR,
   OUTPUT_DIR,
   PORT = "3000",
+  PREPEND_FILENAMES = "true",
   PROMPT_WEBHOOK_RETRIES = "3",
-  SALAD_MACHINE_ID,
   SALAD_CONTAINER_GROUP_ID,
+  SALAD_MACHINE_ID,
   STARTUP_CHECK_INTERVAL_S = "1",
   STARTUP_CHECK_MAX_TRIES = "20",
-  SYSTEM_WEBHOOK_URL,
   SYSTEM_WEBHOOK_EVENTS,
+  SYSTEM_WEBHOOK_URL,
   WARMUP_PROMPT_FILE,
   WORKFLOW_DIR = "/workflows",
-  AWS_REGION,
-  AWS_DEFAULT_REGION,
-  MANIFEST,
-  MANIFEST_JSON,
 } = process.env;
 
 fs.mkdirSync(WORKFLOW_DIR, { recursive: true });
@@ -67,6 +68,7 @@ const maxQueueDepth = parseInt(MAX_QUEUE_DEPTH, 10);
 assert(maxQueueDepth >= 0, "MAX_QUEUE_DEPTH must be a non-negative integer");
 
 const alwaysRestartComfyUI = ALWAYS_RESTART_COMFYUI.toLowerCase() === "true";
+const prependFilenames = PREPEND_FILENAMES.toLowerCase() === "true";
 const systemWebhook = SYSTEM_WEBHOOK_URL ?? "";
 
 if (systemWebhook) {
@@ -408,6 +410,13 @@ const config = {
    * default: {comfyDir}/output
    */
   outputDir: OUTPUT_DIR ?? path.join(comfyDir, "output"),
+
+  /**
+   * If true, unique IDs will be prepended to existing filename prefixes, as opposed to replacing them.
+   * Specified by PREPEND_FILENAMES env var.
+   * default: true
+   */
+  prependFilenames,
 
   /**
    * The number of times to retry a post-prompt webhook if it fails.

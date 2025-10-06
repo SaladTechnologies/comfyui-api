@@ -21,16 +21,7 @@ import {
 } from "./utils";
 import { convertImageBuffer } from "./image-tools";
 import remoteStorageManager from "./remote-storage-manager";
-import {
-  processModelLoadingNode,
-  modelLoadingNodeTypes,
-  loadImageNodes,
-  loadDirectoryOfImagesNodes,
-  loadVideoNodes,
-  processLoadImageNode,
-  processLoadDirectoryOfImagesNode,
-  processLoadVideoNode,
-} from "./comfy-node-preprocessors";
+import { NodeProcessError, preprocessNodes } from "./comfy-node-preprocessors";
 import {
   warmupComfyUI,
   waitForComfyUIToStart,
@@ -226,91 +217,23 @@ server.after(() => {
        */
       let hasSaveImage = false;
 
+      const log = app.log.child({ id });
+
       const start = Date.now();
-      for (const nodeId in prompt) {
-        const node = prompt[nodeId];
-        if (
-          node.inputs.filename_prefix &&
-          typeof node.inputs.filename_prefix === "string"
-        ) {
-          /**
-           * If the node is for saving files, we want to set the filename_prefix
-           * to the id of the prompt. This ensures no collisions between prompts
-           * from different users.
-           */
-          node.inputs.filename_prefix = id;
-          if (
-            typeof node.inputs.save_output !== "undefined" &&
-            !node.inputs.save_output
-          ) {
-            continue;
-          }
-          hasSaveImage = true;
-        } else if (
-          loadImageNodes.has(node.class_type) &&
-          typeof node.inputs.image === "string"
-        ) {
-          /**
-           * If the node is for loading an image, the user will have provided
-           * the image as base64 encoded data, or as a url. we need to download
-           * the image if it's a url, and save it to a local file.
-           */
-          try {
-            Object.assign(node, await processLoadImageNode(node, app.log));
-          } catch (e: any) {
-            return reply.code(400).send({
-              error: e.message,
-              location: `prompt.${nodeId}.inputs.image`,
-            });
-          }
-        } else if (
-          loadDirectoryOfImagesNodes.has(node.class_type) &&
-          Array.isArray(node.inputs.directory) &&
-          node.inputs.directory.every((x: any) => typeof x === "string")
-        ) {
-          /**
-           * If the node is for loading a directory of images, the user will have
-           * provided the local directory as a string or an array of strings. If it's an
-           * array, we need to download each image to a local file, and update the input
-           * to be the local directory.
-           */
-          try {
-            Object.assign(
-              node,
-              await processLoadDirectoryOfImagesNode(node, id, app.log)
-            );
-          } catch (e: any) {
-            return reply.code(400).send({
-              error: e.message,
-              location: `prompt.${nodeId}.inputs.directory`,
-              message: "Failed to download images to local directory",
-            });
-          }
-        } else if (loadVideoNodes.has(node.class_type)) {
-          /**
-           * If the node is for loading a video, the user will have provided
-           * the video as base64 encoded data, or as a url. we need to download
-           * the video if it's a url, and save it to a local file.
-           */
-          try {
-            Object.assign(node, await processLoadVideoNode(node, app.log));
-          } catch (e: any) {
-            return reply.code(400).send({
-              error: e.message,
-              location: `prompt.${nodeId}.inputs.video`,
-            });
-          }
-        } else if (modelLoadingNodeTypes.has(node.class_type)) {
-          try {
-            Object.assign(node, await processModelLoadingNode(node, app.log));
-          } catch (e: any) {
-            return reply.code(400).send({
-              error: e.message,
-              location: `prompt.${nodeId}`,
-            });
-          }
-        }
+      try {
+        const { prompt: preprocessedPrompt, hasSaveImage: saveImageFound } =
+          await preprocessNodes(prompt, id, log);
+        prompt = preprocessedPrompt;
+        hasSaveImage = saveImageFound;
+      } catch (e: NodeProcessError | any) {
+        log.error(`Failed to preprocess nodes: ${e.message}`);
+        const code = e.code && [400, 422].includes(e.code) ? e.code : 400;
+        return reply.code(code).send({
+          error: e.message || "Failed to preprocess nodes",
+          location: e.location || "prompt",
+        });
       }
+
       const preprocessTime = Date.now();
 
       /**
@@ -328,7 +251,7 @@ server.after(() => {
         /**
          * Send the prompt to ComfyUI, and return a 202 response to the user.
          */
-        runPromptAndGetOutputs(id, prompt, app.log)
+        runPromptAndGetOutputs(id, prompt, log)
           .then(
             /**
              * This function does not block returning the 202 response to the user.
@@ -336,7 +259,7 @@ server.after(() => {
             async ({ outputs, stats }) => {
               stats.preprocess_time = preprocessTime - start;
               stats.total_time = Date.now() - start;
-              app.log.debug({ id, ...stats });
+              log.debug({ id, ...stats });
               for (const originalFilename in outputs) {
                 let filename = originalFilename;
                 let fileBuffer = outputs[filename];
@@ -355,14 +278,12 @@ server.after(() => {
                       `.${convert_output.format}`
                     );
                   } catch (e: any) {
-                    app.log.warn(`Failed to convert image: ${e.message}`);
+                    log.warn(`Failed to convert image: ${e.message}`);
                   }
                 }
                 const base64File = fileBuffer.toString("base64");
 
-                app.log.info(
-                  `Sending image ${filename} to webhook: ${webhook}`
-                );
+                log.info(`Sending image ${filename} to webhook: ${webhook}`);
                 fetchWithRetries(
                   webhook,
                   {
@@ -385,22 +306,20 @@ server.after(() => {
                     }),
                   },
                   config.promptWebhookRetries,
-                  app.log
+                  log
                 )
                   .catch((e: any) => {
-                    app.log.error(
-                      `Failed to send image to webhook: ${e.message}`
-                    );
+                    log.error(`Failed to send image to webhook: ${e.message}`);
                   })
                   .then(async (resp) => {
                     if (!resp) {
-                      app.log.error("No response from webhook");
+                      log.error("No response from webhook");
                     } else if (!resp.ok) {
-                      app.log.error(
+                      log.error(
                         `Failed to send image ${filename}: ${await resp.text()}`
                       );
                     } else {
-                      app.log.info(`Sent image ${filename}`);
+                      log.info(`Sent image ${filename}`);
                     }
                   });
 
@@ -415,7 +334,7 @@ server.after(() => {
             /**
              * Send a webhook reporting that the generation failed.
              */
-            app.log.error(`Failed to generate images: ${e.message}`);
+            log.error(`Failed to generate images: ${e.message}`);
             try {
               const resp = await fetchWithRetries(
                 webhook,
@@ -437,23 +356,23 @@ server.after(() => {
                   }),
                 },
                 config.promptWebhookRetries,
-                app.log
+                log
               );
 
               if (!resp.ok) {
-                app.log.error(
+                log.error(
                   `Failed to send failure message to webhook: ${await resp.text()}`
                 );
               }
             } catch (e: any) {
-              app.log.error(
+              log.error(
                 `Failed to send failure message to webhook: ${e.message}`
               );
             }
           });
         return reply.code(202).send({ status: "ok", id, webhook, prompt });
       } else if (s3 && s3.async) {
-        runPromptAndGetOutputs(id, prompt, app.log)
+        runPromptAndGetOutputs(id, prompt, log)
           .then(async ({ outputs, stats }) => {
             /**
              * If the user has provided an S3 configuration, we upload the images to S3.
@@ -479,7 +398,7 @@ server.after(() => {
                     `.${convert_output.format}`
                   );
                 } catch (e: any) {
-                  app.log.warn(`Failed to convert image: ${e.message}`);
+                  log.warn(`Failed to convert image: ${e.message}`);
                 }
               }
 
@@ -490,10 +409,10 @@ server.after(() => {
                   s3Url,
                   fileBuffer,
                   contentType,
-                  app.log
+                  log
                 )
               );
-              app.log.info(
+              log.info(
                 `Uploading image ${filename} to s3://${s3.bucket}/${key}`
               );
 
@@ -504,10 +423,10 @@ server.after(() => {
             await Promise.all(uploadPromises);
             stats.upload_time = Date.now() - comfyTime;
             stats.total_time = Date.now() - start;
-            app.log.debug({ id, ...stats });
+            log.debug({ id, ...stats });
           })
           .catch(async (e: any) => {
-            app.log.error(`Failed to generate images: ${e.message}`);
+            log.error(`Failed to generate images: ${e.message}`);
           });
         return reply.code(202).send({ status: "ok", id, prompt, s3 });
       } else {
@@ -525,7 +444,7 @@ server.after(() => {
         const { outputs: allOutputs, stats } = await runPromptAndGetOutputs(
           id,
           prompt,
-          app.log
+          log
         );
         const comfyTime = Date.now();
         for (const originalFilename in allOutputs) {
@@ -543,7 +462,7 @@ server.after(() => {
                 `.${convert_output.format}`
               );
             } catch (e: any) {
-              app.log.warn(`Failed to convert image: ${e.message}`);
+              log.warn(`Failed to convert image: ${e.message}`);
             }
           }
 
@@ -559,10 +478,10 @@ server.after(() => {
                 s3Url,
                 fileBuffer,
                 contentType,
-                app.log
+                log
               )
             );
-            app.log.info(`Uploading image ${filename} to ${s3Url}`);
+            log.info(`Uploading image ${filename} to ${s3Url}`);
             images.push(`s3://${s3.bucket}/${key}`);
           }
 
@@ -574,7 +493,7 @@ server.after(() => {
         stats.upload_time = Date.now() - comfyTime;
         stats.total_time = Date.now() - start;
 
-        app.log.debug({ id, ...stats });
+        log.debug({ id, ...stats });
 
         return reply.send({ id, prompt, images, filenames, stats });
       }
