@@ -1,7 +1,7 @@
 import path from "path";
 import { StorageProvider, Upload } from "../types";
 import { FastifyBaseLogger } from "fastify";
-import fs, { ReadStream } from "fs";
+import fs from "fs";
 import { Readable } from "stream";
 
 class HTTPUpload implements Upload {
@@ -35,7 +35,7 @@ class HTTPUpload implements Upload {
     try {
       this.log.info({ url: this.url }, "Starting upload");
 
-      let body: Buffer | ReadStream;
+      let body: Buffer | fs.ReadStream;
 
       if (Buffer.isBuffer(this.fileOrPath)) {
         body = this.fileOrPath;
@@ -43,11 +43,27 @@ class HTTPUpload implements Upload {
         body = fs.createReadStream(this.fileOrPath);
       }
 
-      const response = await fetch(this.url, {
+      // Parse URL to extract credentials if present
+      const parsedUrl = new URL(this.url);
+      const headers: HeadersInit = {
+        "Content-Type": this.contentType,
+      };
+
+      // Add basic auth header if credentials are in the URL
+      if (parsedUrl.username || parsedUrl.password) {
+        const credentials = `${parsedUrl.username}:${parsedUrl.password}`;
+        headers["Authorization"] = `Basic ${Buffer.from(credentials).toString(
+          "base64"
+        )}`;
+
+        // Remove credentials from URL for the actual request
+        parsedUrl.username = "";
+        parsedUrl.password = "";
+      }
+
+      const response = await fetch(parsedUrl.toString(), {
         method: "PUT",
-        headers: {
-          "Content-Type": this.contentType,
-        },
+        headers,
         body: body as any,
         signal: this.abortController.signal,
       });
