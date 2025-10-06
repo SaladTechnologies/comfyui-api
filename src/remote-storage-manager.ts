@@ -117,7 +117,7 @@ class RemoteStorageManager {
     const tempFilePath = path.join(this.cacheDir, tempFilename);
 
     for (const provider of this.storageProviders) {
-      if (provider.testUrl(url)) {
+      if (provider.downloadFile && provider.testUrl(url)) {
         this.log.info(
           `Downloading ${url} using provider ${provider.constructor.name}`
         );
@@ -193,7 +193,7 @@ class RemoteStorageManager {
       delete this.activeUploads[url];
     }
     for (const provider of this.storageProviders) {
-      if (provider.testUrl(url)) {
+      if (provider.uploadFile && provider.testUrl(url)) {
         this.log.info(
           `Uploading to ${url} using provider ${provider.constructor.name}`
         );

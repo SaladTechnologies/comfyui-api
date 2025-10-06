@@ -456,7 +456,7 @@ export interface StorageProvider {
    * @param fileOrPath File path or buffer to upload
    * @param contentType MIME type of the file
    */
-  uploadFile(
+  uploadFile?(
     url: string,
     fileOrPath: string | Buffer,
     contentType: string
@@ -468,7 +468,7 @@ export interface StorageProvider {
    * @param outputDir Directory to save the downloaded file
    * @param filenameOverride Optional filename to use instead of auto-generated one
    */
-  downloadFile(
+  downloadFile?(
     url: string,
     outputDir: string,
     filenameOverride?: string

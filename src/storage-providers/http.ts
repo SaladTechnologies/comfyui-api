@@ -4,39 +4,6 @@ import { FastifyBaseLogger } from "fastify";
 import fs from "fs";
 import { Readable } from "stream";
 
-export class HTTPUpload implements Upload {
-  url: string;
-  fileOrPath: string | Buffer;
-  contentType: string;
-  log: FastifyBaseLogger;
-  state: "in-progress" | "completed" | "failed" | "aborted" = "in-progress";
-
-  constructor(
-    url: string,
-    fileOrPath: string | Buffer,
-    contentType: string,
-    log: FastifyBaseLogger
-  ) {
-    this.url = url;
-    this.fileOrPath = fileOrPath;
-    this.contentType = contentType;
-    this.log = log.child({ module: "HTTPUpload" });
-    this.state = "in-progress";
-    throw new Error("HTTP upload not implemented yet");
-  }
-
-  async upload(): Promise<void> {}
-
-  async abort(): Promise<void> {
-    if (this.state !== "in-progress") {
-      this.log.warn(`Cannot abort upload in state ${this.state}`);
-      return;
-    }
-    this.state = "aborted";
-    this.log.info(`Upload to ${this.url} aborted`);
-  }
-}
-
 function mimeToExtension(mimeType: string): string | null {
   const mimeMap: Record<string, string> = {
     // Documents
@@ -150,14 +117,6 @@ export class HTTPStorageProvider implements StorageProvider {
 
   testUrl(url: string): boolean {
     return url.startsWith("http://") || url.startsWith("https://");
-  }
-
-  uploadFile(
-    url: string,
-    fileOrPath: string | Buffer,
-    contentType: string
-  ): Upload {
-    return new HTTPUpload(url, fileOrPath, contentType, this.log);
   }
 
   async downloadFile(

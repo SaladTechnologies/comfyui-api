@@ -8,39 +8,6 @@ import { promisify } from "util";
 
 const execFilePromise = promisify(execFile);
 
-export class HFUpload implements Upload {
-  url: string;
-  fileOrPath: string | Buffer;
-  contentType: string;
-  log: FastifyBaseLogger;
-  state: "in-progress" | "completed" | "failed" | "aborted" = "in-progress";
-
-  constructor(
-    url: string,
-    fileOrPath: string | Buffer,
-    contentType: string,
-    log: FastifyBaseLogger
-  ) {
-    this.url = url;
-    this.fileOrPath = fileOrPath;
-    this.contentType = contentType;
-    this.log = log.child({ module: "HFUpload" });
-    this.state = "in-progress";
-    throw new Error("HF upload not implemented yet");
-  }
-
-  async upload(): Promise<void> {}
-
-  async abort(): Promise<void> {
-    if (this.state !== "in-progress") {
-      this.log.warn(`Cannot abort upload in state ${this.state}`);
-      return;
-    }
-    this.state = "aborted";
-    this.log.info(`Upload to ${this.url} aborted`);
-  }
-}
-
 export class HFStorageProvider implements StorageProvider {
   log: FastifyBaseLogger;
 
@@ -50,14 +17,6 @@ export class HFStorageProvider implements StorageProvider {
 
   testUrl(url: string): boolean {
     return url.startsWith("https://huggingface.co/") && !!config.hfCLIVersion;
-  }
-
-  uploadFile(
-    url: string,
-    fileOrPath: string | Buffer,
-    contentType: string
-  ): HFUpload {
-    return new HFUpload(url, fileOrPath, contentType, this.log);
   }
 
   async downloadFile(
