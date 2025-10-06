@@ -3,6 +3,7 @@ import { StorageProvider, Upload } from "../types";
 import { FastifyBaseLogger } from "fastify";
 import fs from "fs";
 import { Readable } from "stream";
+import config from "../config";
 
 class HTTPUpload implements Upload {
   url: string;
@@ -47,19 +48,8 @@ class HTTPUpload implements Upload {
       const parsedUrl = new URL(this.url);
       const headers: HeadersInit = {
         "Content-Type": this.contentType,
+        ...getAuthHeadersFromUrl(this.url),
       };
-
-      // Add basic auth header if credentials are in the URL
-      if (parsedUrl.username || parsedUrl.password) {
-        const credentials = `${parsedUrl.username}:${parsedUrl.password}`;
-        headers["Authorization"] = `Basic ${Buffer.from(credentials).toString(
-          "base64"
-        )}`;
-
-        // Remove credentials from URL for the actual request
-        parsedUrl.username = "";
-        parsedUrl.password = "";
-      }
 
       const response = await fetch(parsedUrl.toString(), {
         method: "PUT",
@@ -211,6 +201,25 @@ function getIntendedFileExtensionFromResponse(
   return null;
 }
 
+function getAuthHeadersFromUrl(url: string): HeadersInit {
+  const parsedUrl = new URL(url);
+  const headers: HeadersInit = {};
+  if (parsedUrl.username || parsedUrl.password) {
+    const credentials = `${parsedUrl.username}:${parsedUrl.password}`;
+    headers["Authorization"] = `Basic ${Buffer.from(credentials).toString(
+      "base64"
+    )}`;
+
+    // Remove credentials from URL for the actual request
+    parsedUrl.username = "";
+    parsedUrl.password = "";
+  } else if (Object.keys(config.httpAuthHeader).length > 0) {
+    // Add any configured auth headers from config
+    Object.assign(headers, config.httpAuthHeader);
+  }
+  return headers;
+}
+
 export class HTTPStorageProvider implements StorageProvider {
   log: FastifyBaseLogger;
 
@@ -237,7 +246,8 @@ export class HTTPStorageProvider implements StorageProvider {
   ): Promise<string> {
     try {
       // Fetch the image
-      const response = await fetch(url);
+      const headers = getAuthHeadersFromUrl(url);
+      const response = await fetch(url, { headers });
 
       if (!response.ok) {
         throw new Error(`Error downloading file: ${response.statusText}`);

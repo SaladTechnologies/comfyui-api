@@ -207,7 +207,8 @@ server.after(() => {
       },
     },
     async (request, reply) => {
-      let { prompt, id, webhook, convert_output, s3 } = request.body;
+      let { prompt, id, webhook, convert_output, s3, httpUpload } =
+        request.body;
       let contentType = "image/png";
       if (convert_output) {
         contentType = `image/${convert_output.format}`;
@@ -237,6 +238,7 @@ server.after(() => {
       }
 
       const preprocessTime = Date.now();
+      log.debug(`Preprocessed prompt in ${preprocessTime}ms`);
 
       /**
        * If the prompt has no outputs, there's no point in running it.
@@ -249,43 +251,65 @@ server.after(() => {
         });
       }
 
+      let runPromptPromise = runPromptAndGetOutputs(id, prompt, log).then(
+        async ({ outputs, stats }) => {
+          stats.preprocess_time = preprocessTime - start;
+          stats.comfy_round_trip_time = Date.now() - preprocessTime;
+          const filenames: string[] = [];
+          const buffers: Buffer[] = [];
+          for (const originalFilename in outputs) {
+            let filename = originalFilename;
+            let fileBuffer = outputs[filename];
+            if (convert_output) {
+              try {
+                fileBuffer = await convertImageBuffer(
+                  fileBuffer,
+                  convert_output
+                );
+
+                /**
+                 * If the user has provided an output format, we need to update the filename
+                 */
+                filename = originalFilename.replace(
+                  /\.[^/.]+$/,
+                  `.${convert_output.format}`
+                );
+              } catch (e: any) {
+                log.warn(`Failed to convert image: ${e.message}`);
+              }
+            }
+            filenames.push(filename);
+            buffers.push(fileBuffer);
+          }
+          stats.postprocess_time =
+            Date.now() - stats.comfy_round_trip_time - preprocessTime;
+          log.debug({ id, ...stats });
+          return {
+            buffers,
+            filenames,
+            originalFilenames: Object.keys(outputs),
+            stats,
+          };
+        }
+      );
+
+      let uploadPromise: Promise<{
+        images: string[];
+        filenames: string[];
+        stats: any;
+      }> | null = null;
+
       if (webhook) {
-        /**
-         * Send the prompt to ComfyUI, and return a 202 response to the user.
-         */
-        runPromptAndGetOutputs(id, prompt, log)
-          .then(
-            /**
-             * This function does not block returning the 202 response to the user.
-             */
-            async ({ outputs, stats }) => {
-              stats.preprocess_time = preprocessTime - start;
-              stats.total_time = Date.now() - start;
-              log.debug({ id, ...stats });
-              for (const originalFilename in outputs) {
-                let filename = originalFilename;
-                let fileBuffer = outputs[filename];
-                if (convert_output) {
-                  try {
-                    fileBuffer = await convertImageBuffer(
-                      fileBuffer,
-                      convert_output
-                    );
-
-                    /**
-                     * If the user has provided an output format, we need to update the filename
-                     */
-                    filename = originalFilename.replace(
-                      /\.[^/.]+$/,
-                      `.${convert_output.format}`
-                    );
-                  } catch (e: any) {
-                    log.warn(`Failed to convert image: ${e.message}`);
-                  }
-                }
-                const base64File = fileBuffer.toString("base64");
-
-                log.info(`Sending image ${filename} to webhook: ${webhook}`);
+        uploadPromise = runPromptPromise.then(
+          async ({ buffers, filenames, originalFilenames, stats }) => {
+            const webhookPromises: Promise<any>[] = [];
+            const images: string[] = [];
+            for (let i = 0; i < buffers.length; i++) {
+              const base64File = buffers[i].toString("base64");
+              images.push(base64File);
+              const filename = filenames[i];
+              log.info(`Sending image ${filename} to webhook: ${webhook}`);
+              webhookPromises.push(
                 fetchWithRetries(
                   webhook,
                   {
@@ -323,172 +347,121 @@ server.after(() => {
                     } else {
                       log.info(`Sent image ${filename}`);
                     }
-                  });
+                  })
+              );
 
-                // Remove the file after sending
+              // Remove the file after sending
+              webhookPromises.push(
                 fsPromises.unlink(
-                  path.join(config.outputDir, originalFilename)
-                );
-              }
-            }
-          )
-          .catch(async (e: any) => {
-            /**
-             * Send a webhook reporting that the generation failed.
-             */
-            log.error(`Failed to generate images: ${e.message}`);
-            try {
-              const resp = await fetchWithRetries(
-                webhook,
-                {
-                  method: "POST",
-                  headers: {
-                    "Content-Type": "application/json",
-                  },
-                  body: JSON.stringify({
-                    event: "prompt.failed",
-                    id,
-                    prompt,
-                    error: e.message,
-                  }),
-                  dispatcher: new Agent({
-                    headersTimeout: 0,
-                    bodyTimeout: 0,
-                    connectTimeout: 0,
-                  }),
-                },
-                config.promptWebhookRetries,
-                log
-              );
-
-              if (!resp.ok) {
-                log.error(
-                  `Failed to send failure message to webhook: ${await resp.text()}`
-                );
-              }
-            } catch (e: any) {
-              log.error(
-                `Failed to send failure message to webhook: ${e.message}`
+                  path.join(config.outputDir, originalFilenames[i])
+                )
               );
             }
-          });
-        return reply.code(202).send({ status: "ok", id, webhook, prompt });
-      } else if (s3 && s3.async) {
-        runPromptAndGetOutputs(id, prompt, log)
-          .then(async ({ outputs, stats }) => {
-            /**
-             * If the user has provided an S3 configuration, we upload the images to S3.
-             */
-            stats.preprocess_time = preprocessTime - start;
-            const comfyTime = Date.now();
-            const uploadPromises: Promise<void>[] = [];
-            for (const originalFilename in outputs) {
-              let filename = originalFilename;
-              let fileBuffer = outputs[filename];
-              if (convert_output) {
-                try {
-                  fileBuffer = await convertImageBuffer(
-                    fileBuffer,
-                    convert_output
-                  );
-
-                  /**
-                   * If the user has provided an output format, we need to update the filename
-                   */
-                  filename = originalFilename.replace(
-                    /\.[^/.]+$/,
-                    `.${convert_output.format}`
-                  );
-                } catch (e: any) {
-                  log.warn(`Failed to convert image: ${e.message}`);
-                }
-              }
-
-              const key = `${s3.prefix}${filename}`;
-              const s3Url = `s3://${s3.bucket}/${key}`;
-              uploadPromises.push(
-                remoteStorageManager.uploadFile(s3Url, fileBuffer, contentType)
-              );
-              log.info(
-                `Uploading image ${filename} to s3://${s3.bucket}/${key}`
-              );
-
-              // Remove the file after uploading
-              fsPromises.unlink(path.join(config.outputDir, originalFilename));
-            }
-
-            await Promise.all(uploadPromises);
-            stats.upload_time = Date.now() - comfyTime;
-            stats.total_time = Date.now() - start;
-            log.debug({ id, ...stats });
-          })
-          .catch(async (e: any) => {
-            log.error(`Failed to generate images: ${e.message}`);
-          });
-        return reply.code(202).send({ status: "ok", id, prompt, s3 });
-      } else {
-        /**
-         * If the user has not provided a webhook or s3.async is false, we wait for the images to
-         * be generated and then send them back in the response.
-         */
-        const images: string[] = [];
-        const filenames: string[] = [];
-        const uploadPromises: Promise<void>[] = [];
-
-        /**
-         * Send the prompt to ComfyUI, and wait for the images to be generated.
-         */
-        const { outputs: allOutputs, stats } = await runPromptAndGetOutputs(
-          id,
-          prompt,
-          log
+            await Promise.all(webhookPromises);
+            return { images, filenames, stats };
+          }
         );
-        const comfyTime = Date.now();
-        for (const originalFilename in allOutputs) {
-          let fileBuffer = allOutputs[originalFilename];
-          let filename = originalFilename;
+      } else if (s3) {
+        uploadPromise = runPromptPromise.then(
+          async ({ buffers, filenames, originalFilenames, stats }) => {
+            const uploadPromises: Promise<void>[] = [];
+            const images: string[] = [];
+            for (let i = 0; i < buffers.length; i++) {
+              const fileBuffer = buffers[i];
+              const filename = filenames[i];
+              if (s3) {
+                const key = `${s3.prefix}${filename}`;
+                const s3Url = `s3://${s3.bucket}/${key}`;
+                images.push(s3Url);
+                uploadPromises.push(
+                  remoteStorageManager.uploadFile(
+                    s3Url,
+                    fileBuffer,
+                    contentType
+                  )
+                );
+              }
 
-          if (convert_output) {
-            try {
-              fileBuffer = await convertImageBuffer(fileBuffer, convert_output);
-              /**
-               * If the user has provided an output format, we need to update the filename
-               */
-              filename = originalFilename.replace(
-                /\.[^/.]+$/,
-                `.${convert_output.format}`
+              // Remove the file after reading
+              uploadPromises.push(
+                fsPromises.unlink(
+                  path.join(config.outputDir, originalFilenames[i])
+                )
               );
-            } catch (e: any) {
-              log.warn(`Failed to convert image: ${e.message}`);
             }
+            await Promise.all(uploadPromises);
+            return { images, filenames, stats };
           }
+        );
+      } else if (httpUpload) {
+        uploadPromise = runPromptPromise.then(
+          async ({ buffers, filenames, originalFilenames, stats }) => {
+            const uploadPromises: Promise<void>[] = [];
+            const images: string[] = [];
+            for (let i = 0; i < buffers.length; i++) {
+              const fileBuffer = buffers[i];
+              const filename = filenames[i];
+              const uploadUrl = `${httpUpload.url_prefix}${filename}`;
+              images.push(uploadUrl);
+              uploadPromises.push(
+                remoteStorageManager.uploadFile(
+                  uploadUrl,
+                  fileBuffer,
+                  contentType
+                )
+              );
 
-          filenames.push(filename);
-          if (!s3) {
-            const base64File = fileBuffer.toString("base64");
-            images.push(base64File);
-          } else if (s3 && !s3.async) {
-            const key = `${s3.prefix}${filename}`;
-            const s3Url = `s3://${s3.bucket}/${key}`;
-            uploadPromises.push(
-              remoteStorageManager.uploadFile(s3Url, fileBuffer, contentType)
-            );
-            log.info(`Uploading image ${filename} to ${s3Url}`);
-            images.push(`s3://${s3.bucket}/${key}`);
+              // Remove the file after reading
+              uploadPromises.push(
+                fsPromises.unlink(
+                  path.join(config.outputDir, originalFilenames[i])
+                )
+              );
+            }
+            await Promise.all(uploadPromises);
+            return { images, filenames, stats };
           }
-
-          // Remove the file after reading
-          fsPromises.unlink(path.join(config.outputDir, originalFilename));
-        }
-        await Promise.all(uploadPromises);
-        stats.preprocess_time = preprocessTime - start;
-        stats.upload_time = Date.now() - comfyTime;
-        stats.total_time = Date.now() - start;
-
-        log.debug({ id, ...stats });
-
-        return reply.send({ id, prompt, images, filenames, stats });
+        );
+      } else {
+        uploadPromise = runPromptPromise.then(
+          async ({ buffers, filenames, stats }) => {
+            const images: string[] = buffers.map((b) => b.toString("base64"));
+            return { images, filenames, stats };
+          }
+        );
       }
+
+      const finalStatsPromise = uploadPromise.then(
+        ({ images, stats, filenames }) => {
+          stats.upload_time =
+            Date.now() -
+            start -
+            stats.preprocess_time -
+            stats.comfy_round_trip_time -
+            stats.postprocess_time;
+          stats.total_time = Date.now() - start;
+          log.debug({ id, ...stats });
+          return { images, stats, filenames };
+        }
+      );
+
+      if ((s3 && s3.async) || (httpUpload && httpUpload.async) || webhook) {
+        return reply
+          .code(202)
+          .send({ status: "ok", id, prompt, s3, httpUpload });
+      }
+
+      const { images, stats, filenames } = await finalStatsPromise;
+
+      return reply.send({
+        id,
+        prompt,
+        images,
+        filenames,
+        stats,
+        s3,
+        httpUpload,
+      });
     }
   );
 

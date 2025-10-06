@@ -18,6 +18,8 @@ const {
   COMFYUI_PORT_HOST = "8188",
   DIRECT_ADDRESS = "127.0.0.1",
   HOST = "::",
+  HTTP_AUTH_HEADER_NAME,
+  HTTP_AUTH_HEADER_VALUE,
   INPUT_DIR,
   LOG_LEVEL = "info",
   MANIFEST_JSON,
@@ -355,6 +357,14 @@ const config = {
    * The version of the HuggingFace CLI, if installed. If not installed, null.
    */
   hfCLIVersion,
+
+  /**
+   * If HTTP_AUTH_HEADER_NAME and HTTP_AUTH_HEADER_VALUE are set, this will be an object to merge with headers when making http requests.
+   */
+  httpAuthHeader:
+    HTTP_AUTH_HEADER_NAME && HTTP_AUTH_HEADER_VALUE
+      ? { [HTTP_AUTH_HEADER_NAME]: HTTP_AUTH_HEADER_VALUE }
+      : {},
 
   /**
    * The directory where input files are stored, specified by INPUT_DIR env var.

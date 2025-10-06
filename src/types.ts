@@ -131,6 +131,8 @@ export const ExecutionStatsSchema = z.object({
     ),
   }),
   preprocess_time: z.number().optional(),
+  comfy_round_trip_time: z.number().optional(),
+  postprocess_time: z.number().optional(),
   upload_time: z.number().optional(),
   total_time: z.number().optional(),
 });
@@ -155,17 +157,19 @@ export const PromptRequestSchema = z.object({
     })
     .optional(),
   convert_output: OutputConversionOptionsSchema.optional(),
+  httpUpload: z
+    .object({
+      url_prefix: z.string(),
+      async: z.boolean().optional().default(false),
+    })
+    .optional(),
 });
 
 export type PromptRequest = z.infer<typeof PromptRequestSchema>;
 
-export const PromptResponseSchema = z.object({
-  id: z.string(),
-  prompt: z.record(ComfyNodeSchema),
+export const PromptResponseSchema = PromptRequestSchema.extend({
   images: z.array(z.string()).optional(),
   filenames: z.array(z.string()).optional(),
-  webhook: z.string().optional(),
-  convert_output: OutputConversionOptionsSchema.optional(),
   status: z.enum(["ok"]).optional(),
   stats: ExecutionStatsSchema.optional(),
 });
