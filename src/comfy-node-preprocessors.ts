@@ -2,7 +2,7 @@ import path from "path";
 import { FastifyBaseLogger } from "fastify";
 import { ComfyNode, ComfyPrompt } from "./types";
 import config from "./config";
-import storageManager from "./remote-storage-manager";
+import getStorageManager from "./remote-storage-manager";
 import { isValidUrl } from "./utils";
 import { processImageOrVideo } from "./image-tools";
 import { z } from "zod";
@@ -32,17 +32,15 @@ function updateModelsInConfig(modelType: string, modelName: string) {
 }
 
 async function processCheckpointLoaderNode(
-  node: ComfyNode,
-  log: FastifyBaseLogger
+  node: ComfyNode
 ): Promise<ComfyNode> {
+  const storageManager = getStorageManager();
   const { config_name, ckpt_name } = node.inputs;
 
   if (isValidUrl(config_name)) {
     const localConfigPath = await storageManager.downloadFile(
       config_name,
-      configPath,
-      null,
-      log
+      configPath
     );
     const filename = path.basename(localConfigPath);
     updateModelsInConfig("configs", filename);
@@ -52,9 +50,7 @@ async function processCheckpointLoaderNode(
   if (isValidUrl(ckpt_name)) {
     const localCkptPath = await storageManager.downloadFile(
       ckpt_name,
-      checkpointPath,
-      null,
-      log
+      checkpointPath
     );
     const filename = path.basename(localCkptPath);
     updateModelsInConfig("checkpoints", filename);
@@ -65,17 +61,15 @@ async function processCheckpointLoaderNode(
 }
 
 async function processCheckpointLoaderSimpleNode(
-  node: ComfyNode,
-  log: FastifyBaseLogger
+  node: ComfyNode
 ): Promise<ComfyNode> {
+  const storageManager = getStorageManager();
   const { ckpt_name } = node.inputs;
 
   if (isValidUrl(ckpt_name)) {
     const localCkptPath = await storageManager.downloadFile(
       ckpt_name,
-      checkpointPath,
-      null,
-      log
+      checkpointPath
     );
     const filename = path.basename(localCkptPath);
     updateModelsInConfig("checkpoints", filename);
@@ -85,17 +79,14 @@ async function processCheckpointLoaderSimpleNode(
   return node;
 }
 
-async function processDiffusersLoaderNode(
-  node: ComfyNode,
-  log: FastifyBaseLogger
-): Promise<ComfyNode> {
+async function processDiffusersLoaderNode(node: ComfyNode): Promise<ComfyNode> {
+  const storageManager = getStorageManager();
   const { model_path } = node.inputs;
 
   if (isValidUrl(model_path)) {
     const downloadedPath = await storageManager.downloadRepo(
       model_path,
-      diffusersPath,
-      log
+      diffusersPath
     );
     const filename = path.basename(downloadedPath);
     updateModelsInConfig("diffusers", filename);
@@ -105,18 +96,14 @@ async function processDiffusersLoaderNode(
   return node;
 }
 
-async function processLoraLoaderNode(
-  node: ComfyNode,
-  log: FastifyBaseLogger
-): Promise<ComfyNode> {
+async function processLoraLoaderNode(node: ComfyNode): Promise<ComfyNode> {
+  const storageManager = getStorageManager();
   const { lora_name } = node.inputs;
 
   if (isValidUrl(lora_name)) {
     const localLoraPath = await storageManager.downloadFile(
       lora_name,
-      loraPath,
-      null,
-      log
+      loraPath
     );
     const filename = path.basename(localLoraPath);
     updateModelsInConfig("loras", filename);
@@ -126,19 +113,12 @@ async function processLoraLoaderNode(
   return node;
 }
 
-async function processVAELoaderNode(
-  node: ComfyNode,
-  log: FastifyBaseLogger
-): Promise<ComfyNode> {
+async function processVAELoaderNode(node: ComfyNode): Promise<ComfyNode> {
+  const storageManager = getStorageManager();
   const { vae_name } = node.inputs;
 
   if (isValidUrl(vae_name)) {
-    const localVaePath = await storageManager.downloadFile(
-      vae_name,
-      vaePath,
-      null,
-      log
-    );
+    const localVaePath = await storageManager.downloadFile(vae_name, vaePath);
     const filename = path.basename(localVaePath);
     updateModelsInConfig("vae", filename);
     node.inputs.vae_name = filename;
@@ -148,17 +128,15 @@ async function processVAELoaderNode(
 }
 
 async function processControlNetLoaderNode(
-  node: ComfyNode,
-  log: FastifyBaseLogger
+  node: ComfyNode
 ): Promise<ComfyNode> {
+  const storageManager = getStorageManager();
   const { control_net_name } = node.inputs;
 
   if (isValidUrl(control_net_name)) {
     const localControlNetPath = await storageManager.downloadFile(
       control_net_name,
-      controlNetPath,
-      null,
-      log
+      controlNetPath
     );
     const filename = path.basename(localControlNetPath);
     updateModelsInConfig("controlnet", filename);
@@ -168,18 +146,14 @@ async function processControlNetLoaderNode(
   return node;
 }
 
-async function processUNETLoaderNode(
-  node: ComfyNode,
-  log: FastifyBaseLogger
-): Promise<ComfyNode> {
+async function processUNETLoaderNode(node: ComfyNode): Promise<ComfyNode> {
+  const storageManager = getStorageManager();
   const { unet_name } = node.inputs;
 
   if (isValidUrl(unet_name)) {
     const localUNETPath = await storageManager.downloadFile(
       unet_name,
-      diffusersPath,
-      null,
-      log
+      diffusersPath
     );
     const filename = path.basename(localUNETPath);
     updateModelsInConfig("diffusers", filename);
@@ -189,18 +163,14 @@ async function processUNETLoaderNode(
   return node;
 }
 
-async function processCLIPLoaderNode(
-  node: ComfyNode,
-  log: FastifyBaseLogger
-): Promise<ComfyNode> {
+async function processCLIPLoaderNode(node: ComfyNode): Promise<ComfyNode> {
+  const storageManager = getStorageManager();
   const { clip_name } = node.inputs;
 
   if (isValidUrl(clip_name)) {
     const localCLIPPath = await storageManager.downloadFile(
       clip_name,
-      clipPath,
-      null,
-      log
+      clipPath
     );
     const filename = path.basename(localCLIPPath);
     updateModelsInConfig("text_encoders", filename);
@@ -210,17 +180,13 @@ async function processCLIPLoaderNode(
   return node;
 }
 
-async function processDualCLIPLoaderNode(
-  node: ComfyNode,
-  log: FastifyBaseLogger
-): Promise<ComfyNode> {
+async function processDualCLIPLoaderNode(node: ComfyNode): Promise<ComfyNode> {
+  const storageManager = getStorageManager();
   const { clip_name1, clip_name2 } = node.inputs;
   if (isValidUrl(clip_name1)) {
     const localCLIPPath1 = await storageManager.downloadFile(
       clip_name1,
-      clipPath,
-      null,
-      log
+      clipPath
     );
     const filename = path.basename(localCLIPPath1);
     updateModelsInConfig("text_encoders", filename);
@@ -229,9 +195,7 @@ async function processDualCLIPLoaderNode(
   if (isValidUrl(clip_name2)) {
     const localCLIPPath2 = await storageManager.downloadFile(
       clip_name2,
-      clipPath,
-      null,
-      log
+      clipPath
     );
     const filename = path.basename(localCLIPPath2);
     updateModelsInConfig("text_encoders", filename);
@@ -242,17 +206,15 @@ async function processDualCLIPLoaderNode(
 }
 
 async function processStyleModelLoaderNode(
-  node: ComfyNode,
-  log: FastifyBaseLogger
+  node: ComfyNode
 ): Promise<ComfyNode> {
+  const storageManager = getStorageManager();
   const { style_model_name } = node.inputs;
 
   if (isValidUrl(style_model_name)) {
     const localStyleModelPath = await storageManager.downloadFile(
       style_model_name,
-      styleModelPath,
-      null,
-      log
+      styleModelPath
     );
     const filename = path.basename(localStyleModelPath);
     updateModelsInConfig("style_models", filename);
@@ -262,18 +224,14 @@ async function processStyleModelLoaderNode(
   return node;
 }
 
-async function processGLIGENLoaderNode(
-  node: ComfyNode,
-  log: FastifyBaseLogger
-): Promise<ComfyNode> {
+async function processGLIGENLoaderNode(node: ComfyNode): Promise<ComfyNode> {
+  const storageManager = getStorageManager();
   const { gligen_name } = node.inputs;
 
   if (isValidUrl(gligen_name)) {
     const localGLIGENPath = await storageManager.downloadFile(
       gligen_name,
-      gligenPath,
-      null,
-      log
+      gligenPath
     );
     const filename = path.basename(localGLIGENPath);
     updateModelsInConfig("gligen", filename);
@@ -284,17 +242,15 @@ async function processGLIGENLoaderNode(
 }
 
 async function processUpscaleModelLoaderNode(
-  node: ComfyNode,
-  log: FastifyBaseLogger
+  node: ComfyNode
 ): Promise<ComfyNode> {
+  const storageManager = getStorageManager();
   const { model_name } = node.inputs;
 
   if (isValidUrl(model_name)) {
     const localModelPath = await storageManager.downloadFile(
       model_name,
-      upscaleModelPath,
-      null,
-      log
+      upscaleModelPath
     );
     const filename = path.basename(localModelPath);
     updateModelsInConfig("upscale_models", filename);
@@ -310,33 +266,33 @@ export async function processModelLoadingNode(
 ): Promise<ComfyNode> {
   switch (node.class_type) {
     case "CheckpointLoader":
-      return processCheckpointLoaderNode(node, log);
+      return processCheckpointLoaderNode(node);
     case "CheckpointLoaderSimple":
     case "unCLIPCheckpointLoader":
-      return processCheckpointLoaderSimpleNode(node, log);
+      return processCheckpointLoaderSimpleNode(node);
     case "DiffusersLoader":
-      return processDiffusersLoaderNode(node, log);
+      return processDiffusersLoaderNode(node);
     case "LoraLoader":
     case "LoraLoaderModelOnly":
-      return processLoraLoaderNode(node, log);
+      return processLoraLoaderNode(node);
     case "VAELoader":
-      return processVAELoaderNode(node, log);
+      return processVAELoaderNode(node);
     case "ControlNetLoader":
     case "DiffControlNetLoader":
-      return processControlNetLoaderNode(node, log);
+      return processControlNetLoaderNode(node);
     case "UNETLoader":
-      return processUNETLoaderNode(node, log);
+      return processUNETLoaderNode(node);
     case "CLIPLoader":
     case "CLIPVisionLoader":
-      return processCLIPLoaderNode(node, log);
+      return processCLIPLoaderNode(node);
     case "DualCLIPLoader":
-      return processDualCLIPLoaderNode(node, log);
+      return processDualCLIPLoaderNode(node);
     case "StyleModelLoader":
-      return processStyleModelLoaderNode(node, log);
+      return processStyleModelLoaderNode(node);
     case "GLIGENLoader":
-      return processGLIGENLoaderNode(node, log);
+      return processGLIGENLoaderNode(node);
     case "UpscaleModelLoader":
-      return processUpscaleModelLoaderNode(node, log);
+      return processUpscaleModelLoaderNode(node);
     default:
       return node;
   }

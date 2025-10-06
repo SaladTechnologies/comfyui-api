@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { randomUUID } from "crypto";
 import { RawData } from "ws";
+import { FastifyBaseLogger } from "fastify";
 
 export const ComfyNodeSchema = z.object({
   inputs: z.any(),
@@ -428,3 +429,48 @@ export type ComfyHistoryResponse = Record<
     };
   }
 >;
+
+export interface Upload {
+  url: string;
+  fileOrPath: string | Buffer;
+  contentType: string;
+  log: FastifyBaseLogger;
+  state: "in-progress" | "completed" | "failed" | "aborted";
+
+  upload(): Promise<void>;
+  abort(): Promise<void>;
+}
+
+export interface StorageProvider {
+  log: FastifyBaseLogger;
+
+  /**
+   * Test if the given URL can be handled by this storage provider.
+   * @param url URL to test
+   */
+  testUrl(url: string): boolean;
+
+  /**
+   * Upload a file to the given URL.
+   * @param url URL to upload to
+   * @param fileOrPath File path or buffer to upload
+   * @param contentType MIME type of the file
+   */
+  uploadFile(
+    url: string,
+    fileOrPath: string | Buffer,
+    contentType: string
+  ): Upload;
+
+  /**
+   * Download a file from the given URL to the specified output directory.
+   * @param url URL to download from
+   * @param outputDir Directory to save the downloaded file
+   * @param filenameOverride Optional filename to use instead of auto-generated one
+   */
+  downloadFile(
+    url: string,
+    outputDir: string,
+    filenameOverride?: string
+  ): Promise<string>;
+}

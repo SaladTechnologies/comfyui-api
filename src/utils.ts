@@ -6,7 +6,7 @@ import { WebhookHandlers } from "./types";
 import { fetch, RequestInit, Response } from "undici";
 import { execFile } from "child_process";
 import { promisify } from "util";
-import storageManager from "./remote-storage-manager";
+import getStorageManager from "./remote-storage-manager";
 
 const execFilePromise = promisify(execFile);
 
@@ -242,6 +242,7 @@ export async function installCustomNode(
   nodeNameOrUrl: string,
   log: FastifyBaseLogger
 ): Promise<void> {
+  const storageManager = getStorageManager();
   const isUrl =
     nodeNameOrUrl.startsWith("http://") || nodeNameOrUrl.startsWith("https://");
   if (!isUrl && config.comfyCLIVersion) {
@@ -262,8 +263,7 @@ export async function installCustomNode(
     const customNodesDir = path.join(config.comfyDir, "custom_nodes");
     const customNodePath = await storageManager.downloadRepo(
       nodeNameOrUrl,
-      customNodesDir,
-      log
+      customNodesDir
     );
     const activeVenv = isPythonVenvActive();
     const args = ["pip", "install", "--system", "-r", "requirements.txt"];

@@ -3,7 +3,7 @@ import { FastifyBaseLogger } from "fastify";
 import fsPromises from "fs/promises";
 import path from "path";
 import { randomUUID } from "crypto";
-import storageManager from "./remote-storage-manager";
+import getStorageManager from "./remote-storage-manager";
 import sharp from "sharp";
 import { OutputConversionOptions } from "./types";
 import { isValidUrl } from "./utils";
@@ -13,6 +13,7 @@ export async function processImageOrVideo(
   log: FastifyBaseLogger,
   dirWithinInputDir?: string
 ): Promise<string> {
+  const storageManager = getStorageManager();
   let localFilePath: string;
   const ext = path.extname(fileInput).split("?")[0];
   const localFileName = `${randomUUID()}${ext}`;
@@ -37,7 +38,7 @@ export async function processImageOrVideo(
     return path.resolve(fileInput);
   } else if (isValidUrl(fileInput)) {
     const dir = path.dirname(localFilePath);
-    return storageManager.downloadFile(fileInput, dir, null, log);
+    return storageManager.downloadFile(fileInput, dir);
   } else {
     // Assume it's base64 encoded data
     try {

@@ -20,7 +20,7 @@ import {
   pipInstallPackages,
 } from "./utils";
 import { convertImageBuffer } from "./image-tools";
-import remoteStorageManager from "./remote-storage-manager";
+import getStorageManager from "./remote-storage-manager";
 import { NodeProcessError, preprocessNodes } from "./comfy-node-preprocessors";
 import {
   warmupComfyUI,
@@ -57,6 +57,8 @@ const server = Fastify({
 });
 server.setValidatorCompiler(validatorCompiler);
 server.setSerializerCompiler(serializerCompiler);
+
+const remoteStorageManager = getStorageManager(server.log);
 
 const modelSchema: any = {};
 for (const modelType in config.models) {
@@ -405,12 +407,7 @@ server.after(() => {
               const key = `${s3.prefix}${filename}`;
               const s3Url = `s3://${s3.bucket}/${key}`;
               uploadPromises.push(
-                remoteStorageManager.uploadFile(
-                  s3Url,
-                  fileBuffer,
-                  contentType,
-                  log
-                )
+                remoteStorageManager.uploadFile(s3Url, fileBuffer, contentType)
               );
               log.info(
                 `Uploading image ${filename} to s3://${s3.bucket}/${key}`
@@ -474,12 +471,7 @@ server.after(() => {
             const key = `${s3.prefix}${filename}`;
             const s3Url = `s3://${s3.bucket}/${key}`;
             uploadPromises.push(
-              remoteStorageManager.uploadFile(
-                s3Url,
-                fileBuffer,
-                contentType,
-                log
-              )
+              remoteStorageManager.uploadFile(s3Url, fileBuffer, contentType)
             );
             log.info(`Uploading image ${filename} to ${s3Url}`);
             images.push(`s3://${s3.bucket}/${key}`);
@@ -663,7 +655,7 @@ async function downloadAllModels(
   for (const { url, local_path } of models) {
     const dir = path.dirname(local_path);
     const filename = path.basename(local_path);
-    await remoteStorageManager.downloadFile(url, dir, filename, server.log);
+    await remoteStorageManager.downloadFile(url, dir, filename);
   }
 }
 
