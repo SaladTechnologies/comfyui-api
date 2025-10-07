@@ -11,6 +11,7 @@ const {
   ALWAYS_RESTART_COMFYUI = "false",
   AWS_DEFAULT_REGION,
   AWS_REGION,
+  AZURE_STORAGE_ACCOUNT,
   BASE = "",
   CACHE_DIR = `${process.env.HOME}/.cache/comfyui-api`,
   CMD = "init.sh",
@@ -306,8 +307,13 @@ const config = {
   awsRegion: AWS_REGION ?? AWS_DEFAULT_REGION ?? null,
 
   /**
+   * (optional) The Azure Storage account name to use for Azure Blob operations.
+   */
+  azureStorageAccount: AZURE_STORAGE_ACCOUNT ?? null,
+
+  /**
    * The directory where cached files are stored, specified by CACHE_DIR env var.
-   * default: /tmp/comfyui-api-cache
+   * default: {HOME}/.cache/comfyui-api
    */
   cacheDir: CACHE_DIR,
 
