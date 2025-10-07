@@ -6,10 +6,8 @@ import path from "path";
 import crypto from "crypto";
 import { execFile } from "child_process";
 import { promisify } from "util";
+import storageProviders from "./storage-providers";
 import { StorageProvider, Upload } from "./types";
-import { S3StorageProvider } from "./storage-providers/s3";
-import { HTTPStorageProvider } from "./storage-providers/http";
-import { HFStorageProvider } from "./storage-providers/hf";
 
 const execFilePromise = promisify(execFile);
 
@@ -66,10 +64,8 @@ class RemoteStorageManager {
     this.cacheDir = cacheDir;
     this.log = log.child({ module: "RemoteStorageManager" });
     fs.mkdirSync(this.cacheDir, { recursive: true });
-    this.storageProviders.push(
-      new S3StorageProvider(this.log),
-      new HFStorageProvider(this.log),
-      new HTTPStorageProvider(this.log)
+    this.storageProviders = storageProviders.map(
+      (Provider) => new Provider(this.log)
     );
   }
 

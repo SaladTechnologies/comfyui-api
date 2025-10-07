@@ -39,6 +39,7 @@ import {
   WorkflowTree,
   isWorkflow,
   OutputConversionOptionsSchema,
+  WorkflowRequestSchema,
 } from "./types";
 import workflows from "./workflows";
 import { z } from "zod";
@@ -207,7 +208,7 @@ server.after(() => {
       },
     },
     async (request, reply) => {
-      let { prompt, id, webhook, convert_output, s3, httpUpload } =
+      let { prompt, id, webhook, convert_output, s3, httpUpload, hfUpload } =
         request.body;
       let contentType = "image/png";
       if (convert_output) {
@@ -257,6 +258,7 @@ server.after(() => {
           stats.comfy_round_trip_time = Date.now() - preprocessTime;
           const filenames: string[] = [];
           const buffers: Buffer[] = [];
+          const unlinks: Promise<void>[] = [];
           for (const originalFilename in outputs) {
             let filename = originalFilename;
             let fileBuffer = outputs[filename];
@@ -280,14 +282,17 @@ server.after(() => {
             }
             filenames.push(filename);
             buffers.push(fileBuffer);
+            unlinks.push(
+              fsPromises.unlink(path.join(config.outputDir, originalFilename))
+            );
           }
+          await Promise.all(unlinks);
           stats.postprocess_time =
             Date.now() - stats.comfy_round_trip_time - preprocessTime;
           log.debug({ id, ...stats });
           return {
             buffers,
             filenames,
-            originalFilenames: Object.keys(outputs),
             stats,
           };
         }
@@ -301,7 +306,7 @@ server.after(() => {
 
       if (webhook) {
         uploadPromise = runPromptPromise.then(
-          async ({ buffers, filenames, originalFilenames, stats }) => {
+          async ({ buffers, filenames, stats }) => {
             const webhookPromises: Promise<any>[] = [];
             const images: string[] = [];
             for (let i = 0; i < buffers.length; i++) {
@@ -349,13 +354,6 @@ server.after(() => {
                     }
                   })
               );
-
-              // Remove the file after sending
-              webhookPromises.push(
-                fsPromises.unlink(
-                  path.join(config.outputDir, originalFilenames[i])
-                )
-              );
             }
             await Promise.all(webhookPromises);
             return { images, filenames, stats };
@@ -363,7 +361,7 @@ server.after(() => {
         );
       } else if (s3) {
         uploadPromise = runPromptPromise.then(
-          async ({ buffers, filenames, originalFilenames, stats }) => {
+          async ({ buffers, filenames, stats }) => {
             const uploadPromises: Promise<void>[] = [];
             const images: string[] = [];
             for (let i = 0; i < buffers.length; i++) {
@@ -381,13 +379,6 @@ server.after(() => {
                   )
                 );
               }
-
-              // Remove the file after reading
-              uploadPromises.push(
-                fsPromises.unlink(
-                  path.join(config.outputDir, originalFilenames[i])
-                )
-              );
             }
             await Promise.all(uploadPromises);
             return { images, filenames, stats };
@@ -395,7 +386,7 @@ server.after(() => {
         );
       } else if (httpUpload) {
         uploadPromise = runPromptPromise.then(
-          async ({ buffers, filenames, originalFilenames, stats }) => {
+          async ({ buffers, filenames, stats }) => {
             const uploadPromises: Promise<void>[] = [];
             const images: string[] = [];
             for (let i = 0; i < buffers.length; i++) {
@@ -410,12 +401,23 @@ server.after(() => {
                   contentType
                 )
               );
-
-              // Remove the file after reading
+            }
+            await Promise.all(uploadPromises);
+            return { images, filenames, stats };
+          }
+        );
+      } else if (hfUpload) {
+        uploadPromise = runPromptPromise.then(
+          async ({ buffers, filenames, stats }) => {
+            const uploadPromises: Promise<void>[] = [];
+            const images: string[] = [];
+            for (let i = 0; i < buffers.length; i++) {
+              const fileBuffer = buffers[i];
+              const filename = filenames[i];
+              const hfUrl = `https://huggingface.co/${hfUpload.repo}/resolve/${hfUpload.revision}${hfUpload.directory}${filename}`;
+              images.push(hfUrl);
               uploadPromises.push(
-                fsPromises.unlink(
-                  path.join(config.outputDir, originalFilenames[i])
-                )
+                remoteStorageManager.uploadFile(hfUrl, fileBuffer, contentType)
               );
             }
             await Promise.all(uploadPromises);
@@ -445,10 +447,15 @@ server.after(() => {
         }
       );
 
-      if ((s3 && s3.async) || (httpUpload && httpUpload.async) || webhook) {
+      if (
+        webhook ||
+        (s3 && s3.async) ||
+        (httpUpload && httpUpload.async) ||
+        (hfUpload && hfUpload.async)
+      ) {
         return reply
           .code(202)
-          .send({ status: "ok", id, prompt, s3, httpUpload });
+          .send({ status: "ok", id, prompt, s3, httpUpload, hfUpload });
       }
 
       const { images, stats, filenames } = await finalStatsPromise;
@@ -461,6 +468,7 @@ server.after(() => {
         stats,
         s3,
         httpUpload,
+        hfUpload,
       });
     }
   );
@@ -470,15 +478,8 @@ server.after(() => {
     for (const key in tree) {
       const node = tree[key];
       if (isWorkflow(node)) {
-        const BodySchema = z.object({
-          id: z
-            .string()
-            .optional()
-            .default(() => randomUUID()),
+        const BodySchema = WorkflowRequestSchema.extend({
           input: node.RequestSchema,
-          webhook: z.string().optional(),
-          convert_output: OutputConversionOptionsSchema.optional(),
-          s3: PromptRequestSchema.shape.s3.optional(),
         });
 
         type BodyType = z.infer<typeof BodySchema>;
@@ -516,8 +517,7 @@ server.after(() => {
             },
           },
           async (request, reply) => {
-            const { id, input, webhook, convert_output, s3 } = request.body;
-            const prompt = await node.generateWorkflow(input);
+            const prompt = await node.generateWorkflow(request.body.input);
 
             const resp = await fetch(
               `http://localhost:${config.wrapperPort}/prompt`,
@@ -527,11 +527,9 @@ server.after(() => {
                   "Content-Type": "application/json",
                 },
                 body: JSON.stringify({
+                  ...request.body,
                   prompt,
-                  id,
-                  webhook,
-                  convert_output,
-                  s3,
+                  input: undefined,
                 }),
                 dispatcher: new Agent({
                   headersTimeout: 0,
@@ -545,8 +543,7 @@ server.after(() => {
               return reply.code(resp.status).send(body);
             }
 
-            body.input = input;
-            body.prompt = prompt;
+            body.input = request.body.input;
 
             return reply.code(resp.status).send(body);
           }

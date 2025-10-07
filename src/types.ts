@@ -163,6 +163,22 @@ export const PromptRequestSchema = z.object({
       async: z.boolean().optional().default(false),
     })
     .optional(),
+  hfUpload: z
+    .object({
+      repo: z.string().describe("HuggingFace repo name, e.g. user/repo"),
+      revision: z
+        .string()
+        .optional()
+        .default("main")
+        .describe("HuggingFace repo revision, e.g. main or a branch name"),
+      directory: z
+        .string()
+        .optional()
+        .default("/")
+        .describe("Directory in the repo to upload files to"),
+      async: z.boolean().optional().default(false),
+    })
+    .optional(),
 });
 
 export type PromptRequest = z.infer<typeof PromptRequestSchema>;
