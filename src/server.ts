@@ -289,7 +289,6 @@ server.after(() => {
           await Promise.all(unlinks);
           stats.postprocess_time =
             Date.now() - stats.comfy_round_trip_time - preprocessTime;
-          log.debug({ id, ...stats });
           return {
             buffers,
             filenames,
@@ -442,7 +441,7 @@ server.after(() => {
             stats.comfy_round_trip_time -
             stats.postprocess_time;
           stats.total_time = Date.now() - start;
-          log.debug({ id, ...stats });
+          log.debug(stats);
           return { images, stats, filenames };
         }
       );
