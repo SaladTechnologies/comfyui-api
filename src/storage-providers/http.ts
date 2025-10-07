@@ -4,6 +4,95 @@ import { FastifyBaseLogger } from "fastify";
 import fs from "fs";
 import { Readable } from "stream";
 import config from "../config";
+import { z } from "zod";
+
+export class HTTPStorageProvider implements StorageProvider {
+  log: FastifyBaseLogger;
+  requestBodyUploadKey = "httpUpload";
+  requestBodyUploadSchema = z.object({
+    url_prefix: z.string(),
+  });
+  private urlRequestSchema = this.requestBodyUploadSchema.extend({
+    filename: z.string().describe("The name of the file to upload"),
+  });
+
+  constructor(log: FastifyBaseLogger) {
+    this.log = log.child({ module: "HTTPStorageProvider" });
+  }
+
+  createUrl(inputs: z.infer<typeof this.urlRequestSchema>): string {
+    const { url_prefix, filename } = inputs;
+    if (!url_prefix) {
+      throw new Error("url_prefix is required to create HTTP URL");
+    }
+    return `${url_prefix.replace(/\/+$/, "")}/${filename}`;
+  }
+
+  testUrl(url: string): boolean {
+    return url.startsWith("http://") || url.startsWith("https://");
+  }
+
+  uploadFile(
+    url: string,
+    fileOrPath: string | Buffer,
+    contentType: string
+  ): HTTPUpload {
+    return new HTTPUpload(url, fileOrPath, contentType, this.log);
+  }
+
+  async downloadFile(
+    url: string,
+    outputDir: string,
+    filenameOverride?: string
+  ): Promise<string> {
+    try {
+      // Fetch the image
+      const headers = getAuthHeadersFromUrl(url);
+      const response = await fetch(url, { headers });
+
+      if (!response.ok) {
+        throw new Error(`Error downloading file: ${response.statusText}`);
+      }
+
+      let outputPath = path.join(
+        outputDir,
+        filenameOverride || path.basename(new URL(url).pathname)
+      );
+
+      if (path.extname(outputPath) === "") {
+        const ext = getIntendedFileExtensionFromResponse(response) || "";
+        if (ext) {
+          outputPath = outputPath + ext;
+        }
+      }
+
+      // Get the response as a readable stream
+      const body = response.body;
+      if (!body) {
+        throw new Error("Response body is null");
+      }
+
+      this.log.info(`Downloading file to ${outputPath}`);
+
+      // Create a writable stream to save the file
+      const fileStream = fs.createWriteStream(outputPath);
+
+      // Pipe the response to the file
+      await new Promise<void>((resolve, reject) => {
+        Readable.fromWeb(body as any)
+          .pipe(fileStream)
+          .on("finish", () => resolve())
+          .on("error", reject);
+      });
+
+      this.log.info(`File downloaded and saved to ${outputPath}`);
+      return outputPath;
+    } catch (error: any) {
+      this.log.error("Error downloading file:", error);
+      throw error;
+    }
+  }
+}
 
 class HTTPUpload implements Upload {
   url: string;
@@ -218,77 +307,4 @@ function getAuthHeadersFromUrl(url: string): HeadersInit {
     Object.assign(headers, config.httpAuthHeader);
   }
   return headers;
-}
-
-export class HTTPStorageProvider implements StorageProvider {
-  log: FastifyBaseLogger;
-
-  constructor(log: FastifyBaseLogger) {
-    this.log = log.child({ module: "HTTPStorageProvider" });
-  }
-
-  testUrl(url: string): boolean {
-    return url.startsWith("http://") || url.startsWith("https://");
-  }
-
-  uploadFile(
-    url: string,
-    fileOrPath: string | Buffer,
-    contentType: string
-  ): HTTPUpload {
-    return new HTTPUpload(url, fileOrPath, contentType, this.log);
-  }
-
-  async downloadFile(
-    url: string,
-    outputDir: string,
-    filenameOverride?: string
-  ): Promise<string> {
-    try {
-      // Fetch the image
-      const headers = getAuthHeadersFromUrl(url);
-      const response = await fetch(url, { headers });
-
-      if (!response.ok) {
-        throw new Error(`Error downloading file: ${response.statusText}`);
-      }
-
-      let outputPath = path.join(
-        outputDir,
-        filenameOverride || path.basename(new URL(url).pathname)
-      );
-
-      if (path.extname(outputPath) === "") {
-        const ext = getIntendedFileExtensionFromResponse(response) || "";
-        if (ext) {
-          outputPath = outputPath + ext;
-        }
-      }
-
-      // Get the response as a readable stream
-      const body = response.body;
-      if (!body) {
-        throw new Error("Response body is null");
-      }
-
-      this.log.info(`Downloading file to ${outputPath}`);
-
-      // Create a writable stream to save the file
-      const fileStream = fs.createWriteStream(outputPath);
-
-      // Pipe the response to the file
-      await new Promise<void>((resolve, reject) => {
-        Readable.fromWeb(body as any)
-          .pipe(fileStream)
-          .on("finish", () => resolve())
-          .on("error", reject);
-      });
-
-      this.log.info(`File downloaded and saved to ${outputPath}`);
-      return outputPath;
-    } catch (error: any) {
-      this.log.error("Error downloading file:", error);
-      throw error;
-    }
-  }
 }

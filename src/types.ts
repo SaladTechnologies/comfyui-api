@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { randomUUID } from "crypto";
 import { RawData } from "ws";
-import { FastifyBaseLogger } from "fastify";
 
 export const ComfyNodeSchema = z.object({
   inputs: z.any(),
@@ -149,48 +148,8 @@ export const PromptRequestSchema = z.object({
     .optional()
     .default(() => randomUUID()),
   webhook: z.string().optional(),
-  s3: z
-    .object({
-      bucket: z.string(),
-      prefix: z.string(),
-      async: z.boolean().optional().default(false),
-    })
-    .optional(),
   convert_output: OutputConversionOptionsSchema.optional(),
-  httpUpload: z
-    .object({
-      url_prefix: z.string(),
-      async: z.boolean().optional().default(false),
-    })
-    .optional(),
-  hfUpload: z
-    .object({
-      repo: z.string().describe("HuggingFace repo name, e.g. user/repo"),
-      revision: z
-        .string()
-        .optional()
-        .default("main")
-        .describe("HuggingFace repo revision, e.g. main or a branch name"),
-      directory: z
-        .string()
-        .optional()
-        .default("/")
-        .describe("Directory in the repo to upload files to"),
-      async: z.boolean().optional().default(false),
-    })
-    .optional(),
 });
-
-export type PromptRequest = z.infer<typeof PromptRequestSchema>;
-
-export const PromptResponseSchema = PromptRequestSchema.extend({
-  images: z.array(z.string()).optional(),
-  filenames: z.array(z.string()).optional(),
-  status: z.enum(["ok"]).optional(),
-  stats: ExecutionStatsSchema.optional(),
-});
-
-export type PromptResponse = z.infer<typeof PromptResponseSchema>;
 
 export const PromptErrorResponseSchema = z.object({
   error: z.string(),
@@ -225,10 +184,6 @@ export const WorkflowRequestSchema = PromptRequestSchema.extend({
 });
 
 export type WorkflowRequest = z.infer<typeof WorkflowRequestSchema>;
-
-export const WorkflowResponseSchema = PromptResponseSchema.extend({
-  input: z.record(z.any()),
-});
 
 export interface ComfyWSMessage {
   type:
@@ -451,10 +406,6 @@ export type ComfyHistoryResponse = Record<
 >;
 
 export interface Upload {
-  url: string;
-  fileOrPath: string | Buffer;
-  contentType: string;
-  log: FastifyBaseLogger;
   state: "in-progress" | "completed" | "failed" | "aborted";
 
   upload(): Promise<void>;
@@ -462,7 +413,21 @@ export interface Upload {
 }
 
 export interface StorageProvider {
-  log: FastifyBaseLogger;
+  /**
+   * The key in a request body that indicates this storage provider should be used for upload.
+   */
+  requestBodyUploadKey: string;
+
+  /**
+   * The zod schema for the request body field that indicates this storage provider should be used for upload.
+   */
+  requestBodyUploadSchema: z.ZodObject<any, any>;
+
+  /**
+   * Takes the inputs from the request body and generates a URL for uploading.
+   * @param inputs
+   */
+  createUrl(inputs: any): string;
 
   /**
    * Test if the given URL can be handled by this storage provider.

@@ -304,7 +304,7 @@ class HistoryEndpointPoller {
   }
 }
 
-type PromptOutputsWithStats = {
+export type PromptOutputsWithStats = {
   outputs: Record<string, Buffer>;
   stats: ExecutionStats;
 };

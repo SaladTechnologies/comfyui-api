@@ -24,6 +24,7 @@ services:
       AWS_REGION: "us-east-1"
       MANIFEST: "/app/manifest.yml"
       STARTUP_CHECK_MAX_TRIES: "30"
+      HF_TOKEN: ${HF_TOKEN}
     #   ALWAYS_RESTART_COMFYUI: "true"
     #   SYSTEM_WEBHOOK_URL: "http://host.docker.internal:1234/system"
     #   SYSTEM_WEBHOOK_EVENTS: all

@@ -29,21 +29,18 @@ import {
   shutdownComfyUI,
   runPromptAndGetOutputs,
   connectToComfyUIWebsocketStream,
+  PromptOutputsWithStats,
 } from "./comfy";
 import {
-  PromptRequestSchema,
+  PromptRequestSchema as BasePromptRequestSchema,
   PromptErrorResponseSchema,
-  PromptResponseSchema,
-  PromptRequest,
-  WorkflowResponseSchema,
   WorkflowTree,
   isWorkflow,
-  OutputConversionOptionsSchema,
   WorkflowRequestSchema,
+  ExecutionStatsSchema,
 } from "./types";
 import workflows from "./workflows";
 import { z } from "zod";
-import { randomUUID } from "crypto";
 import { WebSocket } from "ws";
 import { fetch, Agent } from "undici";
 
@@ -60,6 +57,29 @@ server.setValidatorCompiler(validatorCompiler);
 server.setSerializerCompiler(serializerCompiler);
 
 const remoteStorageManager = getStorageManager(server.log);
+
+let PromptRequestSchema: z.ZodObject<any, any> = BasePromptRequestSchema;
+
+for (const provider of remoteStorageManager.storageProviders) {
+  PromptRequestSchema = PromptRequestSchema.extend({
+    [provider.requestBodyUploadKey]: provider.requestBodyUploadSchema
+      .extend({ async: z.boolean().optional().default(false) })
+      .optional(),
+  });
+}
+
+type PromptRequest = z.infer<typeof PromptRequestSchema>;
+
+const PromptResponseSchema = PromptRequestSchema.extend({
+  images: z.array(z.string()).optional(),
+  filenames: z.array(z.string()).optional(),
+  status: z.enum(["ok"]).optional(),
+  stats: ExecutionStatsSchema.optional(),
+});
+
+const WorkflowResponseSchema = PromptResponseSchema.extend({
+  input: z.record(z.any()),
+});
 
 const modelSchema: any = {};
 for (const modelType in config.models) {
@@ -208,8 +228,7 @@ server.after(() => {
       },
     },
     async (request, reply) => {
-      let { prompt, id, webhook, convert_output, s3, httpUpload, hfUpload } =
-        request.body;
+      let { prompt, id, webhook, convert_output } = request.body;
       let contentType = "image/png";
       if (convert_output) {
         contentType = `image/${convert_output.format}`;
@@ -252,49 +271,57 @@ server.after(() => {
         });
       }
 
-      let runPromptPromise = runPromptAndGetOutputs(id, prompt, log).then(
-        async ({ outputs, stats }) => {
-          stats.preprocess_time = preprocessTime - start;
-          stats.comfy_round_trip_time = Date.now() - preprocessTime;
-          const filenames: string[] = [];
-          const buffers: Buffer[] = [];
-          const unlinks: Promise<void>[] = [];
-          for (const originalFilename in outputs) {
-            let filename = originalFilename;
-            let fileBuffer = outputs[filename];
-            if (convert_output) {
-              try {
-                fileBuffer = await convertImageBuffer(
-                  fileBuffer,
-                  convert_output
-                );
+      type ProcessedOutput = {
+        buffers: Buffer[];
+        filenames: string[];
+        stats: any;
+      };
 
-                /**
-                 * If the user has provided an output format, we need to update the filename
-                 */
-                filename = originalFilename.replace(
-                  /\.[^/.]+$/,
-                  `.${convert_output.format}`
-                );
-              } catch (e: any) {
-                log.warn(`Failed to convert image: ${e.message}`);
-              }
+      const postProcessOutputs = async ({
+        outputs,
+        stats,
+      }: PromptOutputsWithStats): Promise<ProcessedOutput> => {
+        stats.preprocess_time = preprocessTime - start;
+        stats.comfy_round_trip_time = Date.now() - preprocessTime;
+        const filenames: string[] = [];
+        const buffers: Buffer[] = [];
+        const unlinks: Promise<void>[] = [];
+        for (const originalFilename in outputs) {
+          let filename = originalFilename;
+          let fileBuffer = outputs[filename];
+          if (convert_output) {
+            try {
+              fileBuffer = await convertImageBuffer(fileBuffer, convert_output);
+
+              /**
+               * If the user has provided an output format, we need to update the filename
+               */
+              filename = originalFilename.replace(
+                /\.[^/.]+$/,
+                `.${convert_output.format}`
+              );
+            } catch (e: any) {
+              log.warn(`Failed to convert image: ${e.message}`);
             }
-            filenames.push(filename);
-            buffers.push(fileBuffer);
-            unlinks.push(
-              fsPromises.unlink(path.join(config.outputDir, originalFilename))
-            );
           }
-          await Promise.all(unlinks);
-          stats.postprocess_time =
-            Date.now() - stats.comfy_round_trip_time - preprocessTime;
-          return {
-            buffers,
-            filenames,
-            stats,
-          };
+          filenames.push(filename);
+          buffers.push(fileBuffer);
+          unlinks.push(
+            fsPromises.unlink(path.join(config.outputDir, originalFilename))
+          );
         }
+        await Promise.all(unlinks);
+        stats.postprocess_time =
+          Date.now() - stats.comfy_round_trip_time - preprocessTime;
+        return {
+          buffers,
+          filenames,
+          stats,
+        };
+      };
+
+      let runPromptPromise = runPromptAndGetOutputs(id, prompt, log).then(
+        postProcessOutputs
       );
 
       let uploadPromise: Promise<{
@@ -303,126 +330,119 @@ server.after(() => {
         stats: any;
       }> | null = null;
 
+      type Handler = (data: ProcessedOutput) => Promise<{
+        images: string[];
+        filenames: string[];
+        stats: any;
+      }>;
+
+      const webhookHandler: Handler = async ({
+        buffers,
+        filenames,
+        stats,
+      }: ProcessedOutput) => {
+        if (!webhook) {
+          throw new Error("Webhook URL is not defined");
+        }
+        const webhookPromises: Promise<any>[] = [];
+        const images: string[] = [];
+        for (let i = 0; i < buffers.length; i++) {
+          const base64File = buffers[i].toString("base64");
+          images.push(base64File);
+          const filename = filenames[i];
+          log.info(`Sending image ${filename} to webhook: ${webhook}`);
+          webhookPromises.push(
+            fetchWithRetries(
+              webhook,
+              {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  event: "output.complete",
+                  image: base64File,
+                  id,
+                  filename,
+                  prompt,
+                  stats,
+                }),
+                dispatcher: new Agent({
+                  headersTimeout: 0,
+                  bodyTimeout: 0,
+                  connectTimeout: 0,
+                }),
+              },
+              config.promptWebhookRetries,
+              log
+            )
+              .catch((e: any) => {
+                log.error(`Failed to send image to webhook: ${e.message}`);
+              })
+              .then(async (resp) => {
+                if (!resp) {
+                  log.error("No response from webhook");
+                } else if (!resp.ok) {
+                  log.error(
+                    `Failed to send image ${filename}: ${await resp.text()}`
+                  );
+                } else {
+                  log.info(`Sent image ${filename}`);
+                }
+              })
+          );
+        }
+        await Promise.all(webhookPromises);
+        return { images, filenames, stats };
+      };
+
+      const uploadHandler: Handler = async ({
+        buffers,
+        filenames,
+        stats,
+      }): Promise<{
+        images: string[];
+        filenames: string[];
+        stats: any;
+      }> => {
+        const uploadPromises: Promise<void>[] = [];
+        const images: string[] = [];
+        for (let i = 0; i < buffers.length; i++) {
+          const fileBuffer = buffers[i];
+          const filename = filenames[i];
+          for (const provider of remoteStorageManager.storageProviders) {
+            if (request.body[provider.requestBodyUploadKey]) {
+              images.push(
+                provider.createUrl({
+                  ...request.body[provider.requestBodyUploadKey],
+                  filename,
+                })
+              );
+              break;
+            }
+          }
+          uploadPromises.push(
+            remoteStorageManager.uploadFile(images[i], fileBuffer, contentType)
+          );
+        }
+
+        await Promise.all(uploadPromises);
+        return { images, filenames, stats };
+      };
+
+      const hasAnUploadBlock = remoteStorageManager.storageProviders.some(
+        (provider) => !!request.body[provider.requestBodyUploadKey]
+      );
+      const asyncUpload =
+        webhook ||
+        remoteStorageManager.storageProviders.some(
+          (provider) => !!request.body[provider.requestBodyUploadKey]?.async
+        );
+
       if (webhook) {
-        uploadPromise = runPromptPromise.then(
-          async ({ buffers, filenames, stats }) => {
-            const webhookPromises: Promise<any>[] = [];
-            const images: string[] = [];
-            for (let i = 0; i < buffers.length; i++) {
-              const base64File = buffers[i].toString("base64");
-              images.push(base64File);
-              const filename = filenames[i];
-              log.info(`Sending image ${filename} to webhook: ${webhook}`);
-              webhookPromises.push(
-                fetchWithRetries(
-                  webhook,
-                  {
-                    method: "POST",
-                    headers: {
-                      "Content-Type": "application/json",
-                    },
-                    body: JSON.stringify({
-                      event: "output.complete",
-                      image: base64File,
-                      id,
-                      filename,
-                      prompt,
-                      stats,
-                    }),
-                    dispatcher: new Agent({
-                      headersTimeout: 0,
-                      bodyTimeout: 0,
-                      connectTimeout: 0,
-                    }),
-                  },
-                  config.promptWebhookRetries,
-                  log
-                )
-                  .catch((e: any) => {
-                    log.error(`Failed to send image to webhook: ${e.message}`);
-                  })
-                  .then(async (resp) => {
-                    if (!resp) {
-                      log.error("No response from webhook");
-                    } else if (!resp.ok) {
-                      log.error(
-                        `Failed to send image ${filename}: ${await resp.text()}`
-                      );
-                    } else {
-                      log.info(`Sent image ${filename}`);
-                    }
-                  })
-              );
-            }
-            await Promise.all(webhookPromises);
-            return { images, filenames, stats };
-          }
-        );
-      } else if (s3) {
-        uploadPromise = runPromptPromise.then(
-          async ({ buffers, filenames, stats }) => {
-            const uploadPromises: Promise<void>[] = [];
-            const images: string[] = [];
-            for (let i = 0; i < buffers.length; i++) {
-              const fileBuffer = buffers[i];
-              const filename = filenames[i];
-              if (s3) {
-                const key = `${s3.prefix}${filename}`;
-                const s3Url = `s3://${s3.bucket}/${key}`;
-                images.push(s3Url);
-                uploadPromises.push(
-                  remoteStorageManager.uploadFile(
-                    s3Url,
-                    fileBuffer,
-                    contentType
-                  )
-                );
-              }
-            }
-            await Promise.all(uploadPromises);
-            return { images, filenames, stats };
-          }
-        );
-      } else if (httpUpload) {
-        uploadPromise = runPromptPromise.then(
-          async ({ buffers, filenames, stats }) => {
-            const uploadPromises: Promise<void>[] = [];
-            const images: string[] = [];
-            for (let i = 0; i < buffers.length; i++) {
-              const fileBuffer = buffers[i];
-              const filename = filenames[i];
-              const uploadUrl = `${httpUpload.url_prefix}${filename}`;
-              images.push(uploadUrl);
-              uploadPromises.push(
-                remoteStorageManager.uploadFile(
-                  uploadUrl,
-                  fileBuffer,
-                  contentType
-                )
-              );
-            }
-            await Promise.all(uploadPromises);
-            return { images, filenames, stats };
-          }
-        );
-      } else if (hfUpload) {
-        uploadPromise = runPromptPromise.then(
-          async ({ buffers, filenames, stats }) => {
-            const uploadPromises: Promise<void>[] = [];
-            const images: string[] = [];
-            for (let i = 0; i < buffers.length; i++) {
-              const fileBuffer = buffers[i];
-              const filename = filenames[i];
-              const hfUrl = `https://huggingface.co/${hfUpload.repo}/resolve/${hfUpload.revision}${hfUpload.directory}${filename}`;
-              images.push(hfUrl);
-              uploadPromises.push(
-                remoteStorageManager.uploadFile(hfUrl, fileBuffer, contentType)
-              );
-            }
-            await Promise.all(uploadPromises);
-            return { images, filenames, stats };
-          }
-        );
+        uploadPromise = runPromptPromise.then(webhookHandler);
+      } else if (hasAnUploadBlock) {
+        uploadPromise = runPromptPromise.then(uploadHandler);
       } else {
         uploadPromise = runPromptPromise.then(
           async ({ buffers, filenames, stats }) => {
@@ -446,29 +466,22 @@ server.after(() => {
         }
       );
 
-      if (
-        webhook ||
-        (s3 && s3.async) ||
-        (httpUpload && httpUpload.async) ||
-        (hfUpload && hfUpload.async)
-      ) {
-        return reply
-          .code(202)
-          .send({ status: "ok", id, prompt, s3, httpUpload, hfUpload });
+      if (asyncUpload) {
+        reply.code(202).send({ ...request.body, status: "ok", id, prompt });
       }
 
       const { images, stats, filenames } = await finalStatsPromise;
 
-      return reply.send({
-        id,
-        prompt,
-        images,
-        filenames,
-        stats,
-        s3,
-        httpUpload,
-        hfUpload,
-      });
+      if (!asyncUpload) {
+        return reply.send({
+          ...request.body,
+          id,
+          prompt,
+          images,
+          filenames,
+          stats,
+        });
+      }
     }
   );
 

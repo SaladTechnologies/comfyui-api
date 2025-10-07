@@ -6,8 +6,84 @@ import config from "../config";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import os from "os";
+import { z } from "zod";
 
 const execFilePromise = promisify(execFile);
+
+export class HFStorageProvider implements StorageProvider {
+  log: FastifyBaseLogger;
+  requestBodyUploadKey = "hfUpload";
+  requestBodyUploadSchema = z.object({
+    repo: z.string().describe("HuggingFace repo name, e.g. user/repo"),
+    revision: z
+      .string()
+      .optional()
+      .default("main")
+      .describe("HuggingFace repo revision, e.g. main or a branch name"),
+    directory: z
+      .string()
+      .optional()
+      .default("/")
+      .describe("Directory in the repo to upload files to"),
+  });
+
+  private urlRequestSchema = this.requestBodyUploadSchema.extend({
+    filename: z.string().describe("The name of the file to upload"),
+  });
+
+  constructor(log: FastifyBaseLogger) {
+    this.log = log.child({ provider: "HFStorageProvider" });
+  }
+
+  createUrl(inputs: z.infer<typeof this.urlRequestSchema>): string {
+    const { repo, revision, directory, filename } = inputs;
+    if (!repo) {
+      throw new Error("Repo is required to create HuggingFace URL");
+    }
+    return `https://huggingface.co/${repo}/resolve/${revision}/${directory}/${filename}`;
+  }
+
+  testUrl(url: string): boolean {
+    return url.startsWith("https://huggingface.co/") && !!config.hfCLIVersion;
+  }
+
+  uploadFile(
+    url: string,
+    fileOrPath: string | Buffer,
+    contentType: string
+  ): Upload {
+    return new HFUpload(url, fileOrPath, contentType, this.log);
+  }
+
+  async downloadFile(
+    url: string,
+    outputDir: string,
+    filenameOverride?: string
+  ): Promise<string> {
+    // url like https://huggingface.co/tencent/Hunyuan3D-2.1/resolve/main/hunyuan3d-dit-v2-1/model.fp16.ckpt?download=true
+    const outputPath = path.join(
+      outputDir,
+      filenameOverride || path.basename(new URL(url).pathname)
+    );
+    const { repo, revision, filePath } = parseHfUrl(url);
+    this.log.info(
+      `Using hf CLI to download ${filePath} from ${repo} at revision ${revision}`
+    );
+    const downloadResult = await execFilePromise(
+      "hf",
+      ["download", repo, filePath, "--revision", revision],
+      { env: process.env }
+    );
+
+    const downloadedPath = await fsPromises.realpath(
+      downloadResult.stdout.trim()
+    );
+
+    await execFilePromise("mv", [downloadedPath, outputPath]);
+
+    return outputPath;
+  }
+}
 
 class HFUpload implements Upload {
   url: string;
@@ -92,54 +168,5 @@ function parseHfUrl(url: string): {
     return { repo, revision, filePath };
   } else {
     throw new Error(`Invalid HuggingFace URL: ${url.toString()}`);
-  }
-}
-
-export class HFStorageProvider implements StorageProvider {
-  log: FastifyBaseLogger;
-
-  constructor(log: FastifyBaseLogger) {
-    this.log = log.child({ provider: "HFStorageProvider" });
-  }
-
-  testUrl(url: string): boolean {
-    return url.startsWith("https://huggingface.co/") && !!config.hfCLIVersion;
-  }
-
-  uploadFile(
-    url: string,
-    fileOrPath: string | Buffer,
-    contentType: string
-  ): Upload {
-    return new HFUpload(url, fileOrPath, contentType, this.log);
-  }
-
-  async downloadFile(
-    url: string,
-    outputDir: string,
-    filenameOverride?: string
-  ): Promise<string> {
-    // url like https://huggingface.co/tencent/Hunyuan3D-2.1/resolve/main/hunyuan3d-dit-v2-1/model.fp16.ckpt?download=true
-    const outputPath = path.join(
-      outputDir,
-      filenameOverride || path.basename(new URL(url).pathname)
-    );
-    const { repo, revision, filePath } = parseHfUrl(url);
-    this.log.info(
-      `Using hf CLI to download ${filePath} from ${repo} at revision ${revision}`
-    );
-    const downloadResult = await execFilePromise(
-      "hf",
-      ["download", repo, filePath, "--revision", revision],
-      { env: process.env }
-    );
-
-    const downloadedPath = await fsPromises.realpath(
-      downloadResult.stdout.trim()
-    );
-
-    await execFilePromise("mv", [downloadedPath, outputPath]);
-
-    return outputPath;
   }
 }
