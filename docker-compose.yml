@@ -25,6 +25,9 @@ services:
       MANIFEST: "/app/manifest.yml"
       STARTUP_CHECK_MAX_TRIES: "30"
       HF_TOKEN: ${HF_TOKEN}
+      # Azurite configuration
+      AZURE_STORAGE_ACCOUNT: "devstoreaccount1"
+      AZURE_STORAGE_CONNECTION_STRING: "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;"
     #   ALWAYS_RESTART_COMFYUI: "true"
     #   SYSTEM_WEBHOOK_URL: "http://host.docker.internal:1234/system"
     #   SYSTEM_WEBHOOK_EVENTS: all
@@ -49,3 +52,13 @@ services:
     ports:
       - "10000:10000"  # Blob service
     command: "azurite-blob --blobHost 0.0.0.0 --blobPort 10000"
+  file-server:
+    build:
+      context: .
+      dockerfile: test/Dockerfile.file-server
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - STORAGE_DIR=/storage
+      - REQUIRE_AUTH=false

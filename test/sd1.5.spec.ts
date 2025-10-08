@@ -8,6 +8,7 @@ import {
   checkImage,
   waitForServerToBeReady,
   s3,
+  getAzureContainer,
 } from "./test-utils";
 import sd15Txt2Img from "./workflows/sd1.5-txt2img.json";
 import sd15Img2Img from "./workflows/sd1.5-img2img.json";
@@ -23,6 +24,19 @@ import {
 
 const bucketName = "salad-benchmark-test";
 const pngKey = "test-image.png";
+const azureContainerName = "test-container";
+
+// Helper function to convert stream to buffer
+async function streamToBuffer(
+  readableStream: NodeJS.ReadableStream
+): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  return new Promise((resolve, reject) => {
+    readableStream.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
+    readableStream.on("error", reject);
+    readableStream.on("end", () => resolve(Buffer.concat(chunks)));
+  });
+}
 
 const sd15Txt2ImgBatch4 = JSON.parse(JSON.stringify(sd15Txt2Img));
 sd15Txt2ImgBatch4["5"].inputs.batch_size = 4;
@@ -40,6 +54,12 @@ sd15Img2ImgWithHttpUrl["10"].inputs.image =
 
 const sd15Img2ImgWithS3Url = JSON.parse(JSON.stringify(sd15Img2Img));
 sd15Img2ImgWithS3Url["10"].inputs.image = `s3://${bucketName}/${pngKey}`;
+
+const sd15Img2ImgWithAzureUrl = JSON.parse(JSON.stringify(sd15Img2Img));
+// Use azurite hostname for Docker network access
+sd15Img2ImgWithAzureUrl[
+  "10"
+].inputs.image = `http://azurite:10000/devstoreaccount1/${azureContainerName}/${pngKey}`;
 
 const sd15Img2ImgWithJpeg = JSON.parse(JSON.stringify(sd15Img2Img));
 const inputJpeg = fs
@@ -63,6 +83,20 @@ describe("Stable Diffusion 1.5", () => {
         ContentType: "image/png",
       })
     );
+    // Seed the HTTP file server with test image
+    await fetch(`http://localhost:8080/${pngKey}`, {
+      method: "PUT",
+      body: inputPng,
+      headers: {
+        "Content-Type": "image/png",
+      },
+    });
+    // Seed the Azure Blob container with test image
+    const azureContainer = await getAzureContainer(azureContainerName);
+    const blockBlobClient = azureContainer.getBlockBlobClient(pngKey);
+    await blockBlobClient.upload(inputPng, inputPng.length, {
+      blobHTTPHeaders: { blobContentType: "image/png" },
+    });
   });
   describe("Return content in response", () => {
     it("text2image works with 1 image", async () => {
@@ -121,7 +155,15 @@ describe("Stable Diffusion 1.5", () => {
       });
     });
 
-    it("image2image works with azure blob image url", async () => {});
+    it("image2image works with azure blob image url", async () => {
+      const respBody = await submitPrompt(sd15Img2ImgWithAzureUrl);
+      expect(respBody.filenames.length).toEqual(1);
+      expect(respBody.images.length).toEqual(1);
+      await checkImage(respBody.filenames[0], respBody.images[0], {
+        width: 768,
+        height: 768,
+      });
+    });
 
     it("image2image works with hf image url", async () => {});
 
@@ -347,11 +389,293 @@ describe("Stable Diffusion 1.5", () => {
     });
   });
 
-  describe("Upload to Azure Blob and return Blob URL", () => {});
+  describe("Upload to Azure Blob and return Blob URL", () => {
+    it("text2image works with 1 image", async () => {
+      const respBody = await submitPrompt(sd15Txt2Img, false, undefined, {
+        azureBlobUpload: {
+          container: azureContainerName,
+          blobPrefix: "sd15-txt2img/",
+        },
+      });
+      expect(respBody.filenames.length).toEqual(1);
+      expect(respBody.images.length).toEqual(1);
+      expect(
+        respBody.images[0].includes(`/${azureContainerName}/sd15-txt2img/`) &&
+          respBody.images[0].endsWith(".png")
+      ).toBeTruthy();
 
-  describe("Upload to Azure Blob Asynchronously", () => {});
+      // Verify the image was uploaded to Azure Blob
+      const azureUrl = respBody.images[0];
+      const urlParts = new URL(azureUrl);
+      let pathParts = urlParts.pathname.split("/").filter((p) => p);
 
-  describe("Upload to HTTP file server and return HTTP URL", () => {});
+      // For Azurite/emulator URLs in path-style format (http://host:port/accountname/container/blob)
+      // vs Azure URLs in host-style format (https://accountname.blob.core.windows.net/container/blob)
+      if (!urlParts.hostname.includes(".blob.core.windows.net")) {
+        // Path-style URL - first part is account name, skip it
+        pathParts = pathParts.slice(1);
+      }
 
-  describe("Upload to HTTP file server Asynchronously", () => {});
+      const containerName = pathParts[0];
+      const blobName = pathParts.slice(1).join("/");
+
+      const azureContainer = await getAzureContainer(containerName);
+      const blockBlobClient = azureContainer.getBlockBlobClient(blobName);
+      const downloadResponse = await blockBlobClient.download();
+      const imageBuffer = await streamToBuffer(
+        downloadResponse.readableStreamBody!
+      );
+      await checkImage(respBody.filenames[0], imageBuffer.toString("base64"));
+    });
+
+    it("text2image works with multiple images", async () => {
+      const respBody = await submitPrompt(sd15Txt2ImgBatch4, false, undefined, {
+        azureBlobUpload: {
+          container: azureContainerName,
+          blobPrefix: "sd15-txt2img-batch4/",
+        },
+      });
+      expect(respBody.filenames.length).toEqual(4);
+      expect(respBody.images.length).toEqual(4);
+
+      for (let i = 0; i < respBody.filenames.length; i++) {
+        expect(
+          respBody.images[i].includes(
+            `/${azureContainerName}/sd15-txt2img-batch4/`
+          ) && respBody.images[i].endsWith(".png")
+        ).toBeTruthy();
+
+        // Verify each image was uploaded to Azure Blob
+        const azureUrl = respBody.images[i];
+        const urlParts = new URL(azureUrl);
+        let pathParts = urlParts.pathname.split("/").filter((p) => p);
+
+        // For Azurite/emulator URLs in path-style format (http://host:port/accountname/container/blob)
+        // vs Azure URLs in host-style format (https://accountname.blob.core.windows.net/container/blob)
+        if (!urlParts.hostname.includes(".blob.core.windows.net")) {
+          // Path-style URL - first part is account name, skip it
+          pathParts = pathParts.slice(1);
+        }
+
+        const containerName = pathParts[0];
+        const blobName = pathParts.slice(1).join("/");
+
+        const azureContainer = await getAzureContainer(containerName);
+        const blockBlobClient = azureContainer.getBlockBlobClient(blobName);
+        const downloadResponse = await blockBlobClient.download();
+        const imageBuffer = await streamToBuffer(
+          downloadResponse.readableStreamBody!
+        );
+        await checkImage(respBody.filenames[i], imageBuffer.toString("base64"));
+      }
+    });
+  });
+
+  describe("Upload to Azure Blob Asynchronously", () => {
+    it("text2image works with 1 image", async () => {
+      // Use timestamp to make prefix unique per test run
+      const timestamp = Date.now();
+      const uniquePrefix = `sd15-txt2img-async-${timestamp}/`;
+
+      const respBody = await submitPrompt(sd15Txt2Img, false, undefined, {
+        azureBlobUpload: {
+          container: azureContainerName,
+          blobPrefix: uniquePrefix,
+          async: true,
+        },
+      });
+      expect(respBody.status).toEqual("ok");
+
+      // Wait for async upload to complete
+      const azureContainer = await getAzureContainer(azureContainerName);
+      let blobs: string[] = [];
+      let attempts = 0;
+      while (blobs.length < 1 && attempts < 10) {
+        blobs = [];
+        for await (const blob of azureContainer.listBlobsFlat({
+          prefix: uniquePrefix,
+        })) {
+          blobs.push(blob.name);
+        }
+        if (blobs.length < 1) {
+          await sleep(1000);
+        }
+        attempts++;
+      }
+
+      expect(blobs.length).toEqual(1);
+
+      // Verify the uploaded image
+      const blockBlobClient = azureContainer.getBlockBlobClient(blobs[0]);
+      const downloadResponse = await blockBlobClient.download();
+      const imageBuffer = await streamToBuffer(
+        downloadResponse.readableStreamBody!
+      );
+      await checkImage(blobs[0], imageBuffer.toString("base64"));
+    });
+
+    it("text2image works with multiple images", async () => {
+      // Use timestamp to make prefix unique per test run
+      const timestamp = Date.now();
+      const uniquePrefix = `sd15-txt2img-batch4-async-${timestamp}/`;
+
+      const respBody = await submitPrompt(sd15Txt2ImgBatch4, false, undefined, {
+        azureBlobUpload: {
+          container: azureContainerName,
+          blobPrefix: uniquePrefix,
+          async: true,
+        },
+      });
+      expect(respBody.status).toEqual("ok");
+
+      // Wait for async uploads to complete
+      let blobs: string[] = [];
+      let attempts = 0;
+      while (blobs.length < 4 && attempts < 10) {
+        await sleep(1000);
+        blobs = [];
+        const azureContainer = await getAzureContainer(azureContainerName);
+        for await (const blob of azureContainer.listBlobsFlat({
+          prefix: uniquePrefix,
+        })) {
+          blobs.push(blob.name);
+        }
+        attempts++;
+      }
+
+      expect(blobs.length).toEqual(4);
+
+      // Verify each uploaded image
+      for (const blobName of blobs) {
+        const azureContainer = await getAzureContainer(azureContainerName);
+        const blockBlobClient = azureContainer.getBlockBlobClient(blobName);
+        const downloadResponse = await blockBlobClient.download();
+        const imageBuffer = await streamToBuffer(
+          downloadResponse.readableStreamBody!
+        );
+        await checkImage(blobName, imageBuffer.toString("base64"));
+      }
+    });
+  });
+
+  describe("Upload to HTTP file server and return HTTP URL", () => {
+    it("text2image works with 1 image", async () => {
+      const respBody = await submitPrompt(sd15Txt2Img, false, undefined, {
+        httpUpload: {
+          url_prefix: "http://file-server:8080",
+        },
+      });
+      expect(respBody.filenames.length).toEqual(1);
+      expect(respBody.images.length).toEqual(1);
+      expect(
+        respBody.images[0].startsWith("http://file-server:8080/") &&
+          respBody.images[0].endsWith(".png")
+      ).toBeTruthy();
+
+      // Verify the image was uploaded to the HTTP server
+      const httpUrl = respBody.images[0].replace("file-server", "localhost");
+      const response = await fetch(httpUrl);
+      expect(response.ok).toBeTruthy();
+      const imageBuffer = Buffer.from(await response.arrayBuffer());
+      await checkImage(respBody.filenames[0], imageBuffer.toString("base64"));
+    });
+
+    it("text2image works with multiple images", async () => {
+      const respBody = await submitPrompt(sd15Txt2ImgBatch4, false, undefined, {
+        httpUpload: {
+          url_prefix: "http://file-server:8080",
+        },
+      });
+      expect(respBody.filenames.length).toEqual(4);
+      expect(respBody.images.length).toEqual(4);
+
+      for (let i = 0; i < respBody.filenames.length; i++) {
+        expect(
+          respBody.images[i].startsWith("http://file-server:8080/") &&
+            respBody.images[i].endsWith(".png")
+        ).toBeTruthy();
+
+        // Verify each image was uploaded to the HTTP server
+        const httpUrl = respBody.images[i].replace("file-server", "localhost");
+        const response = await fetch(httpUrl);
+        expect(response.ok).toBeTruthy();
+        const imageBuffer = Buffer.from(await response.arrayBuffer());
+        await checkImage(respBody.filenames[i], imageBuffer.toString("base64"));
+      }
+    });
+  });
+
+  describe("Upload to HTTP file server Asynchronously", () => {
+    it("text2image works with 1 image", async () => {
+      const expectedPrefix = "http-async-txt2img-";
+      const respBody = await submitPrompt(sd15Txt2Img, false, undefined, {
+        httpUpload: {
+          url_prefix: `http://file-server:8080/${expectedPrefix}`,
+          async: true,
+        },
+      });
+      expect(respBody.status).toEqual("ok");
+
+      // Wait for async upload to complete by polling the list endpoint
+      let files: string[] = [];
+      let attempts = 0;
+      while (files.length < 1 && attempts < 10) {
+        const listResp = await fetch(
+          `http://localhost:8080/list?prefix=${expectedPrefix}`
+        );
+        const listData = await listResp.json();
+        files = listData.files || [];
+        if (files.length < 1) {
+          await sleep(1000);
+        }
+        attempts++;
+      }
+
+      expect(files.length).toEqual(1);
+
+      // Verify the uploaded image
+      const fileUrl = `http://localhost:8080/${files[0]}`;
+      const response = await fetch(fileUrl);
+      expect(response.ok).toBeTruthy();
+      const imageBuffer = Buffer.from(await response.arrayBuffer());
+      await checkImage(files[0], imageBuffer.toString("base64"));
+    });
+
+    it("text2image works with multiple images", async () => {
+      const expectedPrefix = "http-async-batch4-";
+      const respBody = await submitPrompt(sd15Txt2ImgBatch4, false, undefined, {
+        httpUpload: {
+          url_prefix: `http://file-server:8080/${expectedPrefix}`,
+          async: true,
+        },
+      });
+      expect(respBody.status).toEqual("ok");
+
+      // Wait for async uploads to complete by polling the list endpoint
+      let files: string[] = [];
+      let attempts = 0;
+      while (files.length < 4 && attempts < 10) {
+        const listResp = await fetch(
+          `http://localhost:8080/list?prefix=${expectedPrefix}`
+        );
+        const listData = await listResp.json();
+        files = listData.files || [];
+        if (files.length < 4) {
+          await sleep(1000);
+        }
+        attempts++;
+      }
+
+      expect(files.length).toEqual(4);
+
+      // Verify each uploaded image
+      for (const filename of files) {
+        const fileUrl = `http://localhost:8080/${filename}`;
+        const response = await fetch(fileUrl);
+        expect(response.ok).toBeTruthy();
+        const imageBuffer = Buffer.from(await response.arrayBuffer());
+        await checkImage(filename, imageBuffer.toString("base64"));
+      }
+    });
+  });
 });

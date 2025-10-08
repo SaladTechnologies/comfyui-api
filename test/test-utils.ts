@@ -3,6 +3,7 @@ import sharp from "sharp";
 import fastify, { FastifyInstance } from "fastify";
 import { fetch, Agent } from "undici";
 import { S3Client } from "@aws-sdk/client-s3";
+import { BlobServiceClient, ContainerClient } from "@azure/storage-blob";
 
 export const s3 = new S3Client({
   region: "us-east-1",
@@ -13,6 +14,24 @@ export const s3 = new S3Client({
   },
   forcePathStyle: true, // Required for LocalStack
 });
+
+// Azurite connection string for local testing
+const azuriteConnectionString =
+  "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://localhost:10000/devstoreaccount1;";
+
+export const azureBlobClient = BlobServiceClient.fromConnectionString(
+  azuriteConnectionString
+);
+
+export async function getAzureContainer(
+  containerName: string
+): Promise<ContainerClient> {
+  const containerClient = azureBlobClient.getContainerClient(containerName);
+  if (!(await containerClient.exists())) {
+    await containerClient.create();
+  }
+  return containerClient;
+}
 
 export async function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -48,7 +67,7 @@ export async function submitPrompt(
   prompt: any,
   webhook: boolean = false,
   convert: any = undefined,
-  s3: any = undefined
+  upload: any = undefined
 ): Promise<any> {
   const body: any = {
     prompt,
@@ -59,8 +78,14 @@ export async function submitPrompt(
   if (convert) {
     body["convert_output"] = convert;
   }
-  if (s3) {
-    body["s3"] = s3;
+  // Handle different upload provider keys
+  if (upload) {
+    // For backward compatibility, if upload is passed directly as s3 config
+    if (upload.bucket !== undefined || upload.prefix !== undefined) {
+      body["s3"] = upload;
+    } else {
+      Object.assign(body, upload);
+    }
   }
   try {
     const resp = await fetch(`http://localhost:3000/prompt`, {

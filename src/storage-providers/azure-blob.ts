@@ -5,7 +5,10 @@ import { FastifyBaseLogger } from "fastify";
 import config from "../config";
 import { z } from "zod";
 import { DefaultAzureCredential } from "@azure/identity";
-import { BlobServiceClient } from "@azure/storage-blob";
+import {
+  BlobServiceClient,
+  StorageSharedKeyCredential,
+} from "@azure/storage-blob";
 import fs, { ReadStream } from "fs";
 
 export class AzureBlobStorageProvider implements StorageProvider {
@@ -26,16 +29,54 @@ export class AzureBlobStorageProvider implements StorageProvider {
 
   constructor(log: FastifyBaseLogger) {
     this.log = log.child({ provider: "AzureBlobStorageProvider" });
-    const defaultAzureCredential = new DefaultAzureCredential();
-    if (!config.azureStorageAccount) {
-      throw new Error(
-        "AZURE_STORAGE_ACCOUNT is not set in environment variables"
+
+    // Priority 1: Connection string (for Azurite or full connection strings)
+    if (config.azureStorageConnectionString) {
+      this.log.info("Using Azure Storage connection string");
+      this.client = BlobServiceClient.fromConnectionString(
+        config.azureStorageConnectionString
       );
     }
-    this.client = new BlobServiceClient(
-      `https://${config.azureStorageAccount}.blob.core.windows.net`,
-      defaultAzureCredential
-    );
+    // Priority 2: Storage account with explicit key
+    else if (config.azureStorageAccount && config.azureStorageKey) {
+      this.log.info("Using Azure Storage account with shared key");
+      const sharedKeyCredential = new StorageSharedKeyCredential(
+        config.azureStorageAccount,
+        config.azureStorageKey
+      );
+      this.client = new BlobServiceClient(
+        `https://${config.azureStorageAccount}.blob.core.windows.net`,
+        sharedKeyCredential
+      );
+    }
+    // Priority 3: Storage account with SAS token
+    else if (config.azureStorageAccount && config.azureStorageSasToken) {
+      this.log.info("Using Azure Storage account with SAS token");
+      // SAS tokens are appended to the URL, not passed as credentials
+      const sasToken = config.azureStorageSasToken.startsWith("?")
+        ? config.azureStorageSasToken
+        : `?${config.azureStorageSasToken}`;
+      this.client = new BlobServiceClient(
+        `https://${config.azureStorageAccount}.blob.core.windows.net${sasToken}`
+      );
+    }
+    // Priority 4: DefaultAzureCredential (handles many auth methods automatically)
+    else if (config.azureStorageAccount) {
+      this.log.info("Using DefaultAzureCredential with storage account");
+      const defaultAzureCredential = new DefaultAzureCredential();
+      this.client = new BlobServiceClient(
+        `https://${config.azureStorageAccount}.blob.core.windows.net`,
+        defaultAzureCredential
+      );
+    } else {
+      throw new Error(
+        "Azure Storage configuration required. Set either:\n" +
+          "- AZURE_STORAGE_CONNECTION_STRING (for Azurite or full connection)\n" +
+          "- AZURE_STORAGE_ACCOUNT with AZURE_STORAGE_KEY (shared key auth)\n" +
+          "- AZURE_STORAGE_ACCOUNT with AZURE_STORAGE_SAS_TOKEN (SAS auth)\n" +
+          "- AZURE_STORAGE_ACCOUNT with DefaultAzureCredential (Azure AD/CLI/etc)"
+      );
+    }
   }
 
   createUrl(inputs: z.infer<typeof this.urlRequestSchema>): string {
@@ -46,12 +87,31 @@ export class AzureBlobStorageProvider implements StorageProvider {
     const encodedBlobPrefix = blobPrefix
       ? `${blobPrefix.replace(/^\//, "").replace(/\/$/, "/")}`
       : "";
-    return `https://${config.azureStorageAccount}.blob.core.windows.net/${container}/${encodedBlobPrefix}${filename}`;
+
+    // Get the base URL from the client
+    if (this.client) {
+      let baseUrl = this.client.url;
+      // For local development, ensure we use the Docker service name
+      if (baseUrl.includes("localhost:10000")) {
+        baseUrl = baseUrl.replace("localhost", "azurite");
+      }
+      return `${baseUrl}/${container}/${encodedBlobPrefix}${filename}`;
+    }
+
+    // Fallback to constructing URL from storage account
+    if (config.azureStorageAccount) {
+      return `https://${config.azureStorageAccount}.blob.core.windows.net/${container}/${encodedBlobPrefix}${filename}`;
+    }
+
+    throw new Error("Unable to create Azure Blob URL");
   }
 
   testUrl(url: string): boolean {
+    // Support both HTTPS (production) and HTTP (local Azurite)
     return (
-      url.startsWith("https://") && url.includes(".blob.core.windows.net/")
+      (url.startsWith("https://") && url.includes(".blob.core.windows.net/")) ||
+      (url.startsWith("http://") &&
+        (url.includes("devstoreaccount") || url.includes("azurite")))
     );
   }
 
@@ -75,14 +135,20 @@ export class AzureBlobStorageProvider implements StorageProvider {
   async downloadFile(
     url: string,
     outputDir: string,
-    outputFilename: string
+    filenameOverride?: string
   ): Promise<string> {
     if (!this.client) {
       throw new Error("Azure Blob Service Client is not initialized");
     }
     // Parse the URL to extract container name and blob name
     const parsedUrl = new URL(url);
-    const pathParts = parsedUrl.pathname.split("/").filter(Boolean); // Remove empty parts
+    let pathParts = parsedUrl.pathname.split("/").filter(Boolean); // Remove empty parts
+
+    // For Azurite URLs, skip the account name (devstoreaccount1)
+    if (pathParts[0] === "devstoreaccount1") {
+      pathParts = pathParts.slice(1);
+    }
+
     if (pathParts.length < 2) {
       throw new Error("Invalid Azure Blob URL format");
     }
@@ -96,7 +162,10 @@ export class AzureBlobStorageProvider implements StorageProvider {
     if (!downloadResponse.readableStreamBody) {
       throw new Error("Failed to get readable stream from blob download");
     }
-    const downloadedFilePath = path.join(outputDir, outputFilename);
+    const downloadedFilePath = path.join(
+      outputDir,
+      filenameOverride || path.basename(blobName)
+    );
     const writableStream = fs.createWriteStream(downloadedFilePath);
     downloadResponse.readableStreamBody.pipe(writableStream);
     await new Promise((resolve, reject) => {
@@ -127,7 +196,7 @@ class AzureBlobUpload implements Upload {
     this.fileOrPath = fileOrPath;
     this.contentType = contentType;
     this.client = client;
-    this.log = log.child({ uploader: "" });
+    this.log = log.child({ uploader: "AzureBlobUpload" });
   }
 
   private createInputStream(fileOrPath: string | Buffer): ReadStream | Buffer {
@@ -141,7 +210,17 @@ class AzureBlobUpload implements Upload {
   async upload(): Promise<void> {
     // Parse the URL to extract container name and blob name
     const url = new URL(this.url);
-    const pathParts = url.pathname.split("/").filter(Boolean); // Remove empty parts
+    let pathParts = url.pathname.split("/").filter(Boolean); // Remove empty parts
+    
+    // For Azurite/emulator URLs in path-style format (http://host:port/accountname/container/blob)
+    // vs Azure URLs in host-style format (https://accountname.blob.core.windows.net/container/blob)
+    if (!url.hostname.includes('.blob.core.windows.net')) {
+      // Path-style URL - first part is account name, skip it
+      if (pathParts.length > 0) {
+        pathParts = pathParts.slice(1);
+      }
+    }
+    
     if (pathParts.length < 2) {
       throw new Error("Invalid Azure Blob URL format");
     }

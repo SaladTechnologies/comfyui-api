@@ -1,0 +1,23 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Install TypeScript and Node types for compilation
+RUN npm install -g typescript && npm install --save-dev @types/node
+
+# Copy and compile the server file
+COPY test/file-server.ts ./
+RUN tsc --module commonjs --target es2020 --esModuleInterop --skipLibCheck file-server.ts
+
+# Create storage directory
+RUN mkdir -p /storage
+
+# Expose port
+EXPOSE 8080
+
+# Set default environment variables
+ENV PORT=8080
+ENV STORAGE_DIR=/storage
+
+# Run the compiled JavaScript
+CMD ["node", "file-server.js"]

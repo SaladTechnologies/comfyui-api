@@ -430,18 +430,19 @@ server.after(() => {
         return { images, filenames, stats };
       };
 
-      const hasAnUploadBlock = remoteStorageManager.storageProviders.some(
+      const storageProvider = remoteStorageManager.storageProviders.find(
         (provider) => !!request.body[provider.requestBodyUploadKey]
       );
       const asyncUpload =
         webhook ||
-        remoteStorageManager.storageProviders.some(
-          (provider) => !!request.body[provider.requestBodyUploadKey]?.async
-        );
+        (storageProvider &&
+          request.body[storageProvider.requestBodyUploadKey]?.async);
+      storageProvider &&
+        log.debug(request.body[storageProvider.requestBodyUploadKey]);
 
       if (webhook) {
         uploadPromise = runPromptPromise.then(webhookHandler);
-      } else if (hasAnUploadBlock) {
+      } else if (!!storageProvider) {
         uploadPromise = runPromptPromise.then(uploadHandler);
       } else {
         uploadPromise = runPromptPromise.then(

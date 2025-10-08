@@ -12,6 +12,9 @@ const {
   AWS_DEFAULT_REGION,
   AWS_REGION,
   AZURE_STORAGE_ACCOUNT,
+  AZURE_STORAGE_CONNECTION_STRING,
+  AZURE_STORAGE_KEY,
+  AZURE_STORAGE_SAS_TOKEN,
   BASE = "",
   CACHE_DIR = `${process.env.HOME}/.cache/comfyui-api`,
   CMD = "init.sh",
@@ -310,6 +313,21 @@ const config = {
    * (optional) The Azure Storage account name to use for Azure Blob operations.
    */
   azureStorageAccount: AZURE_STORAGE_ACCOUNT ?? null,
+
+  /**
+   * (optional) The Azure Storage connection string for local development (e.g., Azurite).
+   */
+  azureStorageConnectionString: AZURE_STORAGE_CONNECTION_STRING ?? null,
+
+  /**
+   * (optional) The Azure Storage account key for shared key authentication.
+   */
+  azureStorageKey: AZURE_STORAGE_KEY ?? null,
+
+  /**
+   * (optional) The Azure Storage SAS token for SAS authentication.
+   */
+  azureStorageSasToken: AZURE_STORAGE_SAS_TOKEN ?? null,
 
   /**
    * The directory where cached files are stored, specified by CACHE_DIR env var.

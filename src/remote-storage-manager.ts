@@ -64,8 +64,20 @@ class RemoteStorageManager {
     this.cacheDir = cacheDir;
     this.log = log.child({ module: "RemoteStorageManager" });
     fs.mkdirSync(this.cacheDir, { recursive: true });
-    this.storageProviders = storageProviders.map(
-      (Provider) => new Provider(this.log)
+    this.storageProviders = storageProviders
+      .map((Provider) => {
+        try {
+          return new Provider(this.log);
+        } catch (error) {
+          this.log.warn(
+            { error },
+            `Error initializing storage provider ${Provider.name}`
+          );
+        }
+      })
+      .filter(Boolean) as StorageProvider[];
+    this.log.info(
+      `Initialized with ${this.storageProviders.length} storage providers`
     );
   }
 
@@ -110,7 +122,6 @@ class RemoteStorageManager {
     const start = Date.now();
     const ext = path.extname(new URL(url).pathname);
     const tempFilename = `${hashedUrl}${ext}`;
-    const tempFilePath = path.join(this.cacheDir, tempFilename);
 
     for (const provider of this.storageProviders) {
       if (provider.downloadFile && provider.testUrl(url)) {
@@ -118,7 +129,7 @@ class RemoteStorageManager {
           `Downloading ${url} using provider ${provider.constructor.name}`
         );
         this.activeDownloads[url] = provider
-          .downloadFile(url, this.cacheDir, filenameOverride || tempFilePath)
+          .downloadFile(url, this.cacheDir, filenameOverride || tempFilename)
           .then((outputLocation: string) => {
             this.cache[url] = outputLocation;
             return outputLocation;
@@ -198,6 +209,7 @@ class RemoteStorageManager {
           fileOrPath,
           contentType
         );
+        break; // Use only the first matching provider
       }
     }
     await this.activeUploads[url].upload();
