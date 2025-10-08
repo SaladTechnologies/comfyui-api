@@ -67,6 +67,28 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(500);
       res.end("Internal Server Error");
     }
+  } else if (req.method === "DELETE" && url.pathname === "/purge") {
+    // Purge endpoint to delete all files and directories
+    try {
+      // Recursively delete all contents of the storage directory
+      const entries = fs.readdirSync(STORAGE_DIR, { withFileTypes: true });
+      for (const entry of entries) {
+        const fullPath = path.join(STORAGE_DIR, entry.name);
+        if (entry.isDirectory()) {
+          fs.rmSync(fullPath, { recursive: true, force: true });
+        } else {
+          fs.unlinkSync(fullPath);
+        }
+      }
+      
+      console.log(`Purged all files from ${STORAGE_DIR}`);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ success: true, message: "All files purged" }));
+    } catch (error) {
+      console.error("Error purging files:", error);
+      res.writeHead(500);
+      res.end("Internal Server Error");
+    }
   } else if (req.method === "PUT") {
     try {
       // Ensure we don't write outside storage dir

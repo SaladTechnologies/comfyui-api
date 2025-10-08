@@ -1,6 +1,7 @@
 import { expect } from "earl";
 import path from "path";
 import fs from "fs";
+import { fetch, Agent } from "undici";
 import {
   sleep,
   createWebhookListener,
@@ -25,6 +26,7 @@ import {
 const bucketName = "salad-benchmark-test";
 const pngKey = "test-image.png";
 const azureContainerName = "test-container";
+const webhookAddress = "http://host.docker.internal:1234/webhook";
 
 // Helper function to convert stream to buffer
 async function streamToBuffer(
@@ -83,6 +85,10 @@ describe("Stable Diffusion 1.5", () => {
         ContentType: "image/png",
       })
     );
+    // Purge the HTTP file server before seeding
+    await fetch(`http://localhost:8080/purge`, {
+      method: "DELETE",
+    });
     // Seed the HTTP file server with test image
     await fetch(`http://localhost:8080/${pngKey}`, {
       method: "PUT",
@@ -623,7 +629,7 @@ describe("Stable Diffusion 1.5", () => {
         const listResp = await fetch(
           `http://localhost:8080/list?prefix=${expectedPrefix}`
         );
-        const listData = await listResp.json();
+        const listData = await listResp.json() as { files?: string[] };
         files = listData.files || [];
         if (files.length < 1) {
           await sleep(1000);
@@ -658,7 +664,7 @@ describe("Stable Diffusion 1.5", () => {
         const listResp = await fetch(
           `http://localhost:8080/list?prefix=${expectedPrefix}`
         );
-        const listData = await listResp.json();
+        const listData = await listResp.json() as { files?: string[] };
         files = listData.files || [];
         if (files.length < 4) {
           await sleep(1000);
@@ -676,6 +682,379 @@ describe("Stable Diffusion 1.5", () => {
         const imageBuffer = Buffer.from(await response.arrayBuffer());
         await checkImage(filename, imageBuffer.toString("base64"));
       }
+    });
+  });
+
+  describe("Workflow endpoints", () => {
+    async function submitWorkflow(
+      endpoint: string,
+      input: any,
+      webhook: boolean = false,
+      convert: any = undefined,
+      upload: any = undefined
+    ): Promise<any> {
+      const body: any = {
+        input,
+      };
+      if (webhook) {
+        body["webhook"] = webhookAddress;
+      }
+      if (convert) {
+        body["convert_output"] = convert;
+      }
+      if (upload) {
+        // Handle different upload provider keys
+        if (upload.bucket !== undefined || upload.prefix !== undefined) {
+          body["s3"] = upload;
+        } else {
+          Object.assign(body, upload);
+        }
+      }
+      
+      const resp = await fetch(`http://localhost:3000${endpoint}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+        dispatcher: new Agent({
+          headersTimeout: 0,
+          bodyTimeout: 0,
+          connectTimeout: 0,
+        }),
+      });
+      
+      if (!resp.ok) {
+        console.error(await resp.text());
+        throw new Error(`Workflow submission failed: ${resp.status}`);
+      }
+      return await resp.json();
+    }
+
+    describe("/workflow/txt2img", () => {
+      it("works with default parameters", async () => {
+        const respBody = await submitWorkflow("/workflow/txt2img", {
+          prompt: "a beautiful sunset",
+        });
+        expect(respBody.filenames.length).toEqual(1);
+        expect(respBody.images.length).toEqual(1);
+        await checkImage(respBody.filenames[0], respBody.images[0]);
+      });
+
+      it("works with custom parameters", async () => {
+        const respBody = await submitWorkflow("/workflow/txt2img", {
+          prompt: "a beautiful sunset",
+          seed: 42,
+          steps: 20,
+          cfg: 7.5,
+          width: 768,
+          height: 768,
+          batch_size: 2,
+        });
+        expect(respBody.filenames.length).toEqual(2);
+        expect(respBody.images.length).toEqual(2);
+        for (let i = 0; i < respBody.filenames.length; i++) {
+          await checkImage(respBody.filenames[i], respBody.images[i], {
+            width: 768,
+            height: 768,
+          });
+        }
+      });
+
+      it("works with webhook", async () => {
+        let expected = 1;
+        const webhook = await createWebhookListener(async (body) => {
+          expected--;
+          const { id, filename, image } = body;
+          expect(id).toEqual(reqId);
+          await checkImage(filename, image);
+        });
+        
+        const { id: reqId } = await submitWorkflow(
+          "/workflow/txt2img",
+          { prompt: "a beautiful sunset" },
+          true
+        );
+        
+        while (expected > 0) {
+          await sleep(100);
+        }
+        await webhook.close();
+      });
+
+      it("works with S3 upload", async () => {
+        const respBody = await submitWorkflow(
+          "/workflow/txt2img",
+          { prompt: "a beautiful sunset" },
+          false,
+          undefined,
+          {
+            bucket: bucketName,
+            prefix: "workflow-txt2img/",
+            async: false,
+          }
+        );
+        expect(respBody.filenames.length).toEqual(1);
+        expect(respBody.images.length).toEqual(1);
+        expect(
+          respBody.images[0].startsWith("s3://") &&
+          respBody.images[0].endsWith(".png")
+        ).toBeTruthy();
+        
+        const s3Url = new URL(respBody.images[0]);
+        const bucket = s3Url.hostname;
+        const key = s3Url.pathname.slice(1);
+        const s3Resp = await s3.send(
+          new GetObjectCommand({
+            Bucket: bucket,
+            Key: key,
+          })
+        );
+        const imageBuffer = Buffer.from(
+          await s3Resp.Body!.transformToByteArray()
+        );
+        await checkImage(key, imageBuffer.toString("base64"));
+      });
+
+      it("works with format conversion", async () => {
+        const respBody = await submitWorkflow(
+          "/workflow/txt2img",
+          { prompt: "a beautiful sunset" },
+          false,
+          { format: "jpeg" }
+        );
+        expect(respBody.filenames.length).toEqual(1);
+        expect(respBody.images.length).toEqual(1);
+        expect(respBody.filenames[0].endsWith(".jpeg")).toBeTruthy();
+        await checkImage(respBody.filenames[0], respBody.images[0]);
+      });
+    });
+
+    describe("/workflow/img2img", () => {
+      it("works with base64 image", async () => {
+        const respBody = await submitWorkflow("/workflow/img2img", {
+          image: inputPngBase64,
+          prompt: "a beautiful sunset",
+        });
+        expect(respBody.filenames.length).toEqual(1);
+        expect(respBody.images.length).toEqual(1);
+        await checkImage(respBody.filenames[0], respBody.images[0], {
+          width: 768,
+          height: 768,
+        });
+      });
+
+      it("works with custom parameters", async () => {
+        const respBody = await submitWorkflow("/workflow/img2img", {
+          image: inputPngBase64,
+          prompt: "a beautiful sunset",
+          seed: 42,
+          steps: 20,
+          cfg: 7.5,
+          denoise: 0.8,
+          batch_size: 2,
+        });
+        expect(respBody.filenames.length).toEqual(2);
+        expect(respBody.images.length).toEqual(2);
+        for (let i = 0; i < respBody.filenames.length; i++) {
+          await checkImage(respBody.filenames[i], respBody.images[i], {
+            width: 768,
+            height: 768,
+          });
+        }
+      });
+
+      it("works with HTTP image URL", async () => {
+        const respBody = await submitWorkflow("/workflow/img2img", {
+          image: `http://file-server:8080/${pngKey}`,
+          prompt: "a beautiful sunset",
+        });
+        expect(respBody.filenames.length).toEqual(1);
+        expect(respBody.images.length).toEqual(1);
+        await checkImage(respBody.filenames[0], respBody.images[0], {
+          width: 768,
+          height: 768,
+        });
+      });
+
+      it("works with S3 image URL", async () => {
+        const respBody = await submitWorkflow("/workflow/img2img", {
+          image: `s3://${bucketName}/${pngKey}`,
+          prompt: "a beautiful sunset",
+        });
+        expect(respBody.filenames.length).toEqual(1);
+        expect(respBody.images.length).toEqual(1);
+        await checkImage(respBody.filenames[0], respBody.images[0], {
+          width: 768,
+          height: 768,
+        });
+      });
+
+      it("works with Azure Blob image URL", async () => {
+        const respBody = await submitWorkflow("/workflow/img2img", {
+          image: `http://azurite:10000/devstoreaccount1/${azureContainerName}/${pngKey}`,
+          prompt: "a beautiful sunset",
+        });
+        expect(respBody.filenames.length).toEqual(1);
+        expect(respBody.images.length).toEqual(1);
+        await checkImage(respBody.filenames[0], respBody.images[0], {
+          width: 768,
+          height: 768,
+        });
+      });
+
+      it("works with webhook", async () => {
+        let expected = 1;
+        const webhook = await createWebhookListener(async (body) => {
+          expected--;
+          const { id, filename, image } = body;
+          expect(id).toEqual(reqId);
+          await checkImage(filename, image, {
+            width: 768,
+            height: 768,
+          });
+        });
+        
+        const { id: reqId } = await submitWorkflow(
+          "/workflow/img2img",
+          {
+            image: inputPngBase64,
+            prompt: "a beautiful sunset",
+          },
+          true
+        );
+        
+        while (expected > 0) {
+          await sleep(100);
+        }
+        await webhook.close();
+      });
+
+      it("works with Azure Blob upload", async () => {
+        const respBody = await submitWorkflow(
+          "/workflow/img2img",
+          {
+            image: inputPngBase64,
+            prompt: "a beautiful sunset",
+          },
+          false,
+          undefined,
+          {
+            azureBlobUpload: {
+              container: azureContainerName,
+              blobPrefix: "workflow-img2img/",
+            },
+          }
+        );
+        expect(respBody.filenames.length).toEqual(1);
+        expect(respBody.images.length).toEqual(1);
+        expect(
+          respBody.images[0].includes(`/${azureContainerName}/workflow-img2img/`) &&
+          respBody.images[0].endsWith(".png")
+        ).toBeTruthy();
+        
+        // Verify the image was uploaded
+        const azureUrl = respBody.images[0];
+        const urlParts = new URL(azureUrl);
+        let pathParts = urlParts.pathname.split("/").filter((p) => p);
+        if (!urlParts.hostname.includes(".blob.core.windows.net")) {
+          pathParts = pathParts.slice(1);
+        }
+        const containerName = pathParts[0];
+        const blobName = pathParts.slice(1).join("/");
+        
+        const azureContainer = await getAzureContainer(containerName);
+        const blockBlobClient = azureContainer.getBlockBlobClient(blobName);
+        const downloadResponse = await blockBlobClient.download();
+        const imageBuffer = await streamToBuffer(
+          downloadResponse.readableStreamBody!
+        );
+        await checkImage(respBody.filenames[0], imageBuffer.toString("base64"), {
+          width: 768,
+          height: 768,
+        });
+      });
+
+      it("works with HTTP file server upload", async () => {
+        const respBody = await submitWorkflow(
+          "/workflow/img2img",
+          {
+            image: inputPngBase64,
+            prompt: "a beautiful sunset",
+          },
+          false,
+          undefined,
+          {
+            httpUpload: {
+              url_prefix: "http://file-server:8080/workflow-img2img",
+            },
+          }
+        );
+        expect(respBody.filenames.length).toEqual(1);
+        expect(respBody.images.length).toEqual(1);
+        expect(
+          respBody.images[0].startsWith("http://file-server:8080/workflow-img2img") &&
+          respBody.images[0].endsWith(".png")
+        ).toBeTruthy();
+        
+        // Verify the image was uploaded
+        const httpUrl = respBody.images[0].replace("file-server", "localhost");
+        const response = await fetch(httpUrl);
+        expect(response.ok).toBeTruthy();
+        const imageBuffer = Buffer.from(await response.arrayBuffer());
+        await checkImage(respBody.filenames[0], imageBuffer.toString("base64"), {
+          width: 768,
+          height: 768,
+        });
+      });
+
+      it("works with async S3 upload", async () => {
+        const respBody = await submitWorkflow(
+          "/workflow/img2img",
+          {
+            image: inputPngBase64,
+            prompt: "a beautiful sunset",
+          },
+          false,
+          undefined,
+          {
+            bucket: bucketName,
+            prefix: "workflow-img2img-async/",
+            async: true,
+          }
+        );
+        expect(respBody.status).toEqual("ok");
+        
+        // Wait for async upload
+        const listCmd = new ListObjectsCommand({
+          Bucket: bucketName,
+          Prefix: "workflow-img2img-async/",
+        });
+        
+        let outputs: string[] = [];
+        while (outputs.length < 1) {
+          const page = await s3.send(listCmd);
+          outputs = page.Contents?.map((obj) => obj.Key!) || [];
+          if (outputs.length < 1) {
+            await sleep(1000);
+          }
+        }
+        
+        expect(outputs.length).toEqual(1);
+        const s3Resp = await s3.send(
+          new GetObjectCommand({
+            Bucket: bucketName,
+            Key: outputs[0],
+          })
+        );
+        const imageBuffer = Buffer.from(
+          await s3Resp.Body!.transformToByteArray()
+        );
+        await checkImage(outputs[0]!, imageBuffer.toString("base64"), {
+          width: 768,
+          height: 768,
+        });
+      });
     });
   });
 });

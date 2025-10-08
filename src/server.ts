@@ -229,10 +229,6 @@ server.after(() => {
     },
     async (request, reply) => {
       let { prompt, id, webhook, convert_output } = request.body;
-      let contentType = "image/png";
-      if (convert_output) {
-        contentType = `image/${convert_output.format}`;
-      }
 
       /**
        * Here we go through all the nodes in the prompt to validate it,
@@ -422,7 +418,7 @@ server.after(() => {
             }
           }
           uploadPromises.push(
-            remoteStorageManager.uploadFile(images[i], fileBuffer, contentType)
+            remoteStorageManager.uploadFile(images[i], fileBuffer)
           );
         }
 
