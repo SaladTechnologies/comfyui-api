@@ -44,3 +44,8 @@ services:
       - SERVICES=s3
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock"
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite
+    ports:
+      - "10000:10000"  # Blob service
+    command: "azurite-blob --blobHost 0.0.0.0 --blobPort 10000"

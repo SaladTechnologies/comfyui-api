@@ -121,6 +121,10 @@ describe("Stable Diffusion 1.5", () => {
       });
     });
 
+    it("image2image works with azure blob image url", async () => {});
+
+    it("image2image works with hf image url", async () => {});
+
     it("works if the workflow has multiple output nodes", async () => {
       const respBody = await submitPrompt(sd15MultiOutput);
       expect(respBody.filenames.length).toEqual(2);
@@ -342,4 +346,12 @@ describe("Stable Diffusion 1.5", () => {
       }
     });
   });
+
+  describe("Upload to Azure Blob and return Blob URL", () => {});
+
+  describe("Upload to Azure Blob Asynchronously", () => {});
+
+  describe("Upload to HTTP file server and return HTTP URL", () => {});
+
+  describe("Upload to HTTP file server Asynchronously", () => {});
 });
