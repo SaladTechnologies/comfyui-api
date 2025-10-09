@@ -67,11 +67,14 @@ function getContentTypeFromUrl(url: string): string {
     ".aac": "audio/aac",
     ".pdf": "application/pdf",
     ".doc": "application/msword",
-    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".docx":
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     ".xls": "application/vnd.ms-excel",
-    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".xlsx":
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     ".ppt": "application/vnd.ms-powerpoint",
-    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ".pptx":
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     ".txt": "text/plain",
     ".csv": "text/csv",
     ".html": "text/html",
@@ -89,7 +92,7 @@ function getContentTypeFromUrl(url: string): string {
     ".pt": "application/x-pytorch",
     ".pb": "application/x-tensorflow",
   };
-  
+
   return mimeTypes[ext] || "application/octet-stream";
 }
 
@@ -249,10 +252,10 @@ class RemoteStorageManager {
       await this.activeUploads[url].abort();
       delete this.activeUploads[url];
     }
-    
+
     // Determine content type from URL if not provided
     const mimeType = contentType || getContentTypeFromUrl(url);
-    
+
     for (const provider of this.storageProviders) {
       if (provider.uploadFile && provider.testUrl(url)) {
         this.log.info(
@@ -275,13 +278,34 @@ class RemoteStorageManager {
     targetDir: string
   ): Promise<string> {
     await fsPromises.mkdir(targetDir, { recursive: true });
-    // Clone the url to the custom nodes directory
-    this.log.info(`Cloning ${repoUrl} to ${targetDir}`);
-    await execFilePromise("git", ["clone", repoUrl], { cwd: targetDir });
-
+    // Check to see if the repo is already cloned
     const repoName = repoUrl
       .substring(repoUrl.lastIndexOf("/") + 1)
       .replace(/\.git$/, "");
+    const existingDir = path.join(targetDir, repoName);
+    if (fs.existsSync(existingDir)) {
+      // Check if it's a git repo
+      if (fs.existsSync(path.join(existingDir, ".git"))) {
+        this.log.info(`Repository ${repoUrl} already cloned, pulling latest`);
+        try {
+          await execFilePromise("git", ["pull"], { cwd: existingDir });
+        } catch (error) {
+          this.log.error(
+            { error },
+            `Error pulling latest changes for ${repoUrl}, using existing copy`
+          );
+        }
+        return existingDir;
+      } else {
+        throw new Error(
+          `Directory ${existingDir} already exists and is not a git repository`
+        );
+      }
+    }
+
+    // Clone the url to the custom nodes directory
+    this.log.info(`Cloning ${repoUrl} to ${targetDir}`);
+    await execFilePromise("git", ["clone", repoUrl], { cwd: targetDir });
 
     return path.join(targetDir, repoName);
   }
