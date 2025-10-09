@@ -32,14 +32,14 @@ export class AzureBlobStorageProvider implements StorageProvider {
 
     // Priority 1: Connection string (for Azurite or full connection strings)
     if (config.azureStorageConnectionString) {
-      this.log.info("Using Azure Storage connection string");
+      this.log.debug("Using Azure Storage connection string");
       this.client = BlobServiceClient.fromConnectionString(
         config.azureStorageConnectionString
       );
     }
     // Priority 2: Storage account with explicit key
     else if (config.azureStorageAccount && config.azureStorageKey) {
-      this.log.info("Using Azure Storage account with shared key");
+      this.log.debug("Using Azure Storage account with shared key");
       const sharedKeyCredential = new StorageSharedKeyCredential(
         config.azureStorageAccount,
         config.azureStorageKey
@@ -51,7 +51,7 @@ export class AzureBlobStorageProvider implements StorageProvider {
     }
     // Priority 3: Storage account with SAS token
     else if (config.azureStorageAccount && config.azureStorageSasToken) {
-      this.log.info("Using Azure Storage account with SAS token");
+      this.log.debug("Using Azure Storage account with SAS token");
       // SAS tokens are appended to the URL, not passed as credentials
       const sasToken = config.azureStorageSasToken.startsWith("?")
         ? config.azureStorageSasToken
@@ -62,7 +62,7 @@ export class AzureBlobStorageProvider implements StorageProvider {
     }
     // Priority 4: DefaultAzureCredential (handles many auth methods automatically)
     else if (config.azureStorageAccount) {
-      this.log.info("Using DefaultAzureCredential with storage account");
+      this.log.debug("Using DefaultAzureCredential with storage account");
       const defaultAzureCredential = new DefaultAzureCredential();
       this.client = new BlobServiceClient(
         `https://${config.azureStorageAccount}.blob.core.windows.net`,
@@ -211,16 +211,16 @@ class AzureBlobUpload implements Upload {
     // Parse the URL to extract container name and blob name
     const url = new URL(this.url);
     let pathParts = url.pathname.split("/").filter(Boolean); // Remove empty parts
-    
+
     // For Azurite/emulator URLs in path-style format (http://host:port/accountname/container/blob)
     // vs Azure URLs in host-style format (https://accountname.blob.core.windows.net/container/blob)
-    if (!url.hostname.includes('.blob.core.windows.net')) {
+    if (!url.hostname.includes(".blob.core.windows.net")) {
       // Path-style URL - first part is account name, skip it
       if (pathParts.length > 0) {
         pathParts = pathParts.slice(1);
       }
     }
-    
+
     if (pathParts.length < 2) {
       throw new Error("Invalid Azure Blob URL format");
     }

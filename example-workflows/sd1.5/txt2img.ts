@@ -3,11 +3,6 @@ import { z } from "zod";
 import { ComfyPrompt, Workflow } from "../types";
 import config from "../config";
 
-let checkpoint: any = config.models.checkpoints.enum.optional();
-if (config.warmupCkpt) {
-  checkpoint = checkpoint.default(config.warmupCkpt);
-}
-
 const RequestSchema = z.object({
   prompt: z.string().describe("The positive prompt for image generation"),
   negative_prompt: z
@@ -67,7 +62,12 @@ const RequestSchema = z.object({
     .optional()
     .default(1)
     .describe("Denoising strength"),
-  checkpoint,
+  checkpoint: z
+    .string()
+    .refine((val) => config.models.checkpoints.all.includes(val))
+    .optional()
+    .default(config.warmupCkpt || config.models.checkpoints.all[0])
+    .describe("Checkpoint to use"),
 });
 
 type InputType = z.infer<typeof RequestSchema>;

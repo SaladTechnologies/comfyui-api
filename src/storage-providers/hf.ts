@@ -15,6 +15,11 @@ export class HFStorageProvider implements StorageProvider {
   requestBodyUploadKey = "hfUpload";
   requestBodyUploadSchema = z.object({
     repo: z.string().describe("HuggingFace repo name, e.g. user/repo"),
+    repoType: z
+      .enum(["model", "dataset"])
+      .optional()
+      .default("model")
+      .describe("Type of HuggingFace repository"),
     revision: z
       .string()
       .optional()
@@ -36,11 +41,13 @@ export class HFStorageProvider implements StorageProvider {
   }
 
   createUrl(inputs: z.infer<typeof this.urlRequestSchema>): string {
-    const { repo, revision, directory, filename } = inputs;
+    const { repo, repoType, revision, directory, filename } = inputs;
     if (!repo) {
       throw new Error("Repo is required to create HuggingFace URL");
     }
-    return `https://huggingface.co/${repo}/resolve/${revision}/${directory}/${filename}`;
+    // Add repo type prefix for datasets
+    const repoPrefix = repoType === "dataset" ? "datasets/" : "";
+    return `https://huggingface.co/${repoPrefix}${repo}/resolve/${revision}/${directory}/${filename}`;
   }
 
   testUrl(url: string): boolean {
@@ -60,20 +67,32 @@ export class HFStorageProvider implements StorageProvider {
     outputDir: string,
     filenameOverride?: string
   ): Promise<string> {
-    // url like https://huggingface.co/tencent/Hunyuan3D-2.1/resolve/main/hunyuan3d-dit-v2-1/model.fp16.ckpt?download=true
     const outputPath = path.join(
       outputDir,
       filenameOverride || path.basename(new URL(url).pathname)
     );
-    const { repo, revision, filePath } = parseHfUrl(url);
+    const { repo, repoType, revision, filePath } = parseHfUrl(url);
     this.log.info(
-      `Using hf CLI to download ${filePath} from ${repo} at revision ${revision}`
+      `Using hf CLI to download ${filePath} from ${repo} (${repoType}) at revision ${revision}`
     );
-    const downloadResult = await execFilePromise(
-      "hf",
-      ["download", repo, filePath, "--revision", revision],
-      { env: process.env }
-    );
+
+    // For datasets, we need to use --repo-type dataset flag
+    const args =
+      repoType === "dataset"
+        ? [
+            "download",
+            repo,
+            filePath,
+            "--repo-type",
+            "dataset",
+            "--revision",
+            revision,
+          ]
+        : ["download", repo, filePath, "--revision", revision];
+
+    const downloadResult = await execFilePromise("hf", args, {
+      env: process.env,
+    });
 
     const downloadedPath = await fsPromises.realpath(
       downloadResult.stdout.trim()
@@ -120,17 +139,29 @@ class HFUpload implements Upload {
 
   async upload(): Promise<void> {
     await this.fileIsReady;
-    const { repo, revision, filePath } = parseHfUrl(this.url);
+    const { repo, repoType, revision, filePath } = parseHfUrl(this.url);
     this.log.info(
-      `Using hf CLI to upload ${filePath} to ${repo} at revision ${revision}`
+      `Using hf CLI to upload ${filePath} to ${repo} (${repoType}) at revision ${revision}`
     );
     this.abortController = new AbortController();
     try {
-      await execFilePromise(
-        "hf",
-        [repo, this.fileOrPath, filePath, "upload", "--revision", revision],
-        { env: process.env, signal: this.abortController.signal }
-      );
+      // For datasets, we need to use --repo-type dataset flag
+      const args = [
+        "upload",
+        repo,
+        this.fileOrPath,
+        filePath,
+        "--revision",
+        revision,
+      ];
+      if (repoType === "dataset") {
+        args.push("--repo-type", "dataset");
+      }
+
+      await execFilePromise("hf", args, {
+        env: process.env,
+        signal: this.abortController.signal,
+      });
       this.state = "completed";
       this.log.info(`Upload to ${this.url} completed`);
     } catch (error: any) {
@@ -155,17 +186,30 @@ class HFUpload implements Upload {
 
 function parseHfUrl(url: string): {
   repo: string;
+  repoType: "model" | "dataset";
   revision: string;
   filePath: string;
 } {
-  // Example URL: https://huggingface.co/tencent/Hunyuan3D-2.1/resolve/main/hunyuan3d-dit-v2-1/model.fp16.ckpt?download=true
+  // Example URLs:
+  // Model: https://huggingface.co/tencent/Hunyuan3D-2.1/resolve/main/hunyuan3d-dit-v2-1/model.fp16.ckpt
+  // Dataset: https://huggingface.co/datasets/user/repo/resolve/main/path/file.ext
   const parsedUrl = new URL(url);
   const parts = parsedUrl.pathname.split("/");
-  if (parts.length >= 5) {
-    const repo = parts[1] + "/" + parts[2];
-    const revision = parts[4];
-    const filePath = parts.slice(5).join("/");
-    return { repo, revision, filePath };
+
+  let repoType: "model" | "dataset" = "model";
+  let startIdx = 1;
+
+  // Check if it's a dataset URL
+  if (parts[1] === "datasets") {
+    repoType = "dataset";
+    startIdx = 2;
+  }
+
+  if (parts.length >= startIdx + 4) {
+    const repo = parts[startIdx] + "/" + parts[startIdx + 1];
+    const revision = parts[startIdx + 3];
+    const filePath = parts.slice(startIdx + 4).join("/");
+    return { repo, repoType, revision, filePath };
   } else {
     throw new Error(`Invalid HuggingFace URL: ${url.toString()}`);
   }

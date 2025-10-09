@@ -2,10 +2,6 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 var zod_1 = require("zod");
 var config_1 = require("../config");
-var checkpoint = config_1.default.models.checkpoints.enum.optional();
-if (config_1.default.warmupCkpt) {
-    checkpoint = checkpoint.default(config_1.default.warmupCkpt);
-}
 var RequestSchema = zod_1.z.object({
     prompt: zod_1.z.string().describe("The positive prompt for image generation"),
     negative_prompt: zod_1.z
@@ -49,7 +45,12 @@ var RequestSchema = zod_1.z.object({
         .optional()
         .default(0.8)
         .describe("Denoising strength"),
-    checkpoint: checkpoint,
+    checkpoint: zod_1.z
+        .string()
+        .refine(function (val) { return config_1.default.models.checkpoints.all.includes(val); })
+        .optional()
+        .default(config_1.default.warmupCkpt || config_1.default.models.checkpoints.all[0])
+        .describe("Checkpoint to use"),
     image: zod_1.z.string().describe("Input image for img2img"),
     width: zod_1.z
         .number()

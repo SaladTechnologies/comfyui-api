@@ -171,7 +171,9 @@ describe("Stable Diffusion 1.5", () => {
       });
     });
 
-    it("image2image works with hf image url", async () => {});
+    it("image2image works with hf image url in model repo", async () => {});
+
+    it("image2image works with hf image url in dataset repo", async () => {});
 
     it("works if the workflow has multiple output nodes", async () => {
       const respBody = await submitPrompt(sd15MultiOutput);
@@ -474,6 +476,150 @@ describe("Stable Diffusion 1.5", () => {
         );
         await checkImage(respBody.filenames[i], imageBuffer.toString("base64"));
       }
+    });
+  });
+
+  describe("Upload to HuggingFace and return HF URL", () => {
+    it("text2image works with dataset repo", async () => {
+      const respBody = await submitPrompt(sd15Txt2Img, false, undefined, {
+        hfUpload: {
+          repo: "SaladTechnologies/comfyui-api-integration-testing",
+          repoType: "dataset",
+          directory: "test-outputs",
+        },
+      });
+      expect(respBody.filenames.length).toEqual(1);
+      expect(respBody.images.length).toEqual(1);
+      expect(
+        respBody.images[0].startsWith(
+          "https://huggingface.co/datasets/SaladTechnologies/comfyui-api-integration-testing/resolve/main/test-outputs/"
+        ) && respBody.images[0].endsWith(".png")
+      ).toBeTruthy();
+    });
+
+    it("text2image works with model repo", async () => {
+      const respBody = await submitPrompt(sd15Txt2ImgBatch4, false, undefined, {
+        hfUpload: {
+          repo: "SaladTechnologies/comfyui-api-integration-testing",
+          repoType: "dataset",
+          directory: "test-outputs-batch",
+        },
+      });
+      expect(respBody.filenames.length).toEqual(4);
+      expect(respBody.images.length).toEqual(4);
+      for (let i = 0; i < respBody.filenames.length; i++) {
+        expect(
+          respBody.images[i].startsWith(
+            "https://huggingface.co/datasets/SaladTechnologies/comfyui-api-integration-testing/resolve/main/test-outputs-batch/"
+          ) && respBody.images[i].endsWith(".png")
+        ).toBeTruthy();
+      }
+    });
+  });
+
+  describe("Upload to HuggingFace Asynchronously", () => {
+    it("text2image works with 1 image", async () => {
+      const timestamp = Date.now();
+      const directory = `async-test-${timestamp}`;
+      const respBody = await submitPrompt(sd15Txt2Img, false, undefined, {
+        hfUpload: {
+          repo: "SaladTechnologies/comfyui-api-integration-testing",
+          repoType: "dataset",
+          directory,
+          async: true,
+        },
+      });
+      expect(respBody.status).toEqual("ok");
+
+      // Poll HF repo for the uploaded file
+      let fileExists = false;
+      let attempts = 0;
+      let fileUrl = "";
+
+      while (!fileExists && attempts < 20) {
+        // We need to check if any file exists in the directory
+        // HF API endpoint for listing files: https://huggingface.co/api/datasets/{repo}/tree/{revision}/{path}
+        const apiUrl = `https://huggingface.co/api/datasets/SaladTechnologies/comfyui-api-integration-testing/tree/main/${directory}`;
+
+        try {
+          const response = await fetch(apiUrl, {
+            headers: {
+              Authorization: `Bearer ${process.env.HF_TOKEN}`,
+            },
+          });
+
+          if (response.ok) {
+            const files = (await response.json()) as any[];
+            if (files.length > 0) {
+              fileExists = true;
+              // Construct the file URL
+              const fileName = files[0].path.split("/").pop();
+              fileUrl = `https://huggingface.co/datasets/SaladTechnologies/comfyui-api-integration-testing/resolve/main/${directory}/${fileName}`;
+            }
+          }
+        } catch (error) {
+          // Directory might not exist yet
+        }
+
+        if (!fileExists) {
+          await sleep(2000);
+          attempts++;
+        }
+      }
+
+      expect(fileExists).toBeTruthy();
+
+      // Verify the file can be downloaded
+      const downloadResponse = await fetch(fileUrl, {
+        headers: {
+          Authorization: `Bearer ${process.env.HF_TOKEN}`,
+        },
+      });
+      expect(downloadResponse.ok).toBeTruthy();
+    });
+
+    it("text2image works with multiple images", async () => {
+      const timestamp = Date.now();
+      const directory = `async-batch-test-${timestamp}`;
+      const respBody = await submitPrompt(sd15Txt2ImgBatch4, false, undefined, {
+        hfUpload: {
+          repo: "SaladTechnologies/comfyui-api-integration-testing",
+          repoType: "dataset",
+          directory,
+          async: true,
+        },
+      });
+      expect(respBody.status).toEqual("ok");
+
+      // Poll HF repo for the uploaded files
+      let fileCount = 0;
+      let attempts = 0;
+
+      while (fileCount < 4 && attempts < 20) {
+        const apiUrl = `https://huggingface.co/api/datasets/SaladTechnologies/comfyui-api-integration-testing/tree/main/${directory}`;
+
+        try {
+          const response = await fetch(apiUrl, {
+            headers: {
+              Authorization: `Bearer ${process.env.HF_TOKEN}`,
+            },
+          });
+
+          if (response.ok) {
+            const files = (await response.json()) as any[];
+            fileCount = files.length;
+          }
+        } catch (error) {
+          // Directory might not exist yet
+        }
+
+        if (fileCount < 4) {
+          await sleep(2000);
+          attempts++;
+        }
+      }
+
+      expect(fileCount).toEqual(4);
     });
   });
 
@@ -821,6 +967,33 @@ describe("Stable Diffusion 1.5", () => {
         await checkImage(key, imageBuffer.toString("base64"));
       });
 
+      it("works with HuggingFace upload", async () => {
+        const timestamp = Date.now();
+        const respBody = await submitWorkflow(
+          "/workflow/txt2img",
+          {
+            prompt: "a beautiful sunset",
+            checkpoint: "dreamshaper_8.safetensors",
+          },
+          false,
+          undefined,
+          {
+            hfUpload: {
+              repo: "SaladTechnologies/comfyui-api-integration-testing",
+              repoType: "dataset",
+              directory: `workflow-txt2img-${timestamp}`,
+            },
+          }
+        );
+        expect(respBody.filenames.length).toEqual(1);
+        expect(respBody.images.length).toEqual(1);
+        expect(
+          respBody.images[0].startsWith(
+            "https://huggingface.co/datasets/SaladTechnologies/comfyui-api-integration-testing/resolve/main/workflow-txt2img-"
+          ) && respBody.images[0].endsWith(".png")
+        ).toBeTruthy();
+      });
+
       it("works with format conversion", async () => {
         const respBody = await submitWorkflow(
           "/workflow/txt2img",
@@ -1047,6 +1220,92 @@ describe("Stable Diffusion 1.5", () => {
         );
       });
 
+      it("works with HuggingFace upload", async () => {
+        const timestamp = Date.now();
+        const respBody = await submitWorkflow(
+          "/workflow/img2img",
+          {
+            image: inputPngBase64,
+            prompt: "a beautiful sunset",
+            checkpoint: "dreamshaper_8.safetensors",
+            width: 768,
+            height: 768,
+          },
+          false,
+          undefined,
+          {
+            hfUpload: {
+              repo: "SaladTechnologies/comfyui-api-integration-testing",
+              repoType: "dataset",
+              directory: `workflow-img2img-${timestamp}`,
+            },
+          }
+        );
+        expect(respBody.filenames.length).toEqual(1);
+        expect(respBody.images.length).toEqual(1);
+        expect(
+          respBody.images[0].startsWith(
+            "https://huggingface.co/datasets/SaladTechnologies/comfyui-api-integration-testing/resolve/main/workflow-img2img-"
+          ) && respBody.images[0].endsWith(".png")
+        ).toBeTruthy();
+      });
+
+      it("works with async HuggingFace upload", async () => {
+        const timestamp = Date.now();
+        const directory = `workflow-txt2img-async-${timestamp}`;
+
+        const respBody = await submitWorkflow(
+          "/workflow/txt2img",
+          {
+            prompt: "a beautiful sunset",
+            checkpoint: "dreamshaper_8.safetensors",
+          },
+          false,
+          undefined,
+          {
+            hfUpload: {
+              repo: "SaladTechnologies/comfyui-api-integration-testing",
+              repoType: "dataset",
+              directory,
+              async: true,
+            },
+          }
+        );
+        expect(respBody.status).toEqual("ok");
+
+        // Poll HF repo for the uploaded file
+        let fileExists = false;
+        let attempts = 0;
+
+        while (!fileExists && attempts < 20) {
+          const apiUrl = `https://huggingface.co/api/datasets/SaladTechnologies/comfyui-api-integration-testing/tree/main/${directory}`;
+
+          try {
+            const response = await fetch(apiUrl, {
+              headers: {
+                Authorization: `Bearer ${process.env.HF_TOKEN}`,
+              },
+            });
+
+            if (response.ok) {
+              const files = (await response.json()) as any[];
+              if (files.length > 0) {
+                fileExists = true;
+              }
+            }
+          } catch (error) {
+            // Directory might not exist yet
+          }
+
+          if (!fileExists) {
+            await sleep(2000);
+            attempts++;
+          }
+        }
+
+        expect(fileExists).toBeTruthy();
+      });
+
       it("works with async S3 upload", async () => {
         // Use a unique prefix to avoid picking up files from other tests
         const timestamp = Date.now();
@@ -1100,6 +1359,65 @@ describe("Stable Diffusion 1.5", () => {
           width: 768,
           height: 768,
         });
+      });
+
+      it("works with async HuggingFace upload", async () => {
+        const timestamp = Date.now();
+        const directory = `workflow-img2img-async-hf-${timestamp}`;
+
+        const respBody = await submitWorkflow(
+          "/workflow/img2img",
+          {
+            image: inputPngBase64,
+            prompt: "a beautiful sunset",
+            checkpoint: "dreamshaper_8.safetensors",
+            width: 768,
+            height: 768,
+          },
+          false,
+          undefined,
+          {
+            hfUpload: {
+              repo: "SaladTechnologies/comfyui-api-integration-testing",
+              repoType: "dataset",
+              directory,
+              async: true,
+            },
+          }
+        );
+        expect(respBody.status).toEqual("ok");
+
+        // Poll HF repo for the uploaded file
+        let fileExists = false;
+        let attempts = 0;
+
+        while (!fileExists && attempts < 20) {
+          const apiUrl = `https://huggingface.co/api/datasets/SaladTechnologies/comfyui-api-integration-testing/tree/main/${directory}`;
+
+          try {
+            const response = await fetch(apiUrl, {
+              headers: {
+                Authorization: `Bearer ${process.env.HF_TOKEN}`,
+              },
+            });
+
+            if (response.ok) {
+              const files = (await response.json()) as any[];
+              if (files.length > 0) {
+                fileExists = true;
+              }
+            }
+          } catch (error) {
+            // Directory might not exist yet
+          }
+
+          if (!fileExists) {
+            await sleep(2000);
+            attempts++;
+          }
+        }
+
+        expect(fileExists).toBeTruthy();
       });
     });
   });

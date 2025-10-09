@@ -1,5 +1,5 @@
 ARG base=runtime
-ARG comfy_version=0.3.62
+ARG comfy_version=0.3.64
 ARG pytorch_version=2.8.0
 ARG cuda_version=12.6
 

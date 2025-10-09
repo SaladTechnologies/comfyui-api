@@ -1,6 +1,6 @@
 services:
   comfyui:
-    image: ghcr.io/saladtechnologies/comfyui-api:comfy0.3.62-torch2.8.0-cuda12.8-runtime
+    image: ghcr.io/saladtechnologies/comfyui-api:comfy0.3.64-torch2.8.0-cuda12.8-runtime
     volumes:
       - type: bind
         source: ./bin
@@ -24,7 +24,7 @@ services:
       STARTUP_CHECK_MAX_TRIES: "30"
       HF_TOKEN: ${HF_TOKEN}
       # Azurite configuration
-      AZURE_STORAGE_ACCOUNT: "devstoreaccount1"
+      # AZURE_STORAGE_ACCOUNT: "devstoreaccount1"
       AZURE_STORAGE_CONNECTION_STRING: "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;"
     #   ALWAYS_RESTART_COMFYUI: "true"
     #   SYSTEM_WEBHOOK_URL: "http://host.docker.internal:1234/system"
