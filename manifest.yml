@@ -2,8 +2,9 @@
 #   - git
 #   - ffmpeg
 #   - libgl1
-# custom_nodes:
-#   - https://github.com/Comfy-Org/ComfyUI-Manager
+custom_nodes:
+  - https://github.com/Comfy-Org/ComfyUI-Manager
+  - comfyui_essentials
 #   - comfyui-kjnodes
 #   - https://github.com/visualbruno/ComfyUI-Hunyuan3d-2-1.git
 # pip:
