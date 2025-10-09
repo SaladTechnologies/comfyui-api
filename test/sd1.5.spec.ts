@@ -171,9 +171,59 @@ describe("Stable Diffusion 1.5", () => {
       });
     });
 
-    it("image2image works with hf image url in model repo", async () => {});
+    it("image2image works with hf image url in model repo", async () => {
+      // First, upload an image to HF model repo to use as source
+      const timestamp = Date.now();
+      const uploadResp = await submitPrompt(sd15Txt2Img, false, undefined, {
+        hfUpload: {
+          repo: "SaladTechnologies/comfyui-api-integration-testing",
+          repoType: "model",
+          directory: `test-source-images-${timestamp}`,
+        },
+      });
+      
+      // Extract the URL of the uploaded image
+      const hfImageUrl = uploadResp.images[0];
+      
+      // Now use this HF URL as input for img2img
+      const sd15Img2ImgWithHfUrl = JSON.parse(JSON.stringify(sd15Img2Img));
+      sd15Img2ImgWithHfUrl["10"].inputs.image = hfImageUrl;
+      
+      const respBody = await submitPrompt(sd15Img2ImgWithHfUrl);
+      expect(respBody.filenames.length).toEqual(1);
+      expect(respBody.images.length).toEqual(1);
+      await checkImage(respBody.filenames[0], respBody.images[0], {
+        width: 512,
+        height: 512,
+      });
+    });
 
-    it("image2image works with hf image url in dataset repo", async () => {});
+    it("image2image works with hf image url in dataset repo", async () => {
+      // First, upload an image to HF dataset repo to use as source
+      const timestamp = Date.now();
+      const uploadResp = await submitPrompt(sd15Txt2Img, false, undefined, {
+        hfUpload: {
+          repo: "SaladTechnologies/comfyui-api-integration-testing",
+          repoType: "dataset",
+          directory: `test-source-images-dataset-${timestamp}`,
+        },
+      });
+      
+      // Extract the URL of the uploaded image
+      const hfImageUrl = uploadResp.images[0];
+      
+      // Now use this HF URL as input for img2img
+      const sd15Img2ImgWithHfDatasetUrl = JSON.parse(JSON.stringify(sd15Img2Img));
+      sd15Img2ImgWithHfDatasetUrl["10"].inputs.image = hfImageUrl;
+      
+      const respBody = await submitPrompt(sd15Img2ImgWithHfDatasetUrl);
+      expect(respBody.filenames.length).toEqual(1);
+      expect(respBody.images.length).toEqual(1);
+      await checkImage(respBody.filenames[0], respBody.images[0], {
+        width: 512,
+        height: 512,
+      });
+    });
 
     it("works if the workflow has multiple output nodes", async () => {
       const respBody = await submitPrompt(sd15MultiOutput);
@@ -1418,6 +1468,108 @@ describe("Stable Diffusion 1.5", () => {
         }
 
         expect(fileExists).toBeTruthy();
+      });
+
+      it("image2image works with hf image url in model repo", async () => {
+        // First, upload an image to HF model repo to use as source
+        const timestamp = Date.now();
+        const uploadResp = await submitPrompt(sd15Txt2Img, false, undefined, {
+          hfUpload: {
+            repo: "SaladTechnologies/comfyui-api-integration-testing",
+            repoType: "model",
+            directory: `test-source-images-model-${timestamp}`,
+          },
+        });
+        
+        // Extract the URL of the uploaded image
+        const hfImageUrl = uploadResp.images[0];
+        
+        // Now use this HF URL as input for img2img workflow
+        const respBody = await submitWorkflow(
+          "/workflow/img2img",
+          {
+            image: hfImageUrl,
+            prompt: "a beautiful mountain landscape",
+            checkpoint: "dreamshaper_8.safetensors",
+            width: 768,
+            height: 768,
+          },
+          false,
+          undefined,
+          {
+            httpUpload: {
+              url_prefix: "http://file-server:8080/workflow-img2img-hf-source",
+            },
+          }
+        );
+        
+        expect(respBody.filenames.length).toEqual(1);
+        expect(respBody.images.length).toEqual(1);
+        
+        // Verify the transformed image was created
+        const httpUrl = respBody.images[0].replace("file-server", "localhost");
+        const response = await fetch(httpUrl);
+        expect(response.ok).toBeTruthy();
+        const imageBuffer = Buffer.from(await response.arrayBuffer());
+        await checkImage(
+          respBody.filenames[0],
+          imageBuffer.toString("base64"),
+          {
+            width: 768,
+            height: 768,
+          }
+        );
+      });
+
+      it("image2image works with hf image url in dataset repo", async () => {
+        // First, upload an image to HF dataset repo to use as source
+        const timestamp = Date.now();
+        const uploadResp = await submitPrompt(sd15Txt2Img, false, undefined, {
+          hfUpload: {
+            repo: "SaladTechnologies/comfyui-api-integration-testing",
+            repoType: "dataset",
+            directory: `test-source-images-dataset-${timestamp}`,
+          },
+        });
+        
+        // Extract the URL of the uploaded image
+        const hfImageUrl = uploadResp.images[0];
+        
+        // Now use this HF URL as input for img2img workflow
+        const respBody = await submitWorkflow(
+          "/workflow/img2img",
+          {
+            image: hfImageUrl,
+            prompt: "a futuristic cityscape",
+            checkpoint: "dreamshaper_8.safetensors",
+            width: 768,
+            height: 768,
+          },
+          false,
+          undefined,
+          {
+            httpUpload: {
+              url_prefix: "http://file-server:8080/workflow-img2img-hf-dataset-source",
+            },
+          }
+        );
+        
+        expect(respBody.filenames.length).toEqual(1);
+        expect(respBody.images.length).toEqual(1);
+        
+        // Verify the transformed image was created
+        const httpUrl = respBody.images[0].replace("file-server", "localhost");
+        const response = await fetch(httpUrl);
+        expect(response.ok).toBeTruthy();
+        const imageBuffer = Buffer.from(await response.arrayBuffer());
+        await checkImage(
+          respBody.filenames[0],
+          imageBuffer.toString("base64"),
+          {
+            width: 768,
+            height: 768,
+          }
+        );
       });
     });
   });
