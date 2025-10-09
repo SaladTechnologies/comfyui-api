@@ -179,13 +179,13 @@ describe("Stable Diffusion 1.5", () => {
       expect(respBody.images.length).toEqual(2);
     });
 
-    it("works if there are 2 parallel, non-interrelated workflows", async () => {
+    it("works if there are 2 parallel, non-interrelated workflows (also tests http model download)", async () => {
       const respBody = await submitPrompt(sd15Parallel2);
       expect(respBody.filenames.length).toEqual(2);
       expect(respBody.images.length).toEqual(2);
     });
 
-    it("works if there are 3 parallel, non-interrelated workflows", async () => {
+    it("works if there are 3 parallel, non-interrelated workflows (also tests hf model download)", async () => {
       const respBody = await submitPrompt(sd15Parallel3);
       expect(respBody.filenames.length).toEqual(3);
       expect(respBody.images.length).toEqual(3);
