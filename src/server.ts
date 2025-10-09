@@ -60,6 +60,12 @@ const remoteStorageManager = getStorageManager(server.log);
 let PromptRequestSchema: z.ZodObject<any, any> = BasePromptRequestSchema;
 
 for (const provider of remoteStorageManager.storageProviders) {
+  if (
+    !provider.uploadFile ||
+    !provider.requestBodyUploadKey ||
+    !provider.requestBodyUploadSchema
+  )
+    continue;
   PromptRequestSchema = PromptRequestSchema.extend({
     [provider.requestBodyUploadKey]: provider.requestBodyUploadSchema
       .extend({ async: z.boolean().optional().default(false) })
@@ -414,7 +420,10 @@ server.after(() => {
           const fileBuffer = buffers[i];
           const filename = filenames[i];
           for (const provider of remoteStorageManager.storageProviders) {
-            if (request.body[provider.requestBodyUploadKey]) {
+            if (
+              provider.requestBodyUploadKey &&
+              request.body[provider.requestBodyUploadKey]
+            ) {
               images.push(
                 provider.createUrl({
                   ...request.body[provider.requestBodyUploadKey],
@@ -434,14 +443,15 @@ server.after(() => {
       };
 
       const storageProvider = remoteStorageManager.storageProviders.find(
-        (provider) => !!request.body[provider.requestBodyUploadKey]
+        (provider) =>
+          provider.requestBodyUploadKey &&
+          !!request.body[provider.requestBodyUploadKey]
       );
       const asyncUpload =
         webhook ||
         (storageProvider &&
+          storageProvider.requestBodyUploadKey &&
           request.body[storageProvider.requestBodyUploadKey]?.async);
-      storageProvider &&
-        log.debug(request.body[storageProvider.requestBodyUploadKey]);
 
       if (webhook) {
         uploadPromise = runPromptPromise.then(webhookHandler);

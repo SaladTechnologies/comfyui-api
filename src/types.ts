@@ -408,13 +408,15 @@ export interface Upload {
 export interface StorageProvider {
   /**
    * The key in a request body that indicates this storage provider should be used for upload.
+   * Must be unique across all storage providers, and must be included if `uploadFile` is implemented.
    */
-  requestBodyUploadKey: string;
+  requestBodyUploadKey?: string;
 
   /**
-   * The zod schema for the request body field that indicates this storage provider should be used for upload.
+   * The zod schema for the request body field that indicates this storage provider should
+   * be used for upload. Must be included if `requestBodyUploadKey` is defined.
    */
-  requestBodyUploadSchema: z.ZodObject<any, any>;
+  requestBodyUploadSchema?: z.ZodObject<any, any>;
 
   /**
    * Takes the inputs from the request body and generates a URL for uploading.
@@ -433,6 +435,8 @@ export interface StorageProvider {
    * @param url URL to upload to
    * @param fileOrPath File path or buffer to upload
    * @param contentType MIME type of the file
+   *
+   * @returns An Upload object that can be used to start and abort the upload.
    */
   uploadFile?(
     url: string,
@@ -445,6 +449,8 @@ export interface StorageProvider {
    * @param url URL to download from
    * @param outputDir Directory to save the downloaded file
    * @param filenameOverride Optional filename to use instead of auto-generated one
+   *
+   * @resolves The path to the downloaded file
    */
   downloadFile?(
     url: string,
