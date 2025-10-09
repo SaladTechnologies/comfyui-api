@@ -40,6 +40,9 @@ ENV COMFY_HOME=/opt/ComfyUI
 RUN comfy --skip-prompt tracking disable
 RUN comfy --skip-prompt set-default ${COMFY_HOME}
 
+RUN git clone https://github.com/Comfy-Org/ComfyUI-Manager.git ./custom_nodes/ComfyUI-Manager
+RUN pip install --no-cache-dir -r ./custom_nodes/ComfyUI-Manager/requirements.txt
+
 ENV MODEL_DIR=${COMFY_HOME}/models
 ENV OUTPUT_DIR=${COMFY_HOME}/output
 ENV INPUT_DIR=${COMFY_HOME}/input

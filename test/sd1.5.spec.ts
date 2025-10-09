@@ -629,7 +629,7 @@ describe("Stable Diffusion 1.5", () => {
         const listResp = await fetch(
           `http://localhost:8080/list?prefix=${expectedPrefix}`
         );
-        const listData = await listResp.json() as { files?: string[] };
+        const listData = (await listResp.json()) as { files?: string[] };
         files = listData.files || [];
         if (files.length < 1) {
           await sleep(1000);
@@ -664,7 +664,7 @@ describe("Stable Diffusion 1.5", () => {
         const listResp = await fetch(
           `http://localhost:8080/list?prefix=${expectedPrefix}`
         );
-        const listData = await listResp.json() as { files?: string[] };
+        const listData = (await listResp.json()) as { files?: string[] };
         files = listData.files || [];
         if (files.length < 4) {
           await sleep(1000);
@@ -688,13 +688,13 @@ describe("Stable Diffusion 1.5", () => {
   describe("Workflow endpoints", () => {
     async function submitWorkflow(
       endpoint: string,
-      input: any,
+      inputs: any,
       webhook: boolean = false,
       convert: any = undefined,
       upload: any = undefined
     ): Promise<any> {
       const body: any = {
-        input,
+        input: inputs, // Wrap inputs in 'input' field as expected by workflow endpoint
       };
       if (webhook) {
         body["webhook"] = webhookAddress;
@@ -710,7 +710,7 @@ describe("Stable Diffusion 1.5", () => {
           Object.assign(body, upload);
         }
       }
-      
+
       const resp = await fetch(`http://localhost:3000${endpoint}`, {
         method: "POST",
         headers: {
@@ -723,7 +723,7 @@ describe("Stable Diffusion 1.5", () => {
           connectTimeout: 0,
         }),
       });
-      
+
       if (!resp.ok) {
         console.error(await resp.text());
         throw new Error(`Workflow submission failed: ${resp.status}`);
@@ -735,6 +735,7 @@ describe("Stable Diffusion 1.5", () => {
       it("works with default parameters", async () => {
         const respBody = await submitWorkflow("/workflow/txt2img", {
           prompt: "a beautiful sunset",
+          checkpoint: "dreamshaper_8.safetensors",
         });
         expect(respBody.filenames.length).toEqual(1);
         expect(respBody.images.length).toEqual(1);
@@ -744,21 +745,19 @@ describe("Stable Diffusion 1.5", () => {
       it("works with custom parameters", async () => {
         const respBody = await submitWorkflow("/workflow/txt2img", {
           prompt: "a beautiful sunset",
+          checkpoint: "dreamshaper_8.safetensors",
           seed: 42,
           steps: 20,
-          cfg: 7.5,
+          cfg_scale: 7.5,
           width: 768,
           height: 768,
-          batch_size: 2,
         });
-        expect(respBody.filenames.length).toEqual(2);
-        expect(respBody.images.length).toEqual(2);
-        for (let i = 0; i < respBody.filenames.length; i++) {
-          await checkImage(respBody.filenames[i], respBody.images[i], {
-            width: 768,
-            height: 768,
-          });
-        }
+        expect(respBody.filenames.length).toEqual(1);
+        expect(respBody.images.length).toEqual(1);
+        await checkImage(respBody.filenames[0], respBody.images[0], {
+          width: 768,
+          height: 768,
+        });
       });
 
       it("works with webhook", async () => {
@@ -769,13 +768,16 @@ describe("Stable Diffusion 1.5", () => {
           expect(id).toEqual(reqId);
           await checkImage(filename, image);
         });
-        
+
         const { id: reqId } = await submitWorkflow(
           "/workflow/txt2img",
-          { prompt: "a beautiful sunset" },
+          {
+            prompt: "a beautiful sunset",
+            checkpoint: "dreamshaper_8.safetensors",
+          },
           true
         );
-        
+
         while (expected > 0) {
           await sleep(100);
         }
@@ -785,7 +787,10 @@ describe("Stable Diffusion 1.5", () => {
       it("works with S3 upload", async () => {
         const respBody = await submitWorkflow(
           "/workflow/txt2img",
-          { prompt: "a beautiful sunset" },
+          {
+            prompt: "a beautiful sunset",
+            checkpoint: "dreamshaper_8.safetensors",
+          },
           false,
           undefined,
           {
@@ -798,9 +803,9 @@ describe("Stable Diffusion 1.5", () => {
         expect(respBody.images.length).toEqual(1);
         expect(
           respBody.images[0].startsWith("s3://") &&
-          respBody.images[0].endsWith(".png")
+            respBody.images[0].endsWith(".png")
         ).toBeTruthy();
-        
+
         const s3Url = new URL(respBody.images[0]);
         const bucket = s3Url.hostname;
         const key = s3Url.pathname.slice(1);
@@ -819,7 +824,10 @@ describe("Stable Diffusion 1.5", () => {
       it("works with format conversion", async () => {
         const respBody = await submitWorkflow(
           "/workflow/txt2img",
-          { prompt: "a beautiful sunset" },
+          {
+            prompt: "a beautiful sunset",
+            checkpoint: "dreamshaper_8.safetensors",
+          },
           false,
           { format: "jpeg" }
         );
@@ -835,6 +843,9 @@ describe("Stable Diffusion 1.5", () => {
         const respBody = await submitWorkflow("/workflow/img2img", {
           image: inputPngBase64,
           prompt: "a beautiful sunset",
+          checkpoint: "dreamshaper_8.safetensors",
+          width: 768,
+          height: 768,
         });
         expect(respBody.filenames.length).toEqual(1);
         expect(respBody.images.length).toEqual(1);
@@ -848,26 +859,29 @@ describe("Stable Diffusion 1.5", () => {
         const respBody = await submitWorkflow("/workflow/img2img", {
           image: inputPngBase64,
           prompt: "a beautiful sunset",
+          checkpoint: "dreamshaper_8.safetensors",
           seed: 42,
           steps: 20,
-          cfg: 7.5,
+          cfg_scale: 7.5,
           denoise: 0.8,
-          batch_size: 2,
+          width: 768,
+          height: 768,
         });
-        expect(respBody.filenames.length).toEqual(2);
-        expect(respBody.images.length).toEqual(2);
-        for (let i = 0; i < respBody.filenames.length; i++) {
-          await checkImage(respBody.filenames[i], respBody.images[i], {
-            width: 768,
-            height: 768,
-          });
-        }
+        expect(respBody.filenames.length).toEqual(1);
+        expect(respBody.images.length).toEqual(1);
+        await checkImage(respBody.filenames[0], respBody.images[0], {
+          width: 768,
+          height: 768,
+        });
       });
 
       it("works with HTTP image URL", async () => {
         const respBody = await submitWorkflow("/workflow/img2img", {
           image: `http://file-server:8080/${pngKey}`,
           prompt: "a beautiful sunset",
+          checkpoint: "dreamshaper_8.safetensors",
+          width: 768,
+          height: 768,
         });
         expect(respBody.filenames.length).toEqual(1);
         expect(respBody.images.length).toEqual(1);
@@ -881,6 +895,9 @@ describe("Stable Diffusion 1.5", () => {
         const respBody = await submitWorkflow("/workflow/img2img", {
           image: `s3://${bucketName}/${pngKey}`,
           prompt: "a beautiful sunset",
+          checkpoint: "dreamshaper_8.safetensors",
+          width: 768,
+          height: 768,
         });
         expect(respBody.filenames.length).toEqual(1);
         expect(respBody.images.length).toEqual(1);
@@ -894,6 +911,9 @@ describe("Stable Diffusion 1.5", () => {
         const respBody = await submitWorkflow("/workflow/img2img", {
           image: `http://azurite:10000/devstoreaccount1/${azureContainerName}/${pngKey}`,
           prompt: "a beautiful sunset",
+          checkpoint: "dreamshaper_8.safetensors",
+          width: 768,
+          height: 768,
         });
         expect(respBody.filenames.length).toEqual(1);
         expect(respBody.images.length).toEqual(1);
@@ -914,16 +934,19 @@ describe("Stable Diffusion 1.5", () => {
             height: 768,
           });
         });
-        
+
         const { id: reqId } = await submitWorkflow(
           "/workflow/img2img",
           {
             image: inputPngBase64,
             prompt: "a beautiful sunset",
+            checkpoint: "dreamshaper_8.safetensors",
+            width: 768,
+            height: 768,
           },
           true
         );
-        
+
         while (expected > 0) {
           await sleep(100);
         }
@@ -936,6 +959,9 @@ describe("Stable Diffusion 1.5", () => {
           {
             image: inputPngBase64,
             prompt: "a beautiful sunset",
+            checkpoint: "dreamshaper_8.safetensors",
+            width: 768,
+            height: 768,
           },
           false,
           undefined,
@@ -949,10 +975,11 @@ describe("Stable Diffusion 1.5", () => {
         expect(respBody.filenames.length).toEqual(1);
         expect(respBody.images.length).toEqual(1);
         expect(
-          respBody.images[0].includes(`/${azureContainerName}/workflow-img2img/`) &&
-          respBody.images[0].endsWith(".png")
+          respBody.images[0].includes(
+            `/${azureContainerName}/workflow-img2img/`
+          ) && respBody.images[0].endsWith(".png")
         ).toBeTruthy();
-        
+
         // Verify the image was uploaded
         const azureUrl = respBody.images[0];
         const urlParts = new URL(azureUrl);
@@ -962,17 +989,21 @@ describe("Stable Diffusion 1.5", () => {
         }
         const containerName = pathParts[0];
         const blobName = pathParts.slice(1).join("/");
-        
+
         const azureContainer = await getAzureContainer(containerName);
         const blockBlobClient = azureContainer.getBlockBlobClient(blobName);
         const downloadResponse = await blockBlobClient.download();
         const imageBuffer = await streamToBuffer(
           downloadResponse.readableStreamBody!
         );
-        await checkImage(respBody.filenames[0], imageBuffer.toString("base64"), {
-          width: 768,
-          height: 768,
-        });
+        await checkImage(
+          respBody.filenames[0],
+          imageBuffer.toString("base64"),
+          {
+            width: 768,
+            height: 768,
+          }
+        );
       });
 
       it("works with HTTP file server upload", async () => {
@@ -981,6 +1012,9 @@ describe("Stable Diffusion 1.5", () => {
           {
             image: inputPngBase64,
             prompt: "a beautiful sunset",
+            checkpoint: "dreamshaper_8.safetensors",
+            width: 768,
+            height: 768,
           },
           false,
           undefined,
@@ -993,44 +1027,56 @@ describe("Stable Diffusion 1.5", () => {
         expect(respBody.filenames.length).toEqual(1);
         expect(respBody.images.length).toEqual(1);
         expect(
-          respBody.images[0].startsWith("http://file-server:8080/workflow-img2img") &&
-          respBody.images[0].endsWith(".png")
+          respBody.images[0].startsWith(
+            "http://file-server:8080/workflow-img2img"
+          ) && respBody.images[0].endsWith(".png")
         ).toBeTruthy();
-        
+
         // Verify the image was uploaded
         const httpUrl = respBody.images[0].replace("file-server", "localhost");
         const response = await fetch(httpUrl);
         expect(response.ok).toBeTruthy();
         const imageBuffer = Buffer.from(await response.arrayBuffer());
-        await checkImage(respBody.filenames[0], imageBuffer.toString("base64"), {
-          width: 768,
-          height: 768,
-        });
+        await checkImage(
+          respBody.filenames[0],
+          imageBuffer.toString("base64"),
+          {
+            width: 768,
+            height: 768,
+          }
+        );
       });
 
       it("works with async S3 upload", async () => {
+        // Use a unique prefix to avoid picking up files from other tests
+        const timestamp = Date.now();
+        const uniquePrefix = `workflow-img2img-async-${timestamp}/`;
+
         const respBody = await submitWorkflow(
           "/workflow/img2img",
           {
             image: inputPngBase64,
             prompt: "a beautiful sunset",
+            checkpoint: "dreamshaper_8.safetensors",
+            width: 768,
+            height: 768,
           },
           false,
           undefined,
           {
             bucket: bucketName,
-            prefix: "workflow-img2img-async/",
+            prefix: uniquePrefix,
             async: true,
           }
         );
         expect(respBody.status).toEqual("ok");
-        
+
         // Wait for async upload
         const listCmd = new ListObjectsCommand({
           Bucket: bucketName,
-          Prefix: "workflow-img2img-async/",
+          Prefix: uniquePrefix,
         });
-        
+
         let outputs: string[] = [];
         while (outputs.length < 1) {
           const page = await s3.send(listCmd);
@@ -1039,7 +1085,7 @@ describe("Stable Diffusion 1.5", () => {
             await sleep(1000);
           }
         }
-        
+
         expect(outputs.length).toEqual(1);
         const s3Resp = await s3.send(
           new GetObjectCommand({

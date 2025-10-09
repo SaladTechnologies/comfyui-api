@@ -15,7 +15,7 @@ services:
       - "3000:3000"
       - "8188:8188"
     environment:
-      LOG_LEVEL: "debug"
+      # LOG_LEVEL: "debug"
       AWS_ENDPOINT_URL: "http://localstack:4566"
       AWS_ACCESS_KEY_ID: "test"
       AWS_SECRET_ACCESS_KEY: "test"

@@ -36,7 +36,6 @@ import {
   PromptErrorResponseSchema,
   WorkflowTree,
   isWorkflow,
-  WorkflowRequestSchema,
   ExecutionStatsSchema,
 } from "./types";
 import workflows from "./workflows";
@@ -69,6 +68,14 @@ for (const provider of remoteStorageManager.storageProviders) {
 }
 
 type PromptRequest = z.infer<typeof PromptRequestSchema>;
+
+const WorkflowRequestSchema = PromptRequestSchema.omit({ prompt: true }).extend(
+  {
+    input: z.record(z.any()),
+  }
+);
+
+export type WorkflowRequest = z.infer<typeof WorkflowRequestSchema>;
 
 const PromptResponseSchema = PromptRequestSchema.extend({
   images: z.array(z.string()).optional(),

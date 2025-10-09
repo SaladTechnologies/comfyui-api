@@ -178,13 +178,6 @@ export interface WorkflowTree {
   [key: string]: WorkflowTree | Workflow;
 }
 
-export const WorkflowRequestSchema = PromptRequestSchema.extend({
-  input: z.record(z.any()),
-  prompt: z.never(),
-});
-
-export type WorkflowRequest = z.infer<typeof WorkflowRequestSchema>;
-
 export interface ComfyWSMessage {
   type:
     | "status"

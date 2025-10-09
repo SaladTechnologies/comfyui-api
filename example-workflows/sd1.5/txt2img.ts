@@ -13,6 +13,7 @@ const RequestSchema = z.object({
   negative_prompt: z
     .string()
     .optional()
+    .default("")
     .describe("The negative prompt for image generation"),
   width: z
     .number()
