@@ -28,7 +28,6 @@ A simple wrapper that facilitates using [ComfyUI](https://github.com/comfyanonym
   - [Using with Webhooks](#using-with-webhooks)
     - [output.complete](#outputcomplete)
     - [prompt.failed](#promptfailed)
-  - [Using with S3](#using-with-s3)
   - [System Events](#system-events)
     - [status](#status)
     - [progress](#progress)
@@ -42,9 +41,6 @@ A simple wrapper that facilitates using [ComfyUI](https://github.com/comfyanonym
   - [Prebuilt Docker Images](#prebuilt-docker-images)
   - [Considerations for Running on SaladCloud](#considerations-for-running-on-saladcloud)
   - [Contributing](#contributing)
-  - [Testing](#testing)
-    - [Required Models](#required-models)
-    - [Running Tests](#running-tests)
   - [Architecture](#architecture)
 
 ## Download and Use
@@ -84,7 +80,7 @@ The server hosts swagger docs at `/docs`, which can be used to interact with the
 - **Warmup Workflow**: The server can be configured to run a warmup workflow on startup, which can be used to load and warm up models, and to ensure the server is ready to accept requests.
 - **Return Images In PNG (default), JPEG, or WebP**: The server can return images in PNG, JPEG, or WebP format, via a parameter in the API request. Most options supported by [sharp](https://sharp.pixelplumbing.com/) are supported.
 - **Probes**: The server has two probes, `/health` and `/ready`, which can be used to check the server's health and readiness to receive traffic.
-- **Dynamic Workflow Endpoints**: Automatically mount new workflow endpoints by adding conforming `.js` or `.ts` files to the `/workflows` directory in your docker image. See [below](#generating-new-workflow-endpoints) for more information. A [Claude 4 Sonnet](https://claude.ai) [prompt](./claude-endpoint-creation-prompt.md) is included to assist in automating this process.
+- **Dynamic Workflow Endpoints**: Automatically mount new workflow endpoints by adding conforming `.js` or `.ts` files to the `/workflows` directory in your docker image. See [the guide](./DEVELOPING.md#generating-new-workflow-endpoints) for more information. A [Claude 4 Sonnet](https://claude.ai) [prompt](./claude-endpoint-creation-prompt.md) is included to assist in automating this process.
 - **Bring Your Own Models And Extensions**: Use any model or extension you want by adding them to the normal ComfyUI directories `/opt/ComfyUI/`. You can configure a [manifest file](#model-manifest) to download models and install extensions automatically on startup.
 - **Dynamic Model Loading**: If you provide a URL in a model-loading node, the server will locally cache the model automatically before executing the workflow.
 - **Execution Stats**: The server will return [execution stats in the response](#response-format).
@@ -241,8 +237,12 @@ The server supports multiple storage backends for downloading models and input m
 All uploads take a prefix of some kind, not a full path or URL.
 
 All uploads can be handled synchronously or asynchronously, depending on the `async` field in the upload block of the request body.
-If `async` is `true` or omitted, the server will return a `202 Accepted` response immediately, and the upload will be handled in the background.
-If `async` is `false`, the server will wait for the upload to complete before returning a `200 OK` response with the uploaded urls in the response body.
+
+- If `async` is `true` or omitted, the server will return a `202 Accepted` response immediately, and the upload will be handled in the background.
+- If `async` is `false`, the server will wait for the upload to complete before returning a `200 OK` response with the uploaded urls in the response body.
+
+If an upload for a particular url is in progress, a subsequent upload to the same url will abort the first request and take over the upload.
+This is rooted in the assumption that you want the latest version of any particular output.
 
 ### S3-Compatible Storage
 
@@ -539,28 +539,6 @@ The webhook event name for a failed request is `prompt.failed`. The webhook will
 }
 ```
 
-## Using with S3
-
-You must provide the necessary AWS environment variables for the API to be able to upload images to S3. These include `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_REGION`. The API will use these to upload images to the specified S3 bucket and prefix in the request body.
-
-To use S3 to store the outputs of your workflows, you can set the `.s3` field in the request body to an object with the following schema:
-
-```json
-{
-  "bucket": "your-s3-bucket-name",
-  "prefix": "prefix-for-outputs-from-this-request",
-  "async": false
-}
-```
-
-The `bucket` field is the name of the S3 bucket to upload the outputs to, and the `prefix` field is an optional prefix to add to the output filenames. The `async` field is a boolean that determines whether the API should return a 202 response immediately, or wait for the uploads to complete before returning a response.
-
-If `async` is set to `true`, the API will return a 202 response immediately, and the outputs will be uploaded to S3 in the background. You will need to poll S3 or configure bucket events to be notified when the uploads are complete.
-
-If `async` is set to `false`, the API will wait for the uploads to complete before returning a response. The response will include the S3 URLs of the uploaded outputs in the `.images` field, which will be an array of strings.
-
-If an upload for a particular output is in progress, a subsequent upload to the same output will abort the first request and take over the upload.
-This is rooted in the assumption that you want the latest version of any particular output.
 
 ## System Events
 
@@ -794,93 +772,6 @@ Please open an issue with as much information as possible about the problem you'
 If you have encountered a bug, please include the steps to reproduce it, and any relevant logs or error messages.
 If you are able, adding a failing test is the best way to ensure your issue is resolved quickly.
 Let's make productionizing ComfyUI as easy as possible!
-
-## Testing
-
-### Required Models
-
-Automated tests for this project require model files to be present in the `./test/docker-image/models` directory. The following models are required:
-
-- `AnimateLCM_sd15_t2v.ckpt` - https://huggingface.co/wangfuyun/AnimateLCM/resolve/b78bbce/AnimateLCM_sd15_t2v.ckpt
-- `dreamshaper_8.safetensors` - https://civitai.com/models/4384/dreamshaper
-- `flux1-schnell-fp8.safetensors` - https://huggingface.co/Comfy-Org/flux1-schnell
-- `ltx-video-2b-v0.9.1.safetensors` - https://huggingface.co/Lightricks/LTX-Video/blob/main/ltx-video-2b-v0.9.1.safetensors
-- `sd3.5_medium.safetensors` - https://huggingface.co/stabilityai/stable-diffusion-3.5-medium
-- `sd_xl_base_1.0.safetensors` - https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0
-- `sd_xl_refiner_1.0.safetensors` - https://huggingface.co/stabilityai/stable-diffusion-xl-refiner-1.0
-- `clip_g.safetensors` - https://huggingface.co/Comfy-Org/stable-diffusion-3.5-fp8/blob/main/text_encoders/clip_g.safetensors
-- `clip_l.safetensors` - https://huggingface.co/Comfy-Org/stable-diffusion-3.5-fp8/blob/main/text_encoders/clip_l.safetensors
-- `t5xxl_fp16.safetensors` - https://huggingface.co/comfyanonymous/flux_text_encoders/blob/main/t5xxl_fp16.safetensors
-- `t5xxl_fp8_e4m3fn.safetensors` - https://huggingface.co/Comfy-Org/stable-diffusion-3.5-fp8/blob/main/text_encoders/t5xxl_fp8_e4m3fn_scaled.safetensors
-- `openpose-sd1.5-1.1.safetensors` - https://huggingface.co/lllyasviel/control_v11p_sd15_openpose/resolve/main/diffusion_pytorch_model.fp16.safetensors
-- `hunyuan_video_t2v_720p_bf16.safetensors` - https://huggingface.co/Comfy-Org/HunyuanVideo_repackaged/tree/main/split_files/diffusion_models
-- `jump_V2.safetensors` - https://civitai.com/models/193225?modelVersionId=235847
-- `llava_llama3_fp8_scaled.safetensors` - https://huggingface.co/Comfy-Org/HunyuanVideo_repackaged/tree/main/split_files/text_encoders
-- `hunyuan_video_vae_bf16.safetensors` - https://huggingface.co/Comfy-Org/HunyuanVideo_repackaged/tree/main/split_files/vae
-- `vae-ft-mse-840000-ema-pruned.ckpt` - https://huggingface.co/stabilityai/sd-vae-ft-mse-original/blob/main/vae-ft-mse-840000-ema-pruned.ckpt
-- `THUDM/CogVideoX-2b` - https://huggingface.co/THUDM/CogVideoX-2b
-- `mochi_preview_fp8_scaled.safetensors` - https://huggingface.co/Comfy-Org/mochi_preview_repackaged/blob/main/all_in_one/mochi_preview_fp8_scaled.safetensors
-- `oldt5_xxl_fp8_e4m3fn_scaled.safetensors` - https://huggingface.co/comfyanonymous/cosmos_1.0_text_encoder_and_VAE_ComfyUI/tree/main/text_encoders
-- `cosmos_cv8x8x8_1.0.safetensors` - https://huggingface.co/comfyanonymous/cosmos_1.0_text_encoder_and_VAE_ComfyUI/blob/main/vae/cosmos_cv8x8x8_1.0.safetensors
-- `Cosmos-1_0-Diffusion-7B-Text2World.safetensors` - https://huggingface.co/mcmonkey/cosmos-1.0/blob/main/Cosmos-1_0-Diffusion-7B-Text2World.safetensors
-
-They should be in the correct comfyui directory structure, like so:
-
-```text
-./test/docker-image/models
-├── animatediff_models
-│   └── AnimateLCM_sd15_t2v.ckpt
-├── checkpoints
-│   ├── dreamshaper_8.safetensors
-│   ├── flux1-schnell-fp8.safetensors
-│   ├── ltx-video-2b-v0.9.1.safetensors
-|   ├── mochi_preview_fp8_scaled.safetensors
-│   ├── sd3.5_medium.safetensors
-│   ├── sd_xl_base_1.0.safetensors
-│   └── sd_xl_refiner_1.0.safetensors
-├── clip
-│   ├── clip_g.safetensors
-│   ├── clip_l.safetensors
-│   ├── t5xxl_fp16.safetensors
-│   └── t5xxl_fp8_e4m3fn.safetensors
-├── CogVideo
-│   └── CogVideo2B/
-├── controlnet
-│   ├── openpose-sd1.5-1.1.safetensors
-├── diffusion_models
-│   ├── hunyuan_video_t2v_720p_bf16.safetensors
-|   └── Cosmos-1_0-Diffusion-7B-Text2World.safetensors
-├── loras
-│   ├── jump_V2.safetensors
-├── text_encoders
-│   ├── clip_l.safetensors
-│   ├── llava_llama3_fp8_scaled.safetensors
-|   └── oldt5_xxl_fp8_e4m3fn_scaled.safetensors
-├── vae
-│   ├── hunyuan_video_vae_bf16.safetensors
-│   ├── vae-ft-mse-840000-ema-pruned.ckpt
-│   └── cosmos_cv8x8x8_1.0.safetensors
-```
-
-### Running Tests
-
-In one terminal, start the test server:
-
-```shell
-docker compose up --build
-```
-
-> --build is only needed the first time, or if you make changes to the server code
-
-In another terminal, run the tests:
-
-```shell
-npm test
-```
-
-This will take quite a long time, and requires a minimum of 24gb of RAM.
-I did these tests on my RTX 3080ti Laptop Edition w/ 16gb VRAM, and 24gb WSL RAM.
-It takes about 30 minutes to run all the tests.
 
 ## Architecture
 

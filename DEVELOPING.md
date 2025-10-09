@@ -4,22 +4,64 @@ This document provides guidelines for developers who want to contribute to the C
 It covers setting up the development environment, coding standards, testing procedures, and how to submit contributions.
 
 - [Developing ComfyUI-API](#developing-comfyui-api)
-  - [Setting Up the Development Environment](#setting-up-the-development-environment)
-  - [Coding Standards](#coding-standards)
-  - [Testing Procedures](#testing-procedures)
   - [Submitting Contributions](#submitting-contributions)
+  - [Setting Up the Development Environment](#setting-up-the-development-environment)
+  - [Testing Procedures](#testing-procedures)
+    - [Running Tests](#running-tests)
   - [Generating New Workflow Endpoints](#generating-new-workflow-endpoints)
     - [Automating with Claude 4 Sonnet](#automating-with-claude-4-sonnet)
   - [Storage Providers](#storage-providers)
     - [Adding a New Storage Provider](#adding-a-new-storage-provider)
 
+## Submitting Contributions
+
+Contributions are welcome!
+ComfyUI is a powerful tool with MANY options, and it's likely that not all of them are currently well supported by the `comfyui-api` server.
+Please open an issue with as much information as possible about the problem you're facing or the feature you need.
+If you have encountered a bug, please include the steps to reproduce it, and any relevant logs or error messages.
+If you are able, adding a failing test is the best way to ensure your issue is resolved quickly.
+Let's make productionizing ComfyUI as easy as possible!
+
 ## Setting Up the Development Environment
 
-## Coding Standards
+```shell
+git clone https://github.com/SaladTechnologies/comfyui-api.git
+cd comfyui-api
+npm install
+npm run build-binary
+```
+
+This will create a `comfyui-api` binary in the `dist/` directory, which is mounted into the Docker container when you run `docker compose up`.
+
+Whenever you make changes, you will need to re-run `npm run build-binary` to rebuild the binary, and then restart the Docker container to see your changes.
 
 ## Testing Procedures
 
-## Submitting Contributions
+This project uses [mocha](https://mochajs.org/) and [earl](https://earl.fun/) for testing.
+Tests are administered against a locally running instance of the ComfyUI API server, which can be started with Docker Compose, and actual images are generated during the tests.
+
+Additional services are present in the docker-compose file to provide mock storage services for testing uploads and downloads.
+These services are not required for normal operation of the API server.
+
+### Running Tests
+
+In one terminal, start the test server:
+
+```shell
+docker compose up --build
+```
+
+> --build is only needed the first time, or if you make changes to the file-server code.
+
+In another terminal, run the tests:
+
+```shell
+npm run quick-test
+```
+
+This will take several minutes, but can be done with very modest hardware.
+All tests in the `quick-test` suite use SD1.5 models, which are small and fast to run.
+The models used are defined in [the manifest](./manifest.yml), as well in a couple [test workflows](./test/workflows/)
 
 ## Generating New Workflow Endpoints
 
