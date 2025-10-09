@@ -1,6 +1,6 @@
 {
   "name": "comfyui-api",
-  "version": "1.10.0",
+  "version": "1.11.0",
   "description": "Wraps comfyui to make it easier to use as a stateless web service",
   "main": "dist/src/index.js",
   "scripts": {
@@ -28,6 +28,8 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.820.0",
+    "@azure/identity": "^4.13.0",
+    "@azure/storage-blob": "^12.28.0",
     "@fastify/swagger": "^9.5.0",
     "@fastify/swagger-ui": "^5.2.2",
     "@smithy/node-http-handler": "^4.0.5",

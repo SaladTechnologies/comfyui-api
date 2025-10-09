@@ -130,6 +130,8 @@ export const ExecutionStatsSchema = z.object({
     ),
   }),
   preprocess_time: z.number().optional(),
+  comfy_round_trip_time: z.number().optional(),
+  postprocess_time: z.number().optional(),
   upload_time: z.number().optional(),
   total_time: z.number().optional(),
 });
@@ -146,30 +148,8 @@ export const PromptRequestSchema = z.object({
     .optional()
     .default(() => randomUUID()),
   webhook: z.string().optional(),
-  s3: z
-    .object({
-      bucket: z.string(),
-      prefix: z.string(),
-      async: z.boolean().optional().default(false),
-    })
-    .optional(),
   convert_output: OutputConversionOptionsSchema.optional(),
 });
-
-export type PromptRequest = z.infer<typeof PromptRequestSchema>;
-
-export const PromptResponseSchema = z.object({
-  id: z.string(),
-  prompt: z.record(ComfyNodeSchema),
-  images: z.array(z.string()).optional(),
-  filenames: z.array(z.string()).optional(),
-  webhook: z.string().optional(),
-  convert_output: OutputConversionOptionsSchema.optional(),
-  status: z.enum(["ok"]).optional(),
-  stats: ExecutionStatsSchema.optional(),
-});
-
-export type PromptResponse = z.infer<typeof PromptResponseSchema>;
 
 export const PromptErrorResponseSchema = z.object({
   error: z.string(),
@@ -197,17 +177,6 @@ export function isWorkflow(obj: any): obj is Workflow {
 export interface WorkflowTree {
   [key: string]: WorkflowTree | Workflow;
 }
-
-export const WorkflowRequestSchema = PromptRequestSchema.extend({
-  input: z.record(z.any()),
-  prompt: z.never(),
-});
-
-export type WorkflowRequest = z.infer<typeof WorkflowRequestSchema>;
-
-export const WorkflowResponseSchema = PromptResponseSchema.extend({
-  input: z.record(z.any()),
-});
 
 export interface ComfyWSMessage {
   type:
@@ -428,3 +397,64 @@ export type ComfyHistoryResponse = Record<
     };
   }
 >;
+
+export interface Upload {
+  state: "in-progress" | "completed" | "failed" | "aborted";
+
+  upload(): Promise<void>;
+  abort(): Promise<void>;
+}
+
+export interface StorageProvider {
+  /**
+   * The key in a request body that indicates this storage provider should be used for upload.
+   * Must be unique across all storage providers, and must be included if `uploadFile` is implemented.
+   */
+  requestBodyUploadKey?: string;
+
+  /**
+   * The zod schema for the request body field that indicates this storage provider should
+   * be used for upload. Must be included if `requestBodyUploadKey` is defined.
+   */
+  requestBodyUploadSchema?: z.ZodObject<any, any>;
+
+  /**
+   * Takes the inputs from the request body and generates a URL for uploading.
+   * @param inputs
+   */
+  createUrl(inputs: any): string;
+
+  /**
+   * Test if the given URL can be handled by this storage provider.
+   * @param url URL to test
+   */
+  testUrl(url: string): boolean;
+
+  /**
+   * Upload a file to the given URL.
+   * @param url URL to upload to
+   * @param fileOrPath File path or buffer to upload
+   * @param contentType MIME type of the file
+   *
+   * @returns An Upload object that can be used to start and abort the upload.
+   */
+  uploadFile?(
+    url: string,
+    fileOrPath: string | Buffer,
+    contentType: string
+  ): Upload;
+
+  /**
+   * Download a file from the given URL to the specified output directory.
+   * @param url URL to download from
+   * @param outputDir Directory to save the downloaded file
+   * @param filenameOverride Optional filename to use instead of auto-generated one
+   *
+   * @resolves The path to the downloaded file
+   */
+  downloadFile?(
+    url: string,
+    outputDir: string,
+    filenameOverride?: string
+  ): Promise<string>;
+}

@@ -11,6 +11,11 @@ A simple wrapper that facilitates using [ComfyUI](https://github.com/comfyanonym
     - [Response Format](#response-format)
   - [Model Manifest](#model-manifest)
   - [Downloading Behavior](#downloading-behavior)
+  - [Modular Storage Backends](#modular-storage-backends)
+    - [S3-Compatible Storage](#s3-compatible-storage)
+    - [Huggingface Repository](#huggingface-repository)
+    - [Azure Blob Storage](#azure-blob-storage)
+    - [HTTP](#http)
   - [Image To Image Workflows](#image-to-image-workflows)
   - [Dynamic Model Loading](#dynamic-model-loading)
   - [Server-side image processing](#server-side-image-processing)
@@ -23,7 +28,6 @@ A simple wrapper that facilitates using [ComfyUI](https://github.com/comfyanonym
   - [Using with Webhooks](#using-with-webhooks)
     - [output.complete](#outputcomplete)
     - [prompt.failed](#promptfailed)
-  - [Using with S3](#using-with-s3)
   - [System Events](#system-events)
     - [status](#status)
     - [progress](#progress)
@@ -34,14 +38,9 @@ A simple wrapper that facilitates using [ComfyUI](https://github.com/comfyanonym
     - [execution\_success](#execution_success)
     - [execution\_interrupted](#execution_interrupted)
     - [execution\_error](#execution_error)
-  - [Generating New Workflow Endpoints](#generating-new-workflow-endpoints)
-    - [Automating with Claude 4 Sonnet](#automating-with-claude-4-sonnet)
   - [Prebuilt Docker Images](#prebuilt-docker-images)
   - [Considerations for Running on SaladCloud](#considerations-for-running-on-saladcloud)
   - [Contributing](#contributing)
-  - [Testing](#testing)
-    - [Required Models](#required-models)
-    - [Running Tests](#running-tests)
   - [Architecture](#architecture)
 
 ## Download and Use
@@ -56,7 +55,7 @@ If you have your own ComfyUI dockerfile, you can add the comfyui-api server to i
 
 ```dockerfile
 # Change this to the version you want to use
-ARG api_version=1.10.0
+ARG api_version=1.11.0
 
 # Download the comfyui-api binary, and make it executable
 ADD https://github.com/SaladTechnologies/comfyui-api/releases/download/${api_version}/comfyui-api .
@@ -76,14 +75,12 @@ The server hosts swagger docs at `/docs`, which can be used to interact with the
 - **Verified Model/Workflow Support**: Stable Diffusion 1.5, Stable Diffusion XL, Stable Diffusion 3.5, Flux, AnimateDiff, LTX Video, Hunyuan Video, CogVideoX, Mochi Video, Cosmos 1.0. My assumption is more model types are supported, but these are the ones I have verified.
 - **Stateless API**: The server is stateless, and can be scaled horizontally to handle more requests.
 - **Swagger Docs**: The server hosts swagger docs at `/docs`, which can be used to interact with the API.
-- **"Synchronous" Support**: The server will return base64-encoded images directly in the response, if no webhook is provided.
-- **Webhook Support**: The server can send completed images to a webhook, which can be used to store images, or to send them to a user.
-- **S3 Support**: The server can be configured to upload images to an S3-compatible object store, and return the S3 URL in the response, or to return 202 immediately and upload the images to S3 in the background.
-- **Easily Submit Images**: The server can accept images as base64-encoded strings, http(s) urls, and s3 urls. This makes image-to-image workflows much easier to use.
+- **"Synchronous" Support**: The server will return base64-encoded images directly in the response, if no async behavior is requested.
+- **Modular Storage Backends**: Completed outputs can be sent base64-encoded to a webhook, or uploaded to any s3-compatible storage, an http endpoint, a huggingface repo, or azure blob storage. All of these can be used to download input media as well. More storage backends can be added easily.
 - **Warmup Workflow**: The server can be configured to run a warmup workflow on startup, which can be used to load and warm up models, and to ensure the server is ready to accept requests.
 - **Return Images In PNG (default), JPEG, or WebP**: The server can return images in PNG, JPEG, or WebP format, via a parameter in the API request. Most options supported by [sharp](https://sharp.pixelplumbing.com/) are supported.
 - **Probes**: The server has two probes, `/health` and `/ready`, which can be used to check the server's health and readiness to receive traffic.
-- **Dynamic Workflow Endpoints**: Automatically mount new workflow endpoints by adding conforming `.js` or `.ts` files to the `/workflows` directory in your docker image. See [below](#generating-new-workflow-endpoints) for more information. A [Claude 4 Sonnet](https://claude.ai) [prompt](./claude-endpoint-creation-prompt.md) is included to assist in automating this process.
+- **Dynamic Workflow Endpoints**: Automatically mount new workflow endpoints by adding conforming `.js` or `.ts` files to the `/workflows` directory in your docker image. See [the guide](./DEVELOPING.md#generating-new-workflow-endpoints) for more information. A [Claude 4 Sonnet](https://claude.ai) [prompt](./claude-endpoint-creation-prompt.md) is included to assist in automating this process.
 - **Bring Your Own Models And Extensions**: Use any model or extension you want by adding them to the normal ComfyUI directories `/opt/ComfyUI/`. You can configure a [manifest file](#model-manifest) to download models and install extensions automatically on startup.
 - **Dynamic Model Loading**: If you provide a URL in a model-loading node, the server will locally cache the model automatically before executing the workflow.
 - **Execution Stats**: The server will return [execution stats in the response](#response-format).
@@ -224,6 +221,8 @@ This allows the server to access private S3 buckets (or S3-compatible buckets), 
 If the url is a huggingface URL, the server will use the `hf` cli tool to download the file.
 This allows you to take advantage of high-speed [xet storage](https://huggingface.co/docs/hub/en/storage-backends#xet), as well as other optimizations provided by huggingface.
 
+If the url is an azure blob storage URL, the server will use the Azure SDK to download the file.
+
 If the url is a regular http(s) URL, the server will use `fetch` to stream the file to disk.
 If the url has a file extension, the server will use that extension when saving the file.
 Otherwise, it will attempt to determine the file extension from the `Content-Disposition` or `Content-Type` headers.
@@ -232,11 +231,103 @@ All downloaded files live in the configured cache directory with a name taken as
 
 If a download for a given URL is already in progress, any subsequent requests for the same URL will wait for the first download to complete, and then use the downloaded file.
 
+## Modular Storage Backends
+
+The server supports multiple storage backends for downloading models and input media, and uploading completed outputs.
+All uploads take a prefix of some kind, not a full path or URL.
+
+All uploads can be handled synchronously or asynchronously, depending on the `async` field in the upload block of the request body.
+
+- If `async` is `true` or omitted, the server will return a `202 Accepted` response immediately, and the upload will be handled in the background.
+- If `async` is `false`, the server will wait for the upload to complete before returning a `200 OK` response with the uploaded urls in the response body.
+
+If an upload for a particular url is in progress, a subsequent upload to the same url will abort the first request and take over the upload.
+This is rooted in the assumption that you want the latest version of any particular output.
+
+### S3-Compatible Storage
+
+Includes AWS S3, Cloudflare R2, etc.
+Uses the AWS SDK. Requires appropriate AWS credentials to be provided via environment variables.
+Used for URLs starting with `s3://`.
+
+For downloads, use the format `s3://bucket-name/path/to/file`.
+For uploads, include the `s3` field in the request body, like:
+
+```json
+{
+  "prompt": {...}, 
+  "s3": { 
+    "bucket": "my-bucket", 
+    "prefix": "optional/prefix", 
+    "async": false 
+  }
+}
+```
+
+### Huggingface Repository
+
+Uses the `hf` cli tool.
+Requires the `HF_TOKEN` environment variable to be set with a valid Huggingface token.
+Used for URLs starting with `https://huggingface.co/`.
+Works with both public and private repos, model and dataset repos, and large files stored with [xet storage](https://huggingface.co/docs/hub/en/storage-backends#xet).
+
+For downloads, use the format `https://huggingface.co/username/repo/resolve/revision/path/to/file` or `https://huggingface.co/datasets/username/repo/resolve/revision/path/to/file`.
+
+For uploads, include the `hf_upload` field in the request body, like 
+
+```json
+{
+  "prompt": {}, 
+  "hf_upload": { 
+    "repo": "username/repo", 
+    "repo_type": "dataset", 
+    "revision": "main", 
+    "directory": "test-source-images", 
+    "async": false 
+  }
+}
+```
+
+The `repo_type` field can be either `model` or `dataset`, and defaults to `model`.
+
+### Azure Blob Storage
+
+Uses the Azure SDK.
+Requires appropriate Azure credentials to be provided via environment variables.
+Used for URLs matching `https://<your-account>.blob.core.windows.net/`.
+
+For downloads, use the format `https://<your-account>.blob.core.windows.net/container/path/to/file`.
+
+For uploads, include the `azure_blob_upload` field in the request body, like:
+
+```json
+{
+  "prompt": {}, 
+  "azure_blob_upload": { 
+    "container": "my-container", 
+    "blob_prefix": "optional/prefix", 
+    "async": false 
+  }
+}
+```
+
+### HTTP
+
+Uses Fetch.
+Supports custom headers via the `HTTP_AUTH_HEADER_NAME` and `HTTP_AUTH_HEADER_VALUE` environment variables.
+Basic auth can be used via the URL, i.e. `https://username:password@your-http-endpoint.com`.
+
+For downloads, use any valid http(s) URL that is not matched by the other storage backends.
+
+For uploads, makes a PUT request to the specified URL with the image as the body.  Matches any other URL not matched by the other storage backends.
+
 ## Image To Image Workflows
 
-The ComfyUI API server supports image-to-image workflows, allowing you to submit an image and receive a modified version of that image in response. This is useful for tasks such as image inpainting, style transfer, and other image manipulation tasks.
+The ComfyUI API server supports image-to-image workflows, allowing you to submit an image and receive a modified version of that image in response.
+This is useful for tasks such as image in-painting, style transfer, and other image manipulation tasks.
 
-To use image-to-image workflows, you can submit an image as a base64-encoded string, http(s) URL, or S3 URL. The server will automatically detect the input type and process the image accordingly.
+To use image-to-image workflows, you can submit an image as a base64-encoded string, or a URL.
+The server will automatically detect the input type and process the image accordingly, using an appropriate storage provider if necessary.
 
 Here's an example of doing this in a `LoadImage` node:
 
@@ -257,7 +348,7 @@ Here's an example of doing this in a `LoadImage` node:
 
 The ComfyUI API server supports dynamic model loading, allowing you to specify a model URL in a model-loading node, and the server will automatically download and cache the model before executing the workflow.
 This is useful for workflows that need to potentially use a different model for each request.
-An example may be headshot generation, which would specify a LoRA per person.
+An example may be head-shot generation, which would specify a LoRA per person.
 The LoRA may be generated on-the-fly by another service, and provided to the ComfyUI API server via a URL.
 
 ```json
@@ -321,7 +412,12 @@ The server has two probes, `/health` and `/ready`.
 The following table lists the available environment variables and their default values.
 For historical reasons, the default values mostly assume this will run on top of an [ai-dock](https://github.com/ai-dock/comfyui) image, but we currently provide [our own more minimal image](#prebuilt-docker-images) here in this repo.
 
-If you are using the s3 storage functionality, make sure to set all of the appropriate environment variables for your S3 bucket, such as `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_REGION`. The server will automatically use these to upload images to S3.
+If you are using the s3 storage functionality, make sure to set all of the appropriate environment variables for your S3 bucket, such as `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_REGION`.
+The server will automatically use these to upload images to S3.
+
+If you are using the huggingface storage functionality, make sure to set the `HF_TOKEN` environment variable with a valid Huggingface token with appropriate permissions.
+
+If you are using the azure blob storage functionality, make sure to set all of the appropriate environment variables for your Azure account, such as `AZURE_STORAGE_CONNECTION_STRING`.
 
 | Variable                     | Default Value              | Description                                                                                                                                                                                                                                  |
 | ---------------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -333,6 +429,8 @@ If you are using the s3 storage functionality, make sure to set all of the appro
 | COMFYUI_PORT_HOST            | "8188"                     | ComfyUI port number                                                                                                                                                                                                                          |
 | DIRECT_ADDRESS               | "127.0.0.1"                | Direct address for ComfyUI                                                                                                                                                                                                                   |
 | HOST                         | "::"                       | Wrapper host address                                                                                                                                                                                                                         |
+| HTTP_AUTH_HEADER_NAME        | (not set)                  | If set, the server will include this header name with the value from HTTP_AUTH_HEADER_VALUE in all outgoing HTTP requests for uploading and downloading files. This can be used to add basic auth or bearer tokens to requests.              |
+| HTTP_AUTH_HEADER_VALUE       | (not set)                  | The value to use for the HTTP_AUTH_HEADER_NAME header in all outgoing HTTP requests for uploading and downloading files.                                                                                                                     |
 | INPUT_DIR                    | "/opt/ComfyUI/input"       | Directory for input files                                                                                                                                                                                                                    |
 | LOG_LEVEL                    | "info"                     | Log level for the application. One of "trace", "debug", "info", "warn", "error", "fatal".                                                                                                                                                    |
 | MANIFEST                     | (not set)                  | Path to the [manifest file](#model-manifest) (optional). Can be yml or json.                                                                                                                                                                 |
@@ -344,6 +442,7 @@ If you are using the s3 storage functionality, make sure to set all of the appro
 | MODEL_DIR                    | "/opt/ComfyUI/models"      | Directory for model files                                                                                                                                                                                                                    |
 | OUTPUT_DIR                   | "/opt/ComfyUI/output"      | Directory for output files                                                                                                                                                                                                                   |
 | PORT                         | "3000"                     | Wrapper port number                                                                                                                                                                                                                          |
+| PREPEND_FILENAMES            | "true"                     | If set to "true", the server will prepend a unique identifier to output filenames to avoid collisions. Otherwise, the server will overwrite filename prefixes with the unique identifier (legacy behavior).                                  |
 | PROMPT_WEBHOOK_RETRIES       | "3"                        | Number of times to retry sending a webhook for a prompt                                                                                                                                                                                      |
 | STARTUP_CHECK_INTERVAL_S     | "1"                        | Interval in seconds between startup checks                                                                                                                                                                                                   |
 | STARTUP_CHECK_MAX_TRIES      | "20"                       | Maximum number of startup check attempts                                                                                                                                                                                                     |
@@ -440,28 +539,6 @@ The webhook event name for a failed request is `prompt.failed`. The webhook will
 }
 ```
 
-## Using with S3
-
-You must provide the necessary AWS environment variables for the API to be able to upload images to S3. These include `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_REGION`. The API will use these to upload images to the specified S3 bucket and prefix in the request body.
-
-To use S3 to store the outputs of your workflows, you can set the `.s3` field in the request body to an object with the following schema:
-
-```json
-{
-  "bucket": "your-s3-bucket-name",
-  "prefix": "prefix-for-outputs-from-this-request",
-  "async": false
-}
-```
-
-The `bucket` field is the name of the S3 bucket to upload the outputs to, and the `prefix` field is an optional prefix to add to the output filenames. The `async` field is a boolean that determines whether the API should return a 202 response immediately, or wait for the uploads to complete before returning a response.
-
-If `async` is set to `true`, the API will return a 202 response immediately, and the outputs will be uploaded to S3 in the background. You will need to poll S3 or configure bucket events to be notified when the uploads are complete.
-
-If `async` is set to `false`, the API will wait for the uploads to complete before returning a response. The response will include the S3 URLs of the uploaded outputs in the `.images` field, which will be an array of strings.
-
-If an upload for a particular output is in progress, a subsequent upload to the same output will abort the first request and take over the upload.
-This is rooted in the assumption that you want the latest version of any particular output.
 
 ## System Events
 
@@ -654,240 +731,6 @@ The following are the schemas for the event data that will be sent to the webhoo
 }
 ```
 
-## Generating New Workflow Endpoints
-
-Since the ComfyUI prompt format is a little obtuse, it's common to wrap the workflow endpoints with a more user-friendly interface.
-
-This can be done by adding conforming `.js` or `.ts` files to the `/workflows` directory in your dockerfile.
-You can see some examples in [`./workflows`](./workflows/).
-Typescript files will be automatically transpiled to javascript files, so you can use either.
-
-Endpoints are loaded at runtime via `eval` in the context of `src/workflows`, so you can use any Node.js or TypeScript features you want, including importing other files such as the API config object.
-By loading extra endpoints this way, no rebuild is required to add new endpoints, and you can continue using the pre-built binary.
-You can see many examples of this in the [Salad Recipes](https://github.com/SaladTechnologies/salad-recipes/tree/master/src) repo, where this API powers all of the ComfyUI recipes.
-
-Here is an example text-to-image workflow file.
-
-```typescript
-import { z } from "zod";
-import config from "../config";
-
-const ComfyNodeSchema = z.object({
-  inputs: z.any(),
-  class_type: z.string(),
-  _meta: z.any().optional(),
-});
-
-type ComfyNode = z.infer<typeof ComfyNodeSchema>;
-type ComfyPrompt = Record<string, ComfyNode>;
-
-interface Workflow {
-  RequestSchema: z.ZodObject<any, any>;
-  generateWorkflow: (input: any) => Promise<ComfyPrompt> | ComfyPrompt;
-  description?: string;
-  summary?: string;
-}
-
-// This defaults the checkpoint to whatever was used in the warmup workflow
-let checkpoint: any = config.models.checkpoints.enum.optional();
-if (config.warmupCkpt) {
-  checkpoint = checkpoint.default(config.warmupCkpt);
-}
-
-const RequestSchema = z.object({
-  prompt: z.string().describe("The positive prompt for image generation"),
-  negative_prompt: z
-    .string()
-    .optional()
-    .default("text, watermark")
-    .describe("The negative prompt for image generation"),
-  width: z
-    .number()
-    .int()
-    .min(256)
-    .max(2048)
-    .optional()
-    .default(512)
-    .describe("Width of the generated image"),
-  height: z
-    .number()
-    .int()
-    .min(256)
-    .max(2048)
-    .optional()
-    .default(512)
-    .describe("Height of the generated image"),
-  seed: z
-    .number()
-    .int()
-    .optional()
-    .default(() => Math.floor(Math.random() * 100000000000))
-    .describe("Seed for random number generation"),
-  steps: z
-    .number()
-    .int()
-    .min(1)
-    .max(100)
-    .optional()
-    .default(20)
-    .describe("Number of sampling steps"),
-  cfg_scale: z
-    .number()
-    .min(0)
-    .max(20)
-    .optional()
-    .default(8)
-    .describe("Classifier-free guidance scale"),
-  sampler_name: config.samplers
-    .optional()
-    .default("euler")
-    .describe("Name of the sampler to use"),
-  scheduler: config.schedulers
-    .optional()
-    .default("normal")
-    .describe("Type of scheduler to use"),
-  denoise: z
-    .number()
-    .min(0)
-    .max(1)
-    .optional()
-    .default(1)
-    .describe("Denoising strength"),
-  checkpoint,
-});
-
-type InputType = z.infer<typeof RequestSchema>;
-
-function generateWorkflow(input: InputType): ComfyPrompt {
-  return {
-    "3": {
-      inputs: {
-        seed: input.seed,
-        steps: input.steps,
-        cfg: input.cfg_scale,
-        sampler_name: input.sampler_name,
-        scheduler: input.scheduler,
-        denoise: input.denoise,
-        model: ["4", 0],
-        positive: ["6", 0],
-        negative: ["7", 0],
-        latent_image: ["5", 0],
-      },
-      class_type: "KSampler",
-      _meta: {
-        title: "KSampler",
-      },
-    },
-    "4": {
-      inputs: {
-        ckpt_name: input.checkpoint,
-      },
-      class_type: "CheckpointLoaderSimple",
-      _meta: {
-        title: "Load Checkpoint",
-      },
-    },
-    "5": {
-      inputs: {
-        width: input.width,
-        height: input.height,
-        batch_size: 1,
-      },
-      class_type: "EmptyLatentImage",
-      _meta: {
-        title: "Empty Latent Image",
-      },
-    },
-    "6": {
-      inputs: {
-        text: input.prompt,
-        clip: ["4", 1],
-      },
-      class_type: "CLIPTextEncode",
-      _meta: {
-        title: "CLIP Text Encode (Prompt)",
-      },
-    },
-    "7": {
-      inputs: {
-        text: input.negative_prompt,
-        clip: ["4", 1],
-      },
-      class_type: "CLIPTextEncode",
-      _meta: {
-        title: "CLIP Text Encode (Prompt)",
-      },
-    },
-    "8": {
-      inputs: {
-        samples: ["3", 0],
-        vae: ["4", 2],
-      },
-      class_type: "VAEDecode",
-      _meta: {
-        title: "VAE Decode",
-      },
-    },
-    "9": {
-      inputs: {
-        filename_prefix: "ComfyUI",
-        images: ["8", 0],
-      },
-      class_type: "SaveImage",
-      _meta: {
-        title: "Save Image",
-      },
-    },
-  };
-}
-
-const workflow: Workflow = {
-  RequestSchema,
-  generateWorkflow,
-  summary: "Text to Image",
-  description: "Generate an image from a text prompt",
-};
-
-export default workflow;
-```
-
-Note your file MUST export a `Workflow` object, which contains a `RequestSchema` and a `generateWorkflow` function. The `RequestSchema` is a zod schema that describes the input to the workflow, and the `generateWorkflow` function takes the input and returns a ComfyUI API-format prompt.
-
-The workflow endpoints will follow whatever directory structure you provide.
-For example, a directory structure like this:
-
-```shell
-/workflows
-└── sdxl
-    ├── img2img.ts
-    ├── txt2img-with-refiner.ts
-    └── txt2img.ts
-```
-
-Would yield the following endpoints:
-
-- `POST /workflows/sdxl/img2img`
-- `POST /workflows/sdxl/txt2img-with-refiner`
-- `POST /workflows/sdxl/txt2img`
-
-These endpoints will be present in the swagger docs, and can be used to interact with the API.
-If you provide descriptions in your zod schemas, these will be used to create a table of inputs in the swagger docs.
-
-### Automating with Claude 4 Sonnet
-
-> **Note**: This requires having an account with Anthropic, and your anthropic API key in the environment variable `ANTHROPIC_API_KEY`.
-
-Creating these endpoints can be done mostly automatically by [Claude 4 Sonnet](https://console.anthropic.com/), given the JSON prompt graph.
-A [system prompt](./claude-endpoint-creation-prompt.md) to do this is included in this repository, as is [a script that uses this prompt](./generate-workflow) to create endpoints. It requires `jq` and `curl` to be installed.
-
-```shell
-./generate-workflow <inputFile> <outputFile>
-```
-
-Where `<inputFile>` is the JSON prompt graph, and `<outputFile>` is the output file to write the generated workflow to.
-
-As with all AI-generated code, it is strongly recommended to review the generated code before using it in production.
-
 ## Prebuilt Docker Images
 
 You can find ready-to-go docker images under [Packages](https://github.com/orgs/SaladTechnologies/packages?repo_name=comfyui-api) in this repository.
@@ -923,98 +766,12 @@ All of SaladCloud's image and video generation [recipes](https://docs.salad.com/
 ## Contributing
 
 Contributions are welcome!
-ComfyUI is a powerful tool with MANY options, and it's likely that not all of them are currently supported by the `comfyui-api` server.
+See the [Development](./DEVELOPMENT.md) guide for more information on how to develop, test, and contribute to this project.
+ComfyUI is a powerful tool with MANY options, and it's likely that not all of them are currently well supported by the `comfyui-api` server.
 Please open an issue with as much information as possible about the problem you're facing or the feature you need.
 If you have encountered a bug, please include the steps to reproduce it, and any relevant logs or error messages.
 If you are able, adding a failing test is the best way to ensure your issue is resolved quickly.
 Let's make productionizing ComfyUI as easy as possible!
-
-## Testing
-
-### Required Models
-
-Automated tests for this project require model files to be present in the `./test/docker-image/models` directory. The following models are required:
-
-- `AnimateLCM_sd15_t2v.ckpt` - https://huggingface.co/wangfuyun/AnimateLCM/resolve/b78bbce/AnimateLCM_sd15_t2v.ckpt
-- `dreamshaper_8.safetensors` - https://civitai.com/models/4384/dreamshaper
-- `flux1-schnell-fp8.safetensors` - https://huggingface.co/Comfy-Org/flux1-schnell
-- `ltx-video-2b-v0.9.1.safetensors` - https://huggingface.co/Lightricks/LTX-Video/blob/main/ltx-video-2b-v0.9.1.safetensors
-- `sd3.5_medium.safetensors` - https://huggingface.co/stabilityai/stable-diffusion-3.5-medium
-- `sd_xl_base_1.0.safetensors` - https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0
-- `sd_xl_refiner_1.0.safetensors` - https://huggingface.co/stabilityai/stable-diffusion-xl-refiner-1.0
-- `clip_g.safetensors` - https://huggingface.co/Comfy-Org/stable-diffusion-3.5-fp8/blob/main/text_encoders/clip_g.safetensors
-- `clip_l.safetensors` - https://huggingface.co/Comfy-Org/stable-diffusion-3.5-fp8/blob/main/text_encoders/clip_l.safetensors
-- `t5xxl_fp16.safetensors` - https://huggingface.co/comfyanonymous/flux_text_encoders/blob/main/t5xxl_fp16.safetensors
-- `t5xxl_fp8_e4m3fn.safetensors` - https://huggingface.co/Comfy-Org/stable-diffusion-3.5-fp8/blob/main/text_encoders/t5xxl_fp8_e4m3fn_scaled.safetensors
-- `openpose-sd1.5-1.1.safetensors` - https://huggingface.co/lllyasviel/control_v11p_sd15_openpose/resolve/main/diffusion_pytorch_model.fp16.safetensors
-- `hunyuan_video_t2v_720p_bf16.safetensors` - https://huggingface.co/Comfy-Org/HunyuanVideo_repackaged/tree/main/split_files/diffusion_models
-- `jump_V2.safetensors` - https://civitai.com/models/193225?modelVersionId=235847
-- `llava_llama3_fp8_scaled.safetensors` - https://huggingface.co/Comfy-Org/HunyuanVideo_repackaged/tree/main/split_files/text_encoders
-- `hunyuan_video_vae_bf16.safetensors` - https://huggingface.co/Comfy-Org/HunyuanVideo_repackaged/tree/main/split_files/vae
-- `vae-ft-mse-840000-ema-pruned.ckpt` - https://huggingface.co/stabilityai/sd-vae-ft-mse-original/blob/main/vae-ft-mse-840000-ema-pruned.ckpt
-- `THUDM/CogVideoX-2b` - https://huggingface.co/THUDM/CogVideoX-2b
-- `mochi_preview_fp8_scaled.safetensors` - https://huggingface.co/Comfy-Org/mochi_preview_repackaged/blob/main/all_in_one/mochi_preview_fp8_scaled.safetensors
-- `oldt5_xxl_fp8_e4m3fn_scaled.safetensors` - https://huggingface.co/comfyanonymous/cosmos_1.0_text_encoder_and_VAE_ComfyUI/tree/main/text_encoders
-- `cosmos_cv8x8x8_1.0.safetensors` - https://huggingface.co/comfyanonymous/cosmos_1.0_text_encoder_and_VAE_ComfyUI/blob/main/vae/cosmos_cv8x8x8_1.0.safetensors
-- `Cosmos-1_0-Diffusion-7B-Text2World.safetensors` - https://huggingface.co/mcmonkey/cosmos-1.0/blob/main/Cosmos-1_0-Diffusion-7B-Text2World.safetensors
-
-They should be in the correct comfyui directory structure, like so:
-
-```text
-./test/docker-image/models
-├── animatediff_models
-│   └── AnimateLCM_sd15_t2v.ckpt
-├── checkpoints
-│   ├── dreamshaper_8.safetensors
-│   ├── flux1-schnell-fp8.safetensors
-│   ├── ltx-video-2b-v0.9.1.safetensors
-|   ├── mochi_preview_fp8_scaled.safetensors
-│   ├── sd3.5_medium.safetensors
-│   ├── sd_xl_base_1.0.safetensors
-│   └── sd_xl_refiner_1.0.safetensors
-├── clip
-│   ├── clip_g.safetensors
-│   ├── clip_l.safetensors
-│   ├── t5xxl_fp16.safetensors
-│   └── t5xxl_fp8_e4m3fn.safetensors
-├── CogVideo
-│   └── CogVideo2B/
-├── controlnet
-│   ├── openpose-sd1.5-1.1.safetensors
-├── diffusion_models
-│   ├── hunyuan_video_t2v_720p_bf16.safetensors
-|   └── Cosmos-1_0-Diffusion-7B-Text2World.safetensors
-├── loras
-│   ├── jump_V2.safetensors
-├── text_encoders
-│   ├── clip_l.safetensors
-│   ├── llava_llama3_fp8_scaled.safetensors
-|   └── oldt5_xxl_fp8_e4m3fn_scaled.safetensors
-├── vae
-│   ├── hunyuan_video_vae_bf16.safetensors
-│   ├── vae-ft-mse-840000-ema-pruned.ckpt
-│   └── cosmos_cv8x8x8_1.0.safetensors
-```
-
-### Running Tests
-
-In one terminal, start the test server:
-
-```shell
-docker compose up --build
-```
-
-> --build is only needed the first time, or if you make changes to the server code
-
-In another terminal, run the tests:
-
-```shell
-npm test
-```
-
-This will take quite a long time, and requires a minimum of 24gb of RAM.
-I did these tests on my RTX 3080ti Laptop Edition w/ 16gb VRAM, and 24gb WSL RAM.
-It takes about 30 minutes to run all the tests.
 
 ## Architecture
 

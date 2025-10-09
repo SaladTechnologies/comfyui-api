@@ -139,3 +139,5 @@ test/docker-image/models
 scratch
 
 test/output/*.png
+
+cache/

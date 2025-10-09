@@ -1,28 +1,31 @@
 services:
   comfyui:
-    image: ghcr.io/saladtechnologies/comfyui-api:comfy0.3.62-torch2.8.0-cuda12.8-runtime
+    image: ghcr.io/saladtechnologies/comfyui-api:comfy0.3.64-torch2.8.0-cuda12.8-runtime
     volumes:
       - type: bind
         source: ./bin
         target: /app/bin
-      # - type: bind
-      #   source: ./test/docker-image/models
-      #   target: /opt/ComfyUI/models
       - type: bind
         source: ./manifest.yml
         target: /app/manifest.yml
+      - ./cache:/root/.cache/comfyui-api
+      - ./example-workflows/sd1.5:/workflows
     command: ["/app/bin/comfyui-api"]
     ports:
       - "3000:3000"
       - "8188:8188"
     environment:
-      LOG_LEVEL: "debug"
+      # LOG_LEVEL: "debug"
       AWS_ENDPOINT_URL: "http://localstack:4566"
       AWS_ACCESS_KEY_ID: "test"
       AWS_SECRET_ACCESS_KEY: "test"
       AWS_REGION: "us-east-1"
       MANIFEST: "/app/manifest.yml"
       STARTUP_CHECK_MAX_TRIES: "30"
+      HF_TOKEN: ${HF_TOKEN}
+      # Azurite configuration
+      # AZURE_STORAGE_ACCOUNT: "devstoreaccount1"
+      AZURE_STORAGE_CONNECTION_STRING: "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;"
     #   ALWAYS_RESTART_COMFYUI: "true"
     #   SYSTEM_WEBHOOK_URL: "http://host.docker.internal:1234/system"
     #   SYSTEM_WEBHOOK_EVENTS: all
@@ -42,3 +45,18 @@ services:
       - SERVICES=s3
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock"
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite
+    ports:
+      - "10000:10000"  # Blob service
+    command: "azurite-blob --blobHost 0.0.0.0 --blobPort 10000"
+  file-server:
+    build:
+      context: .
+      dockerfile: test/Dockerfile.file-server
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - STORAGE_DIR=/storage
+      - REQUIRE_AUTH=false

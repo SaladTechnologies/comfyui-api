@@ -9,6 +9,12 @@ import yaml from "yaml";
 
 const {
   ALWAYS_RESTART_COMFYUI = "false",
+  AWS_DEFAULT_REGION,
+  AWS_REGION,
+  AZURE_STORAGE_ACCOUNT,
+  AZURE_STORAGE_CONNECTION_STRING,
+  AZURE_STORAGE_KEY,
+  AZURE_STORAGE_SAS_TOKEN,
   BASE = "",
   CACHE_DIR = `${process.env.HOME}/.cache/comfyui-api`,
   CMD = "init.sh",
@@ -16,27 +22,28 @@ const {
   COMFYUI_PORT_HOST = "8188",
   DIRECT_ADDRESS = "127.0.0.1",
   HOST = "::",
+  HTTP_AUTH_HEADER_NAME,
+  HTTP_AUTH_HEADER_VALUE,
   INPUT_DIR,
   LOG_LEVEL = "info",
+  MANIFEST_JSON,
+  MANIFEST,
   MARKDOWN_SCHEMA_DESCRIPTIONS = "true",
   MAX_BODY_SIZE_MB = "100",
   MAX_QUEUE_DEPTH = "0",
   MODEL_DIR,
   OUTPUT_DIR,
   PORT = "3000",
+  PREPEND_FILENAMES = "true",
   PROMPT_WEBHOOK_RETRIES = "3",
-  SALAD_MACHINE_ID,
   SALAD_CONTAINER_GROUP_ID,
+  SALAD_MACHINE_ID,
   STARTUP_CHECK_INTERVAL_S = "1",
   STARTUP_CHECK_MAX_TRIES = "20",
-  SYSTEM_WEBHOOK_URL,
   SYSTEM_WEBHOOK_EVENTS,
+  SYSTEM_WEBHOOK_URL,
   WARMUP_PROMPT_FILE,
   WORKFLOW_DIR = "/workflows",
-  AWS_REGION,
-  AWS_DEFAULT_REGION,
-  MANIFEST,
-  MANIFEST_JSON,
 } = process.env;
 
 fs.mkdirSync(WORKFLOW_DIR, { recursive: true });
@@ -67,6 +74,7 @@ const maxQueueDepth = parseInt(MAX_QUEUE_DEPTH, 10);
 assert(maxQueueDepth >= 0, "MAX_QUEUE_DEPTH must be a non-negative integer");
 
 const alwaysRestartComfyUI = ALWAYS_RESTART_COMFYUI.toLowerCase() === "true";
+const prependFilenames = PREPEND_FILENAMES.toLowerCase() === "true";
 const systemWebhook = SYSTEM_WEBHOOK_URL ?? "";
 
 if (systemWebhook) {
@@ -302,8 +310,28 @@ const config = {
   awsRegion: AWS_REGION ?? AWS_DEFAULT_REGION ?? null,
 
   /**
+   * (optional) The Azure Storage account name to use for Azure Blob operations.
+   */
+  azureStorageAccount: AZURE_STORAGE_ACCOUNT ?? null,
+
+  /**
+   * (optional) The Azure Storage connection string for local development (e.g., Azurite).
+   */
+  azureStorageConnectionString: AZURE_STORAGE_CONNECTION_STRING ?? null,
+
+  /**
+   * (optional) The Azure Storage account key for shared key authentication.
+   */
+  azureStorageKey: AZURE_STORAGE_KEY ?? null,
+
+  /**
+   * (optional) The Azure Storage SAS token for SAS authentication.
+   */
+  azureStorageSasToken: AZURE_STORAGE_SAS_TOKEN ?? null,
+
+  /**
    * The directory where cached files are stored, specified by CACHE_DIR env var.
-   * default: /tmp/comfyui-api-cache
+   * default: {HOME}/.cache/comfyui-api
    */
   cacheDir: CACHE_DIR,
 
@@ -353,6 +381,14 @@ const config = {
    * The version of the HuggingFace CLI, if installed. If not installed, null.
    */
   hfCLIVersion,
+
+  /**
+   * If HTTP_AUTH_HEADER_NAME and HTTP_AUTH_HEADER_VALUE are set, this will be an object to merge with headers when making http requests.
+   */
+  httpAuthHeader:
+    HTTP_AUTH_HEADER_NAME && HTTP_AUTH_HEADER_VALUE
+      ? { [HTTP_AUTH_HEADER_NAME]: HTTP_AUTH_HEADER_VALUE }
+      : {},
 
   /**
    * The directory where input files are stored, specified by INPUT_DIR env var.
@@ -408,6 +444,13 @@ const config = {
    * default: {comfyDir}/output
    */
   outputDir: OUTPUT_DIR ?? path.join(comfyDir, "output"),
+
+  /**
+   * If true, unique IDs will be prepended to existing filename prefixes, as opposed to replacing them.
+   * Specified by PREPEND_FILENAMES env var.
+   * default: true
+   */
+  prependFilenames,
 
   /**
    * The number of times to retry a post-prompt webhook if it fails.

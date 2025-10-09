@@ -20,17 +20,8 @@ import {
   pipInstallPackages,
 } from "./utils";
 import { convertImageBuffer } from "./image-tools";
-import remoteStorageManager from "./remote-storage-manager";
-import {
-  processModelLoadingNode,
-  modelLoadingNodeTypes,
-  loadImageNodes,
-  loadDirectoryOfImagesNodes,
-  loadVideoNodes,
-  processLoadImageNode,
-  processLoadDirectoryOfImagesNode,
-  processLoadVideoNode,
-} from "./comfy-node-preprocessors";
+import getStorageManager from "./remote-storage-manager";
+import { NodeProcessError, preprocessNodes } from "./comfy-node-preprocessors";
 import {
   warmupComfyUI,
   waitForComfyUIToStart,
@@ -38,20 +29,17 @@ import {
   shutdownComfyUI,
   runPromptAndGetOutputs,
   connectToComfyUIWebsocketStream,
+  PromptOutputsWithStats,
 } from "./comfy";
 import {
-  PromptRequestSchema,
+  PromptRequestSchema as BasePromptRequestSchema,
   PromptErrorResponseSchema,
-  PromptResponseSchema,
-  PromptRequest,
-  WorkflowResponseSchema,
   WorkflowTree,
   isWorkflow,
-  OutputConversionOptionsSchema,
+  ExecutionStatsSchema,
 } from "./types";
 import workflows from "./workflows";
 import { z } from "zod";
-import { randomUUID } from "crypto";
 import { WebSocket } from "ws";
 import { fetch, Agent } from "undici";
 
@@ -66,6 +54,45 @@ const server = Fastify({
 });
 server.setValidatorCompiler(validatorCompiler);
 server.setSerializerCompiler(serializerCompiler);
+
+const remoteStorageManager = getStorageManager(server.log);
+
+let PromptRequestSchema: z.ZodObject<any, any> = BasePromptRequestSchema;
+
+for (const provider of remoteStorageManager.storageProviders) {
+  if (
+    !provider.uploadFile ||
+    !provider.requestBodyUploadKey ||
+    !provider.requestBodyUploadSchema
+  )
+    continue;
+  PromptRequestSchema = PromptRequestSchema.extend({
+    [provider.requestBodyUploadKey]: provider.requestBodyUploadSchema
+      .extend({ async: z.boolean().optional().default(false) })
+      .optional(),
+  });
+}
+
+type PromptRequest = z.infer<typeof PromptRequestSchema>;
+
+const WorkflowRequestSchema = PromptRequestSchema.omit({ prompt: true }).extend(
+  {
+    input: z.record(z.any()),
+  }
+);
+
+export type WorkflowRequest = z.infer<typeof WorkflowRequestSchema>;
+
+const PromptResponseSchema = PromptRequestSchema.extend({
+  images: z.array(z.string()).optional(),
+  filenames: z.array(z.string()).optional(),
+  status: z.enum(["ok"]).optional(),
+  stats: ExecutionStatsSchema.optional(),
+});
+
+const WorkflowResponseSchema = PromptResponseSchema.extend({
+  input: z.record(z.any()),
+});
 
 const modelSchema: any = {};
 for (const modelType in config.models) {
@@ -214,11 +241,7 @@ server.after(() => {
       },
     },
     async (request, reply) => {
-      let { prompt, id, webhook, convert_output, s3 } = request.body;
-      let contentType = "image/png";
-      if (convert_output) {
-        contentType = `image/${convert_output.format}`;
-      }
+      let { prompt, id, webhook, convert_output } = request.body;
 
       /**
        * Here we go through all the nodes in the prompt to validate it,
@@ -226,92 +249,25 @@ server.after(() => {
        */
       let hasSaveImage = false;
 
+      const log = app.log.child({ id });
+
       const start = Date.now();
-      for (const nodeId in prompt) {
-        const node = prompt[nodeId];
-        if (
-          node.inputs.filename_prefix &&
-          typeof node.inputs.filename_prefix === "string"
-        ) {
-          /**
-           * If the node is for saving files, we want to set the filename_prefix
-           * to the id of the prompt. This ensures no collisions between prompts
-           * from different users.
-           */
-          node.inputs.filename_prefix = id;
-          if (
-            typeof node.inputs.save_output !== "undefined" &&
-            !node.inputs.save_output
-          ) {
-            continue;
-          }
-          hasSaveImage = true;
-        } else if (
-          loadImageNodes.has(node.class_type) &&
-          typeof node.inputs.image === "string"
-        ) {
-          /**
-           * If the node is for loading an image, the user will have provided
-           * the image as base64 encoded data, or as a url. we need to download
-           * the image if it's a url, and save it to a local file.
-           */
-          try {
-            Object.assign(node, await processLoadImageNode(node, app.log));
-          } catch (e: any) {
-            return reply.code(400).send({
-              error: e.message,
-              location: `prompt.${nodeId}.inputs.image`,
-            });
-          }
-        } else if (
-          loadDirectoryOfImagesNodes.has(node.class_type) &&
-          Array.isArray(node.inputs.directory) &&
-          node.inputs.directory.every((x: any) => typeof x === "string")
-        ) {
-          /**
-           * If the node is for loading a directory of images, the user will have
-           * provided the local directory as a string or an array of strings. If it's an
-           * array, we need to download each image to a local file, and update the input
-           * to be the local directory.
-           */
-          try {
-            Object.assign(
-              node,
-              await processLoadDirectoryOfImagesNode(node, id, app.log)
-            );
-          } catch (e: any) {
-            return reply.code(400).send({
-              error: e.message,
-              location: `prompt.${nodeId}.inputs.directory`,
-              message: "Failed to download images to local directory",
-            });
-          }
-        } else if (loadVideoNodes.has(node.class_type)) {
-          /**
-           * If the node is for loading a video, the user will have provided
-           * the video as base64 encoded data, or as a url. we need to download
-           * the video if it's a url, and save it to a local file.
-           */
-          try {
-            Object.assign(node, await processLoadVideoNode(node, app.log));
-          } catch (e: any) {
-            return reply.code(400).send({
-              error: e.message,
-              location: `prompt.${nodeId}.inputs.video`,
-            });
-          }
-        } else if (modelLoadingNodeTypes.has(node.class_type)) {
-          try {
-            Object.assign(node, await processModelLoadingNode(node, app.log));
-          } catch (e: any) {
-            return reply.code(400).send({
-              error: e.message,
-              location: `prompt.${nodeId}`,
-            });
-          }
-        }
+      try {
+        const { prompt: preprocessedPrompt, hasSaveImage: saveImageFound } =
+          await preprocessNodes(prompt, id, log);
+        prompt = preprocessedPrompt;
+        hasSaveImage = saveImageFound;
+      } catch (e: NodeProcessError | any) {
+        log.error(`Failed to preprocess nodes: ${e.message}`);
+        const code = e.code && [400, 422].includes(e.code) ? e.code : 400;
+        return reply.code(code).send({
+          error: e.message || "Failed to preprocess nodes",
+          location: e.location || "prompt",
+        });
       }
+
       const preprocessTime = Date.now();
+      log.debug(`Preprocessed prompt in ${preprocessTime}ms`);
 
       /**
        * If the prompt has no outputs, there's no point in running it.
@@ -324,217 +280,28 @@ server.after(() => {
         });
       }
 
-      if (webhook) {
-        /**
-         * Send the prompt to ComfyUI, and return a 202 response to the user.
-         */
-        runPromptAndGetOutputs(id, prompt, app.log)
-          .then(
-            /**
-             * This function does not block returning the 202 response to the user.
-             */
-            async ({ outputs, stats }) => {
-              stats.preprocess_time = preprocessTime - start;
-              stats.total_time = Date.now() - start;
-              app.log.debug({ id, ...stats });
-              for (const originalFilename in outputs) {
-                let filename = originalFilename;
-                let fileBuffer = outputs[filename];
-                if (convert_output) {
-                  try {
-                    fileBuffer = await convertImageBuffer(
-                      fileBuffer,
-                      convert_output
-                    );
+      type ProcessedOutput = {
+        buffers: Buffer[];
+        filenames: string[];
+        stats: any;
+      };
 
-                    /**
-                     * If the user has provided an output format, we need to update the filename
-                     */
-                    filename = originalFilename.replace(
-                      /\.[^/.]+$/,
-                      `.${convert_output.format}`
-                    );
-                  } catch (e: any) {
-                    app.log.warn(`Failed to convert image: ${e.message}`);
-                  }
-                }
-                const base64File = fileBuffer.toString("base64");
-
-                app.log.info(
-                  `Sending image ${filename} to webhook: ${webhook}`
-                );
-                fetchWithRetries(
-                  webhook,
-                  {
-                    method: "POST",
-                    headers: {
-                      "Content-Type": "application/json",
-                    },
-                    body: JSON.stringify({
-                      event: "output.complete",
-                      image: base64File,
-                      id,
-                      filename,
-                      prompt,
-                      stats,
-                    }),
-                    dispatcher: new Agent({
-                      headersTimeout: 0,
-                      bodyTimeout: 0,
-                      connectTimeout: 0,
-                    }),
-                  },
-                  config.promptWebhookRetries,
-                  app.log
-                )
-                  .catch((e: any) => {
-                    app.log.error(
-                      `Failed to send image to webhook: ${e.message}`
-                    );
-                  })
-                  .then(async (resp) => {
-                    if (!resp) {
-                      app.log.error("No response from webhook");
-                    } else if (!resp.ok) {
-                      app.log.error(
-                        `Failed to send image ${filename}: ${await resp.text()}`
-                      );
-                    } else {
-                      app.log.info(`Sent image ${filename}`);
-                    }
-                  });
-
-                // Remove the file after sending
-                fsPromises.unlink(
-                  path.join(config.outputDir, originalFilename)
-                );
-              }
-            }
-          )
-          .catch(async (e: any) => {
-            /**
-             * Send a webhook reporting that the generation failed.
-             */
-            app.log.error(`Failed to generate images: ${e.message}`);
-            try {
-              const resp = await fetchWithRetries(
-                webhook,
-                {
-                  method: "POST",
-                  headers: {
-                    "Content-Type": "application/json",
-                  },
-                  body: JSON.stringify({
-                    event: "prompt.failed",
-                    id,
-                    prompt,
-                    error: e.message,
-                  }),
-                  dispatcher: new Agent({
-                    headersTimeout: 0,
-                    bodyTimeout: 0,
-                    connectTimeout: 0,
-                  }),
-                },
-                config.promptWebhookRetries,
-                app.log
-              );
-
-              if (!resp.ok) {
-                app.log.error(
-                  `Failed to send failure message to webhook: ${await resp.text()}`
-                );
-              }
-            } catch (e: any) {
-              app.log.error(
-                `Failed to send failure message to webhook: ${e.message}`
-              );
-            }
-          });
-        return reply.code(202).send({ status: "ok", id, webhook, prompt });
-      } else if (s3 && s3.async) {
-        runPromptAndGetOutputs(id, prompt, app.log)
-          .then(async ({ outputs, stats }) => {
-            /**
-             * If the user has provided an S3 configuration, we upload the images to S3.
-             */
-            stats.preprocess_time = preprocessTime - start;
-            const comfyTime = Date.now();
-            const uploadPromises: Promise<void>[] = [];
-            for (const originalFilename in outputs) {
-              let filename = originalFilename;
-              let fileBuffer = outputs[filename];
-              if (convert_output) {
-                try {
-                  fileBuffer = await convertImageBuffer(
-                    fileBuffer,
-                    convert_output
-                  );
-
-                  /**
-                   * If the user has provided an output format, we need to update the filename
-                   */
-                  filename = originalFilename.replace(
-                    /\.[^/.]+$/,
-                    `.${convert_output.format}`
-                  );
-                } catch (e: any) {
-                  app.log.warn(`Failed to convert image: ${e.message}`);
-                }
-              }
-
-              const key = `${s3.prefix}${filename}`;
-              const s3Url = `s3://${s3.bucket}/${key}`;
-              uploadPromises.push(
-                remoteStorageManager.uploadFile(
-                  s3Url,
-                  fileBuffer,
-                  contentType,
-                  app.log
-                )
-              );
-              app.log.info(
-                `Uploading image ${filename} to s3://${s3.bucket}/${key}`
-              );
-
-              // Remove the file after uploading
-              fsPromises.unlink(path.join(config.outputDir, originalFilename));
-            }
-
-            await Promise.all(uploadPromises);
-            stats.upload_time = Date.now() - comfyTime;
-            stats.total_time = Date.now() - start;
-            app.log.debug({ id, ...stats });
-          })
-          .catch(async (e: any) => {
-            app.log.error(`Failed to generate images: ${e.message}`);
-          });
-        return reply.code(202).send({ status: "ok", id, prompt, s3 });
-      } else {
-        /**
-         * If the user has not provided a webhook or s3.async is false, we wait for the images to
-         * be generated and then send them back in the response.
-         */
-        const images: string[] = [];
+      const postProcessOutputs = async ({
+        outputs,
+        stats,
+      }: PromptOutputsWithStats): Promise<ProcessedOutput> => {
+        stats.preprocess_time = preprocessTime - start;
+        stats.comfy_round_trip_time = Date.now() - preprocessTime;
         const filenames: string[] = [];
-        const uploadPromises: Promise<void>[] = [];
-
-        /**
-         * Send the prompt to ComfyUI, and wait for the images to be generated.
-         */
-        const { outputs: allOutputs, stats } = await runPromptAndGetOutputs(
-          id,
-          prompt,
-          app.log
-        );
-        const comfyTime = Date.now();
-        for (const originalFilename in allOutputs) {
-          let fileBuffer = allOutputs[originalFilename];
+        const buffers: Buffer[] = [];
+        const unlinks: Promise<void>[] = [];
+        for (const originalFilename in outputs) {
           let filename = originalFilename;
-
+          let fileBuffer = outputs[filename];
           if (convert_output) {
             try {
               fileBuffer = await convertImageBuffer(fileBuffer, convert_output);
+
               /**
                * If the user has provided an output format, we need to update the filename
                */
@@ -543,40 +310,191 @@ server.after(() => {
                 `.${convert_output.format}`
               );
             } catch (e: any) {
-              app.log.warn(`Failed to convert image: ${e.message}`);
+              log.warn(`Failed to convert image: ${e.message}`);
             }
           }
-
           filenames.push(filename);
-          if (!s3) {
-            const base64File = fileBuffer.toString("base64");
-            images.push(base64File);
-          } else if (s3 && !s3.async) {
-            const key = `${s3.prefix}${filename}`;
-            const s3Url = `s3://${s3.bucket}/${key}`;
-            uploadPromises.push(
-              remoteStorageManager.uploadFile(
-                s3Url,
-                fileBuffer,
-                contentType,
-                app.log
-              )
-            );
-            app.log.info(`Uploading image ${filename} to ${s3Url}`);
-            images.push(`s3://${s3.bucket}/${key}`);
-          }
-
-          // Remove the file after reading
-          fsPromises.unlink(path.join(config.outputDir, originalFilename));
+          buffers.push(fileBuffer);
+          unlinks.push(
+            fsPromises.unlink(path.join(config.outputDir, originalFilename))
+          );
         }
+        await Promise.all(unlinks);
+        stats.postprocess_time =
+          Date.now() - stats.comfy_round_trip_time - preprocessTime;
+        return {
+          buffers,
+          filenames,
+          stats,
+        };
+      };
+
+      let runPromptPromise = runPromptAndGetOutputs(id, prompt, log).then(
+        postProcessOutputs
+      );
+
+      let uploadPromise: Promise<{
+        images: string[];
+        filenames: string[];
+        stats: any;
+      }> | null = null;
+
+      type Handler = (data: ProcessedOutput) => Promise<{
+        images: string[];
+        filenames: string[];
+        stats: any;
+      }>;
+
+      const webhookHandler: Handler = async ({
+        buffers,
+        filenames,
+        stats,
+      }: ProcessedOutput) => {
+        if (!webhook) {
+          throw new Error("Webhook URL is not defined");
+        }
+        const webhookPromises: Promise<any>[] = [];
+        const images: string[] = [];
+        for (let i = 0; i < buffers.length; i++) {
+          const base64File = buffers[i].toString("base64");
+          images.push(base64File);
+          const filename = filenames[i];
+          log.info(`Sending image ${filename} to webhook: ${webhook}`);
+          webhookPromises.push(
+            fetchWithRetries(
+              webhook,
+              {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  event: "output.complete",
+                  image: base64File,
+                  id,
+                  filename,
+                  prompt,
+                  stats,
+                }),
+                dispatcher: new Agent({
+                  headersTimeout: 0,
+                  bodyTimeout: 0,
+                  connectTimeout: 0,
+                }),
+              },
+              config.promptWebhookRetries,
+              log
+            )
+              .catch((e: any) => {
+                log.error(`Failed to send image to webhook: ${e.message}`);
+              })
+              .then(async (resp) => {
+                if (!resp) {
+                  log.error("No response from webhook");
+                } else if (!resp.ok) {
+                  log.error(
+                    `Failed to send image ${filename}: ${await resp.text()}`
+                  );
+                } else {
+                  log.info(`Sent image ${filename}`);
+                }
+              })
+          );
+        }
+        await Promise.all(webhookPromises);
+        return { images, filenames, stats };
+      };
+
+      const uploadHandler: Handler = async ({
+        buffers,
+        filenames,
+        stats,
+      }): Promise<{
+        images: string[];
+        filenames: string[];
+        stats: any;
+      }> => {
+        const uploadPromises: Promise<void>[] = [];
+        const images: string[] = [];
+        for (let i = 0; i < buffers.length; i++) {
+          const fileBuffer = buffers[i];
+          const filename = filenames[i];
+          for (const provider of remoteStorageManager.storageProviders) {
+            if (
+              provider.requestBodyUploadKey &&
+              request.body[provider.requestBodyUploadKey]
+            ) {
+              images.push(
+                provider.createUrl({
+                  ...request.body[provider.requestBodyUploadKey],
+                  filename,
+                })
+              );
+              break;
+            }
+          }
+          uploadPromises.push(
+            remoteStorageManager.uploadFile(images[i], fileBuffer)
+          );
+        }
+
         await Promise.all(uploadPromises);
-        stats.preprocess_time = preprocessTime - start;
-        stats.upload_time = Date.now() - comfyTime;
-        stats.total_time = Date.now() - start;
+        return { images, filenames, stats };
+      };
 
-        app.log.debug({ id, ...stats });
+      const storageProvider = remoteStorageManager.storageProviders.find(
+        (provider) =>
+          provider.requestBodyUploadKey &&
+          !!request.body[provider.requestBodyUploadKey]
+      );
+      const asyncUpload =
+        webhook ||
+        (storageProvider &&
+          storageProvider.requestBodyUploadKey &&
+          request.body[storageProvider.requestBodyUploadKey]?.async);
 
-        return reply.send({ id, prompt, images, filenames, stats });
+      if (webhook) {
+        uploadPromise = runPromptPromise.then(webhookHandler);
+      } else if (!!storageProvider) {
+        uploadPromise = runPromptPromise.then(uploadHandler);
+      } else {
+        uploadPromise = runPromptPromise.then(
+          async ({ buffers, filenames, stats }) => {
+            const images: string[] = buffers.map((b) => b.toString("base64"));
+            return { images, filenames, stats };
+          }
+        );
+      }
+
+      const finalStatsPromise = uploadPromise.then(
+        ({ images, stats, filenames }) => {
+          stats.upload_time =
+            Date.now() -
+            start -
+            stats.preprocess_time -
+            stats.comfy_round_trip_time -
+            stats.postprocess_time;
+          stats.total_time = Date.now() - start;
+          log.debug(stats);
+          return { images, stats, filenames };
+        }
+      );
+
+      if (asyncUpload) {
+        reply.code(202).send({ ...request.body, status: "ok", id, prompt });
+      }
+
+      const { images, stats, filenames } = await finalStatsPromise;
+
+      if (!asyncUpload) {
+        return reply.send({
+          ...request.body,
+          id,
+          prompt,
+          images,
+          filenames,
+          stats,
+        });
       }
     }
   );
@@ -586,15 +504,8 @@ server.after(() => {
     for (const key in tree) {
       const node = tree[key];
       if (isWorkflow(node)) {
-        const BodySchema = z.object({
-          id: z
-            .string()
-            .optional()
-            .default(() => randomUUID()),
+        const BodySchema = WorkflowRequestSchema.extend({
           input: node.RequestSchema,
-          webhook: z.string().optional(),
-          convert_output: OutputConversionOptionsSchema.optional(),
-          s3: PromptRequestSchema.shape.s3.optional(),
         });
 
         type BodyType = z.infer<typeof BodySchema>;
@@ -632,8 +543,7 @@ server.after(() => {
             },
           },
           async (request, reply) => {
-            const { id, input, webhook, convert_output, s3 } = request.body;
-            const prompt = await node.generateWorkflow(input);
+            const prompt = await node.generateWorkflow(request.body.input);
 
             const resp = await fetch(
               `http://localhost:${config.wrapperPort}/prompt`,
@@ -643,11 +553,9 @@ server.after(() => {
                   "Content-Type": "application/json",
                 },
                 body: JSON.stringify({
+                  ...request.body,
                   prompt,
-                  id,
-                  webhook,
-                  convert_output,
-                  s3,
+                  input: undefined,
                 }),
                 dispatcher: new Agent({
                   headersTimeout: 0,
@@ -661,8 +569,7 @@ server.after(() => {
               return reply.code(resp.status).send(body);
             }
 
-            body.input = input;
-            body.prompt = prompt;
+            body.input = request.body.input;
 
             return reply.code(resp.status).send(body);
           }
@@ -744,7 +651,7 @@ async function downloadAllModels(
   for (const { url, local_path } of models) {
     const dir = path.dirname(local_path);
     const filename = path.basename(local_path);
-    await remoteStorageManager.downloadFile(url, dir, filename, server.log);
+    await remoteStorageManager.downloadFile(url, dir, filename);
   }
 }
 
