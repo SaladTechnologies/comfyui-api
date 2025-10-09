@@ -325,9 +325,11 @@ For uploads, makes a PUT request to the specified URL with the image as the body
 
 ## Image To Image Workflows
 
-The ComfyUI API server supports image-to-image workflows, allowing you to submit an image and receive a modified version of that image in response. This is useful for tasks such as image inpainting, style transfer, and other image manipulation tasks.
+The ComfyUI API server supports image-to-image workflows, allowing you to submit an image and receive a modified version of that image in response.
+This is useful for tasks such as image in-painting, style transfer, and other image manipulation tasks.
 
-To use image-to-image workflows, you can submit an image as a base64-encoded string, or a URL. The server will automatically detect the input type and process the image accordingly, using an appropriate storage provider if necessary.
+To use image-to-image workflows, you can submit an image as a base64-encoded string, or a URL.
+The server will automatically detect the input type and process the image accordingly, using an appropriate storage provider if necessary.
 
 Here's an example of doing this in a `LoadImage` node:
 
@@ -412,7 +414,12 @@ The server has two probes, `/health` and `/ready`.
 The following table lists the available environment variables and their default values.
 For historical reasons, the default values mostly assume this will run on top of an [ai-dock](https://github.com/ai-dock/comfyui) image, but we currently provide [our own more minimal image](#prebuilt-docker-images) here in this repo.
 
-If you are using the s3 storage functionality, make sure to set all of the appropriate environment variables for your S3 bucket, such as `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_REGION`. The server will automatically use these to upload images to S3.
+If you are using the s3 storage functionality, make sure to set all of the appropriate environment variables for your S3 bucket, such as `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_REGION`.
+The server will automatically use these to upload images to S3.
+
+If you are using the huggingface storage functionality, make sure to set the `HF_TOKEN` environment variable with a valid Huggingface token with appropriate permissions.
+
+If you are using the azure blob storage functionality, make sure to set all of the appropriate environment variables for your Azure account, such as `AZURE_STORAGE_CONNECTION_STRING`.
 
 | Variable                     | Default Value              | Description                                                                                                                                                                                                                                  |
 | ---------------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
