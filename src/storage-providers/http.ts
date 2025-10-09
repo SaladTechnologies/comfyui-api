@@ -8,7 +8,7 @@ import { z } from "zod";
 
 export class HTTPStorageProvider implements StorageProvider {
   log: FastifyBaseLogger;
-  requestBodyUploadKey = "httpUpload";
+  requestBodyUploadKey = "http_upload";
   requestBodyUploadSchema = z.object({
     url_prefix: z.string(),
   });

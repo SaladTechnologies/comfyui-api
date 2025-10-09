@@ -11,6 +11,11 @@ A simple wrapper that facilitates using [ComfyUI](https://github.com/comfyanonym
     - [Response Format](#response-format)
   - [Model Manifest](#model-manifest)
   - [Downloading Behavior](#downloading-behavior)
+  - [Modular Storage Backends](#modular-storage-backends)
+    - [S3-Compatible Storage](#s3-compatible-storage)
+    - [Huggingface Repository](#huggingface-repository)
+    - [Azure Blob Storage](#azure-blob-storage)
+    - [HTTP](#http)
   - [Image To Image Workflows](#image-to-image-workflows)
   - [Dynamic Model Loading](#dynamic-model-loading)
   - [Server-side image processing](#server-side-image-processing)
@@ -76,10 +81,8 @@ The server hosts swagger docs at `/docs`, which can be used to interact with the
 - **Verified Model/Workflow Support**: Stable Diffusion 1.5, Stable Diffusion XL, Stable Diffusion 3.5, Flux, AnimateDiff, LTX Video, Hunyuan Video, CogVideoX, Mochi Video, Cosmos 1.0. My assumption is more model types are supported, but these are the ones I have verified.
 - **Stateless API**: The server is stateless, and can be scaled horizontally to handle more requests.
 - **Swagger Docs**: The server hosts swagger docs at `/docs`, which can be used to interact with the API.
-- **"Synchronous" Support**: The server will return base64-encoded images directly in the response, if no webhook is provided.
-- **Webhook Support**: The server can send completed images to a webhook, which can be used to store images, or to send them to a user.
-- **S3 Support**: The server can be configured to upload images to an S3-compatible object store, and return the S3 URL in the response, or to return 202 immediately and upload the images to S3 in the background.
-- **Easily Submit Images**: The server can accept images as base64-encoded strings, http(s) urls, and s3 urls. This makes image-to-image workflows much easier to use.
+- **"Synchronous" Support**: The server will return base64-encoded images directly in the response, if no async behavior is requested.
+- **Modular Storage Backends**: Completed outputs can be sent base64-encoded to a webhook, or uploaded to any s3-compatible storage, an http endpoint, a huggingface repo, or azure blob storage. All of these can be used to download input media as well. More storage backends can be added easily.
 - **Warmup Workflow**: The server can be configured to run a warmup workflow on startup, which can be used to load and warm up models, and to ensure the server is ready to accept requests.
 - **Return Images In PNG (default), JPEG, or WebP**: The server can return images in PNG, JPEG, or WebP format, via a parameter in the API request. Most options supported by [sharp](https://sharp.pixelplumbing.com/) are supported.
 - **Probes**: The server has two probes, `/health` and `/ready`, which can be used to check the server's health and readiness to receive traffic.
@@ -224,6 +227,8 @@ This allows the server to access private S3 buckets (or S3-compatible buckets), 
 If the url is a huggingface URL, the server will use the `hf` cli tool to download the file.
 This allows you to take advantage of high-speed [xet storage](https://huggingface.co/docs/hub/en/storage-backends#xet), as well as other optimizations provided by huggingface.
 
+If the url is an azure blob storage URL, the server will use the Azure SDK to download the file.
+
 If the url is a regular http(s) URL, the server will use `fetch` to stream the file to disk.
 If the url has a file extension, the server will use that extension when saving the file.
 Otherwise, it will attempt to determine the file extension from the `Content-Disposition` or `Content-Type` headers.
@@ -232,11 +237,97 @@ All downloaded files live in the configured cache directory with a name taken as
 
 If a download for a given URL is already in progress, any subsequent requests for the same URL will wait for the first download to complete, and then use the downloaded file.
 
+## Modular Storage Backends
+
+The server supports multiple storage backends for downloading models and input media, and uploading completed outputs.
+All uploads take a prefix of some kind, not a full path or URL.
+
+All uploads can be handled synchronously or asynchronously, depending on the `async` field in the upload block of the request body.
+If `async` is `true` or omitted, the server will return a `202 Accepted` response immediately, and the upload will be handled in the background.
+If `async` is `false`, the server will wait for the upload to complete before returning a `200 OK` response with the uploaded urls in the response body.
+
+### S3-Compatible Storage
+
+Includes AWS S3, Cloudflare R2, etc.
+Uses the AWS SDK. Requires appropriate AWS credentials to be provided via environment variables.
+Used for URLs starting with `s3://`.
+
+For downloads, use the format `s3://bucket-name/path/to/file`.
+For uploads, include the `s3` field in the request body, like:
+
+```json
+{
+  "prompt": {...}, 
+  "s3": { 
+    "bucket": "my-bucket", 
+    "prefix": "optional/prefix", 
+    "async": false 
+  }
+}
+```
+
+### Huggingface Repository
+
+Uses the `hf` cli tool.
+Requires the `HF_TOKEN` environment variable to be set with a valid Huggingface token.
+Used for URLs starting with `https://huggingface.co/`.
+Works with both public and private repos, model and dataset repos, and large files stored with [xet storage](https://huggingface.co/docs/hub/en/storage-backends#xet).
+
+For downloads, use the format `https://huggingface.co/username/repo/resolve/revision/path/to/file` or `https://huggingface.co/datasets/username/repo/resolve/revision/path/to/file`.
+
+For uploads, include the `hf_upload` field in the request body, like 
+
+```json
+{
+  "prompt": {}, 
+  "hf_upload": { 
+    "repo": "username/repo", 
+    "repo_type": "dataset", 
+    "revision": "main", 
+    "directory": "test-source-images", 
+    "async": false 
+  }
+}
+```
+
+The `repo_type` field can be either `model` or `dataset`, and defaults to `model`.
+
+### Azure Blob Storage
+
+Uses the Azure SDK.
+Requires appropriate Azure credentials to be provided via environment variables.
+Used for URLs matching `https://<your-account>.blob.core.windows.net/`.
+
+For downloads, use the format `https://<your-account>.blob.core.windows.net/container/path/to/file`.
+
+For uploads, include the `azure_blob_upload` field in the request body, like:
+
+```json
+{
+  "prompt": {}, 
+  "azure_blob_upload": { 
+    "container": "my-container", 
+    "blob_prefix": "optional/prefix", 
+    "async": false 
+  }
+}
+```
+
+### HTTP
+
+Uses Fetch.
+Supports custom headers via the `HTTP_AUTH_HEADER_NAME` and `HTTP_AUTH_HEADER_VALUE` environment variables.
+Basic auth can be used via the URL, i.e. `https://username:password@your-http-endpoint.com`.
+
+For downloads, use any valid http(s) URL that is not matched by the other storage backends.
+
+For uploads, makes a PUT request to the specified URL with the image as the body.  Matches any other URL not matched by the other storage backends.
+
 ## Image To Image Workflows
 
 The ComfyUI API server supports image-to-image workflows, allowing you to submit an image and receive a modified version of that image in response. This is useful for tasks such as image inpainting, style transfer, and other image manipulation tasks.
 
-To use image-to-image workflows, you can submit an image as a base64-encoded string, http(s) URL, or S3 URL. The server will automatically detect the input type and process the image accordingly.
+To use image-to-image workflows, you can submit an image as a base64-encoded string, or a URL. The server will automatically detect the input type and process the image accordingly, using an appropriate storage provider if necessary.
 
 Here's an example of doing this in a `LoadImage` node:
 
@@ -257,7 +348,7 @@ Here's an example of doing this in a `LoadImage` node:
 
 The ComfyUI API server supports dynamic model loading, allowing you to specify a model URL in a model-loading node, and the server will automatically download and cache the model before executing the workflow.
 This is useful for workflows that need to potentially use a different model for each request.
-An example may be headshot generation, which would specify a LoRA per person.
+An example may be head-shot generation, which would specify a LoRA per person.
 The LoRA may be generated on-the-fly by another service, and provided to the ComfyUI API server via a URL.
 
 ```json
@@ -926,7 +1017,8 @@ All of SaladCloud's image and video generation [recipes](https://docs.salad.com/
 ## Contributing
 
 Contributions are welcome!
-ComfyUI is a powerful tool with MANY options, and it's likely that not all of them are currently supported by the `comfyui-api` server.
+See the [Development](./DEVELOPMENT.md) guide for more information on how to develop, test, and contribute to this project.
+ComfyUI is a powerful tool with MANY options, and it's likely that not all of them are currently well supported by the `comfyui-api` server.
 Please open an issue with as much information as possible about the problem you're facing or the feature you need.
 If you have encountered a bug, please include the steps to reproduce it, and any relevant logs or error messages.
 If you are able, adding a failing test is the best way to ensure your issue is resolved quickly.

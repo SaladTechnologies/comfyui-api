@@ -13,10 +13,10 @@ import fs, { ReadStream } from "fs";
 
 export class AzureBlobStorageProvider implements StorageProvider {
   log: FastifyBaseLogger;
-  requestBodyUploadKey = "azureBlobUpload";
+  requestBodyUploadKey = "azure_blob_upload";
   requestBodyUploadSchema = z.object({
     container: z.string().describe("Azure Blob Storage container name"),
-    blobPrefix: z
+    blob_prefix: z
       .string()
       .optional()
       .default("")
@@ -80,12 +80,12 @@ export class AzureBlobStorageProvider implements StorageProvider {
   }
 
   createUrl(inputs: z.infer<typeof this.urlRequestSchema>): string {
-    const { container, blobPrefix, filename } = inputs;
+    const { container, blob_prefix, filename } = inputs;
     if (!container) {
       throw new Error("Container is required to create Azure Blob URL");
     }
-    const encodedBlobPrefix = blobPrefix
-      ? `${blobPrefix.replace(/^\//, "").replace(/\/$/, "/")}`
+    const encodedBlobPrefix = blob_prefix
+      ? `${blob_prefix.replace(/^\//, "").replace(/\/$/, "/")}`
       : "";
 
     // Get the base URL from the client

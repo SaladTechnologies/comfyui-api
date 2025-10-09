@@ -175,20 +175,20 @@ describe("Stable Diffusion 1.5", () => {
       // First, upload an image to HF model repo to use as source
       const timestamp = Date.now();
       const uploadResp = await submitPrompt(sd15Txt2Img, false, undefined, {
-        hfUpload: {
+        hf_upload: {
           repo: "SaladTechnologies/comfyui-api-integration-testing",
-          repoType: "model",
+          repo_type: "model",
           directory: `test-source-images-${timestamp}`,
         },
       });
-      
+
       // Extract the URL of the uploaded image
       const hfImageUrl = uploadResp.images[0];
-      
+
       // Now use this HF URL as input for img2img
       const sd15Img2ImgWithHfUrl = JSON.parse(JSON.stringify(sd15Img2Img));
       sd15Img2ImgWithHfUrl["10"].inputs.image = hfImageUrl;
-      
+
       const respBody = await submitPrompt(sd15Img2ImgWithHfUrl);
       expect(respBody.filenames.length).toEqual(1);
       expect(respBody.images.length).toEqual(1);
@@ -202,20 +202,22 @@ describe("Stable Diffusion 1.5", () => {
       // First, upload an image to HF dataset repo to use as source
       const timestamp = Date.now();
       const uploadResp = await submitPrompt(sd15Txt2Img, false, undefined, {
-        hfUpload: {
+        hf_upload: {
           repo: "SaladTechnologies/comfyui-api-integration-testing",
-          repoType: "dataset",
+          repo_type: "dataset",
           directory: `test-source-images-dataset-${timestamp}`,
         },
       });
-      
+
       // Extract the URL of the uploaded image
       const hfImageUrl = uploadResp.images[0];
-      
+
       // Now use this HF URL as input for img2img
-      const sd15Img2ImgWithHfDatasetUrl = JSON.parse(JSON.stringify(sd15Img2Img));
+      const sd15Img2ImgWithHfDatasetUrl = JSON.parse(
+        JSON.stringify(sd15Img2Img)
+      );
       sd15Img2ImgWithHfDatasetUrl["10"].inputs.image = hfImageUrl;
-      
+
       const respBody = await submitPrompt(sd15Img2ImgWithHfDatasetUrl);
       expect(respBody.filenames.length).toEqual(1);
       expect(respBody.images.length).toEqual(1);
@@ -450,9 +452,9 @@ describe("Stable Diffusion 1.5", () => {
   describe("Upload to Azure Blob and return Blob URL", () => {
     it("text2image works with 1 image", async () => {
       const respBody = await submitPrompt(sd15Txt2Img, false, undefined, {
-        azureBlobUpload: {
+        azure_blob_upload: {
           container: azureContainerName,
-          blobPrefix: "sd15-txt2img/",
+          blob_prefix: "sd15-txt2img/",
         },
       });
       expect(respBody.filenames.length).toEqual(1);
@@ -488,9 +490,9 @@ describe("Stable Diffusion 1.5", () => {
 
     it("text2image works with multiple images", async () => {
       const respBody = await submitPrompt(sd15Txt2ImgBatch4, false, undefined, {
-        azureBlobUpload: {
+        azure_blob_upload: {
           container: azureContainerName,
-          blobPrefix: "sd15-txt2img-batch4/",
+          blob_prefix: "sd15-txt2img-batch4/",
         },
       });
       expect(respBody.filenames.length).toEqual(4);
@@ -532,9 +534,9 @@ describe("Stable Diffusion 1.5", () => {
   describe("Upload to HuggingFace and return HF URL", () => {
     it("text2image works with dataset repo", async () => {
       const respBody = await submitPrompt(sd15Txt2Img, false, undefined, {
-        hfUpload: {
+        hf_upload: {
           repo: "SaladTechnologies/comfyui-api-integration-testing",
-          repoType: "dataset",
+          repo_type: "dataset",
           directory: "test-outputs",
         },
       });
@@ -549,9 +551,9 @@ describe("Stable Diffusion 1.5", () => {
 
     it("text2image works with model repo", async () => {
       const respBody = await submitPrompt(sd15Txt2ImgBatch4, false, undefined, {
-        hfUpload: {
+        hf_upload: {
           repo: "SaladTechnologies/comfyui-api-integration-testing",
-          repoType: "dataset",
+          repo_type: "dataset",
           directory: "test-outputs-batch",
         },
       });
@@ -572,9 +574,9 @@ describe("Stable Diffusion 1.5", () => {
       const timestamp = Date.now();
       const directory = `async-test-${timestamp}`;
       const respBody = await submitPrompt(sd15Txt2Img, false, undefined, {
-        hfUpload: {
+        hf_upload: {
           repo: "SaladTechnologies/comfyui-api-integration-testing",
-          repoType: "dataset",
+          repo_type: "dataset",
           directory,
           async: true,
         },
@@ -632,9 +634,9 @@ describe("Stable Diffusion 1.5", () => {
       const timestamp = Date.now();
       const directory = `async-batch-test-${timestamp}`;
       const respBody = await submitPrompt(sd15Txt2ImgBatch4, false, undefined, {
-        hfUpload: {
+        hf_upload: {
           repo: "SaladTechnologies/comfyui-api-integration-testing",
-          repoType: "dataset",
+          repo_type: "dataset",
           directory,
           async: true,
         },
@@ -680,9 +682,9 @@ describe("Stable Diffusion 1.5", () => {
       const uniquePrefix = `sd15-txt2img-async-${timestamp}/`;
 
       const respBody = await submitPrompt(sd15Txt2Img, false, undefined, {
-        azureBlobUpload: {
+        azure_blob_upload: {
           container: azureContainerName,
-          blobPrefix: uniquePrefix,
+          blob_prefix: uniquePrefix,
           async: true,
         },
       });
@@ -722,9 +724,9 @@ describe("Stable Diffusion 1.5", () => {
       const uniquePrefix = `sd15-txt2img-batch4-async-${timestamp}/`;
 
       const respBody = await submitPrompt(sd15Txt2ImgBatch4, false, undefined, {
-        azureBlobUpload: {
+        azure_blob_upload: {
           container: azureContainerName,
-          blobPrefix: uniquePrefix,
+          blob_prefix: uniquePrefix,
           async: true,
         },
       });
@@ -763,7 +765,7 @@ describe("Stable Diffusion 1.5", () => {
   describe("Upload to HTTP file server and return HTTP URL", () => {
     it("text2image works with 1 image", async () => {
       const respBody = await submitPrompt(sd15Txt2Img, false, undefined, {
-        httpUpload: {
+        http_upload: {
           url_prefix: "http://file-server:8080",
         },
       });
@@ -784,7 +786,7 @@ describe("Stable Diffusion 1.5", () => {
 
     it("text2image works with multiple images", async () => {
       const respBody = await submitPrompt(sd15Txt2ImgBatch4, false, undefined, {
-        httpUpload: {
+        http_upload: {
           url_prefix: "http://file-server:8080",
         },
       });
@@ -811,7 +813,7 @@ describe("Stable Diffusion 1.5", () => {
     it("text2image works with 1 image", async () => {
       const expectedPrefix = "http-async-txt2img-";
       const respBody = await submitPrompt(sd15Txt2Img, false, undefined, {
-        httpUpload: {
+        http_upload: {
           url_prefix: `http://file-server:8080/${expectedPrefix}`,
           async: true,
         },
@@ -846,7 +848,7 @@ describe("Stable Diffusion 1.5", () => {
     it("text2image works with multiple images", async () => {
       const expectedPrefix = "http-async-batch4-";
       const respBody = await submitPrompt(sd15Txt2ImgBatch4, false, undefined, {
-        httpUpload: {
+        http_upload: {
           url_prefix: `http://file-server:8080/${expectedPrefix}`,
           async: true,
         },
@@ -1028,9 +1030,9 @@ describe("Stable Diffusion 1.5", () => {
           false,
           undefined,
           {
-            hfUpload: {
+            hf_upload: {
               repo: "SaladTechnologies/comfyui-api-integration-testing",
-              repoType: "dataset",
+              repo_type: "dataset",
               directory: `workflow-txt2img-${timestamp}`,
             },
           }
@@ -1189,9 +1191,9 @@ describe("Stable Diffusion 1.5", () => {
           false,
           undefined,
           {
-            azureBlobUpload: {
+            azure_blob_upload: {
               container: azureContainerName,
-              blobPrefix: "workflow-img2img/",
+              blob_prefix: "workflow-img2img/",
             },
           }
         );
@@ -1242,7 +1244,7 @@ describe("Stable Diffusion 1.5", () => {
           false,
           undefined,
           {
-            httpUpload: {
+            http_upload: {
               url_prefix: "http://file-server:8080/workflow-img2img",
             },
           }
@@ -1284,9 +1286,9 @@ describe("Stable Diffusion 1.5", () => {
           false,
           undefined,
           {
-            hfUpload: {
+            hf_upload: {
               repo: "SaladTechnologies/comfyui-api-integration-testing",
-              repoType: "dataset",
+              repo_type: "dataset",
               directory: `workflow-img2img-${timestamp}`,
             },
           }
@@ -1313,9 +1315,9 @@ describe("Stable Diffusion 1.5", () => {
           false,
           undefined,
           {
-            hfUpload: {
+            hf_upload: {
               repo: "SaladTechnologies/comfyui-api-integration-testing",
-              repoType: "dataset",
+              repo_type: "dataset",
               directory,
               async: true,
             },
@@ -1427,9 +1429,9 @@ describe("Stable Diffusion 1.5", () => {
           false,
           undefined,
           {
-            hfUpload: {
+            hf_upload: {
               repo: "SaladTechnologies/comfyui-api-integration-testing",
-              repoType: "dataset",
+              repo_type: "dataset",
               directory,
               async: true,
             },
@@ -1474,16 +1476,16 @@ describe("Stable Diffusion 1.5", () => {
         // First, upload an image to HF model repo to use as source
         const timestamp = Date.now();
         const uploadResp = await submitPrompt(sd15Txt2Img, false, undefined, {
-          hfUpload: {
+          hf_upload: {
             repo: "SaladTechnologies/comfyui-api-integration-testing",
-            repoType: "model",
+            repo_type: "model",
             directory: `test-source-images-model-${timestamp}`,
           },
         });
-        
+
         // Extract the URL of the uploaded image
         const hfImageUrl = uploadResp.images[0];
-        
+
         // Now use this HF URL as input for img2img workflow
         const respBody = await submitWorkflow(
           "/workflow/img2img",
@@ -1497,15 +1499,15 @@ describe("Stable Diffusion 1.5", () => {
           false,
           undefined,
           {
-            httpUpload: {
+            http_upload: {
               url_prefix: "http://file-server:8080/workflow-img2img-hf-source",
             },
           }
         );
-        
+
         expect(respBody.filenames.length).toEqual(1);
         expect(respBody.images.length).toEqual(1);
-        
+
         // Verify the transformed image was created
         const httpUrl = respBody.images[0].replace("file-server", "localhost");
         const response = await fetch(httpUrl);
@@ -1525,16 +1527,16 @@ describe("Stable Diffusion 1.5", () => {
         // First, upload an image to HF dataset repo to use as source
         const timestamp = Date.now();
         const uploadResp = await submitPrompt(sd15Txt2Img, false, undefined, {
-          hfUpload: {
+          hf_upload: {
             repo: "SaladTechnologies/comfyui-api-integration-testing",
-            repoType: "dataset",
+            repo_type: "dataset",
             directory: `test-source-images-dataset-${timestamp}`,
           },
         });
-        
+
         // Extract the URL of the uploaded image
         const hfImageUrl = uploadResp.images[0];
-        
+
         // Now use this HF URL as input for img2img workflow
         const respBody = await submitWorkflow(
           "/workflow/img2img",
@@ -1548,15 +1550,16 @@ describe("Stable Diffusion 1.5", () => {
           false,
           undefined,
           {
-            httpUpload: {
-              url_prefix: "http://file-server:8080/workflow-img2img-hf-dataset-source",
+            http_upload: {
+              url_prefix:
+                "http://file-server:8080/workflow-img2img-hf-dataset-source",
             },
           }
         );
-        
+
         expect(respBody.filenames.length).toEqual(1);
         expect(respBody.images.length).toEqual(1);
-        
+
         // Verify the transformed image was created
         const httpUrl = respBody.images[0].replace("file-server", "localhost");
         const response = await fetch(httpUrl);

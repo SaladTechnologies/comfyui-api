@@ -12,10 +12,10 @@ const execFilePromise = promisify(execFile);
 
 export class HFStorageProvider implements StorageProvider {
   log: FastifyBaseLogger;
-  requestBodyUploadKey = "hfUpload";
+  requestBodyUploadKey = "hf_upload";
   requestBodyUploadSchema = z.object({
     repo: z.string().describe("HuggingFace repo name, e.g. user/repo"),
-    repoType: z
+    repo_type: z
       .enum(["model", "dataset"])
       .optional()
       .default("model")
@@ -41,12 +41,12 @@ export class HFStorageProvider implements StorageProvider {
   }
 
   createUrl(inputs: z.infer<typeof this.urlRequestSchema>): string {
-    const { repo, repoType, revision, directory, filename } = inputs;
+    const { repo, repo_type, revision, directory, filename } = inputs;
     if (!repo) {
       throw new Error("Repo is required to create HuggingFace URL");
     }
     // Add repo type prefix for datasets
-    const repoPrefix = repoType === "dataset" ? "datasets/" : "";
+    const repoPrefix = repo_type === "dataset" ? "datasets/" : "";
     return `https://huggingface.co/${repoPrefix}${repo}/resolve/${revision}/${directory}/${filename}`;
   }
 
