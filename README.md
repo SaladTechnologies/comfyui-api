@@ -40,6 +40,7 @@ A simple wrapper that facilitates using [ComfyUI](https://github.com/comfyanonym
     - [execution\_error](#execution_error)
   - [Prebuilt Docker Images](#prebuilt-docker-images)
   - [Considerations for Running on SaladCloud](#considerations-for-running-on-saladcloud)
+  - [Custom Workflows](#custom-workflows)
   - [Contributing](#contributing)
   - [Architecture](#architecture)
 
@@ -762,6 +763,14 @@ All of SaladCloud's image and video generation [recipes](https://docs.salad.com/
 
 - **SaladCloud's Container Gateway has a 100s timeout.** It is possible to construct very long running ComfyUI workflows, such as for video generation, that would exceed this timeout. In this scenario, you will need to either use a webhook to receive the results, or integrate with SaladCloud's [Job Queues](https://docs.salad.com/products/sce/job-queues/job-queues#job-queues) to handle long-running workflows.
 - **SaladCloud's maximum container image size is 35GB(compressed).** The base [comfyui-api image](https://github.com/SaladTechnologies/comfyui-api/pkgs/container/comfyui-api) is around 3.25GB(compressed), so any models and extensions must fit in the remaining space.
+
+## Custom Workflows
+
+Custom workflows offer a simple and powerful way to create new endpoints for your specific use cases which abstract away the complexities of the underlying ComfyUI node-based prompt format.
+You can create workflows in either javascript or typescript, and they can be as simple or complex as you need them to be.
+Workflows are loaded at runtime, even when you use the pre-compiled binary releases or docker images, so you can easily add new workflows without needing to rebuild the image.
+
+[See the guide on generating new workflow endpoints](./DEVELOPING.md#generating-new-workflow-endpoints) for more information.
 
 ## Contributing
 

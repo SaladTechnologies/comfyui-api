@@ -274,9 +274,9 @@ For example, a directory structure like this:
 
 Would yield the following endpoints:
 
-- `POST /workflows/sdxl/img2img`
-- `POST /workflows/sdxl/txt2img-with-refiner`
-- `POST /workflows/sdxl/txt2img`
+- `POST /workflow/sdxl/img2img`
+- `POST /workflow/sdxl/txt2img-with-refiner`
+- `POST /workflow/sdxl/txt2img`
 
 These endpoints will be present in the swagger docs, and can be used to interact with the API.
 If you provide descriptions in your zod schemas, these will be used to create a markdown table of inputs in the swagger docs.
