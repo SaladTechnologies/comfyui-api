@@ -5,6 +5,7 @@ It covers setting up the development environment, coding standards, testing proc
 
 - [Developing ComfyUI-API](#developing-comfyui-api)
   - [Submitting Contributions](#submitting-contributions)
+  - [Core Design Principles](#core-design-principles)
   - [Setting Up the Development Environment](#setting-up-the-development-environment)
   - [Testing Procedures](#testing-procedures)
     - [Running Tests](#running-tests)
@@ -21,6 +22,16 @@ Please open an issue with as much information as possible about the problem you'
 If you have encountered a bug, please include the steps to reproduce it, and any relevant logs or error messages.
 If you are able, adding a failing test is the best way to ensure your issue is resolved quickly.
 Let's make productionizing ComfyUI as easy as possible!
+
+## Core Design Principles
+
+When contributing to the ComfyUI-API project, please keep the following design principles in mind:
+
+- **Asynchronous Operations**: Use asynchronous programming practices wherever possible to ensure the server remains responsive. Avoid blocking the event loop.
+- **Modularity**: Because the range of uses for this API is so broad, strive to keep components modular and loosely coupled. This will make it easier to add new features and maintain existing ones.
+- **Don't Duplicate Existing ComfyUI functionality**: Wherever possible, leverage existing ComfyUI api endpoints and functionality, rather than re-implementing it in the API server. Local ComfyUI can be accessed from the the API server at `config.comfyURL`.
+- **Error Handling**: Implement robust error handling to gracefully manage unexpected situations. Provide clear and informative error messages to users. Errors should never crash the server unless recovery is deemed impossible.
+- **Testing**: If your feature or bug fix is significant, please include tests to verify its functionality. This helps maintain the integrity of the codebase.
 
 ## Setting Up the Development Environment
 
