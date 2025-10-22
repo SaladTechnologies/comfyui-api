@@ -29,6 +29,9 @@ A simple wrapper that facilitates using [ComfyUI](https://github.com/comfyanonym
   - [Using with Webhooks](#using-with-webhooks)
     - [prompt.complete](#promptcomplete)
     - [prompt.failed](#promptfailed)
+    - [Validating Webhooks](#validating-webhooks)
+      - [Node.js Example](#nodejs-example)
+      - [Python Example](#python-example)
     - [DEPRECATED: Legacy Webhook Behavior](#deprecated-legacy-webhook-behavior)
       - [output.complete](#outputcomplete)
       - [prompt.failed (legacy)](#promptfailed-legacy)
@@ -561,9 +564,65 @@ The webhook type name for a failed request is `prompt.failed`. The webhook will 
 }
 ```
 
+### Validating Webhooks
+
+#### Node.js Example
+
+```shell
+npm install svix
+```
+
+```javascript
+const { Webhook } = require('svix')
+
+//Express.js middleware
+function validateWebhookSignature(req, res, next) {
+  const webhook = new Webhook(secret)
+  try {
+    webhook.verify(req.body, req.headers)
+    next()
+  } catch (error) {
+    console.error('Webhook verification failed:', error)
+    return res.status(401).send('Invalid signature')
+  }
+}
+```
+
+#### Python Example
+
+```shell
+pip install svix
+```
+
+```python
+from fastapi import FastAPI, Request, HTTPException
+from svix import Webhook
+from typing import Any, Dict
+
+async def validate_webhook(request: Request) -> Dict[str, Any]:
+    """
+    FastAPI Dependency to validate webhook signatures
+    """
+    try:
+        # Get the raw body
+        body = await request.body()
+
+        # Create webhook instance
+        webhook = Webhook(webhook_secret)
+
+        # Verify the webhook signature
+        payload = webhook.verify(body, dict(request.headers))
+
+        return payload
+    except Exception as e:
+        print(f"Webhook verification failed: {e}")
+        raise HTTPException(status_code=401, detail="Invalid webhook signature")
+```
+
 ### DEPRECATED: Legacy Webhook Behavior
 
 **LEGACY BEHAVIOR**: For successful requests including the now-deprecated `.webhook` field, every output from the workflow will be sent as individual webhook requests. That means if your request generates 4 images, you will receive 4 webhook requests, each with a single image.
+These webhooks are not signed, so we recommend migrating to the new `.webhook_v2` field as soon as possible.
 
 #### output.complete
 
