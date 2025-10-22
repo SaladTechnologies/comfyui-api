@@ -11,6 +11,7 @@ A simple wrapper that facilitates using [ComfyUI](https://github.com/comfyanonym
     - [Response Format](#response-format)
   - [Model Manifest](#model-manifest)
   - [Downloading Behavior](#downloading-behavior)
+  - [LRU Caching](#lru-caching)
   - [Modular Storage Backends](#modular-storage-backends)
     - [S3-Compatible Storage](#s3-compatible-storage)
     - [Huggingface Repository](#huggingface-repository)
@@ -56,7 +57,7 @@ If you have your own ComfyUI dockerfile, you can add the comfyui-api server to i
 
 ```dockerfile
 # Change this to the version you want to use
-ARG api_version=1.11.0
+ARG api_version=1.12.0
 
 # Download the comfyui-api binary, and make it executable
 ADD https://github.com/SaladTechnologies/comfyui-api/releases/download/${api_version}/comfyui-api .
@@ -77,7 +78,7 @@ The server hosts swagger docs at `/docs`, which can be used to interact with the
 - **Stateless API**: The server is stateless, and can be scaled horizontally to handle more requests.
 - **Swagger Docs**: The server hosts swagger docs at `/docs`, which can be used to interact with the API.
 - **"Synchronous" Support**: The server will return base64-encoded images directly in the response, if no async behavior is requested.
-- **Modular Storage Backends**: Completed outputs can be sent base64-encoded to a webhook, or uploaded to any s3-compatible storage, an http endpoint, a huggingface repo, or azure blob storage. All of these can be used to download input media as well. More storage backends can be added easily.
+- **Modular Storage Backends**: Completed outputs can be sent base64-encoded to a webhook, or uploaded to any s3-compatible storage, an http endpoint, a huggingface repo, or azure blob storage. All of these can be used to download input media as well. More storage backends can be added easily. Supports an optional LRU cache for downloaded models and files to keep local storage from overflowing.
 - **Warmup Workflow**: The server can be configured to run a warmup workflow on startup, which can be used to load and warm up models, and to ensure the server is ready to accept requests.
 - **Return Images In PNG (default), JPEG, or WebP**: The server can return images in PNG, JPEG, or WebP format, via a parameter in the API request. Most options supported by [sharp](https://sharp.pixelplumbing.com/) are supported.
 - **Probes**: The server has two probes, `/health` and `/ready`, which can be used to check the server's health and readiness to receive traffic.
@@ -231,6 +232,13 @@ Otherwise, it will attempt to determine the file extension from the `Content-Dis
 All downloaded files live in the configured cache directory with a name taken as the first 32 characters of the URL hash plus the file extension, and are symbolically linked to the specified local path.
 
 If a download for a given URL is already in progress, any subsequent requests for the same URL will wait for the first download to complete, and then use the downloaded file.
+
+## LRU Caching
+
+The server uses an LRU cache to manage the cache directory, which is used to store downloaded models and other files.
+It is configured to be disabled by default, but you can set a size via the `LRU_CACHE_SIZE_GB` environment variable.
+When the cache size exceeds the configured size, the server will delete the least recently used files until the cache size is below the configured size.
+**Note:** Cache-size is determined _after_ a download completes, so actual cache size can temporarily exceed the configured size while downloads are in progress.
 
 ## Modular Storage Backends
 
@@ -434,6 +442,7 @@ If you are using the azure blob storage functionality, make sure to set all of t
 | HTTP_AUTH_HEADER_VALUE       | (not set)                  | The value to use for the HTTP_AUTH_HEADER_NAME header in all outgoing HTTP requests for uploading and downloading files.                                                                                                                     |
 | INPUT_DIR                    | "/opt/ComfyUI/input"       | Directory for input files                                                                                                                                                                                                                    |
 | LOG_LEVEL                    | "info"                     | Log level for the application. One of "trace", "debug", "info", "warn", "error", "fatal".                                                                                                                                                    |
+| LRU_CACHE_SIZE_GB            | "0"                        | Maximum size of the LRU cache in GB. If set to 0, this feature is disabled.                                                                                                                                                                  |
 | MANIFEST                     | (not set)                  | Path to the [manifest file](#model-manifest) (optional). Can be yml or json.                                                                                                                                                                 |
 | MANIFEST_JSON                | (not set)                  | A JSON string representing the [manifest](#model-manifest). If set, this will take precedence over the MANIFEST variable.                                                                                                                    |
 | MARKDOWN_SCHEMA_DESCRIPTIONS | "true"                     | If set to "true", the server will use the descriptions in the zod schemas to generate markdown tables in the swagger docs.                                                                                                                   |

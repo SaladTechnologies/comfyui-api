@@ -8,6 +8,7 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import storageProviders from "./storage-providers";
 import { StorageProvider, Upload } from "./types";
+import { getModels } from "./comfy";
 
 const execFilePromise = promisify(execFile);
 
@@ -134,6 +135,110 @@ class RemoteStorageManager {
     );
   }
 
+  async enforceCacheSize(): Promise<void> {
+    const { totalSize, files } = await this.getCacheSizeInfo();
+    this.log.info(
+      `Cache populated with ${
+        files.length
+      } files, total size: ${this.makeHumanReadableSize(totalSize)}`
+    );
+
+    if (config.lruCacheSizeBytes > 0 && totalSize > config.lruCacheSizeBytes) {
+      this.log.info(
+        `Cache size ${this.makeHumanReadableSize(
+          totalSize
+        )} exceeds max size of ${this.makeHumanReadableSize(
+          config.lruCacheSizeBytes
+        )}, performing eviction`
+      );
+      const spaceNeeded = totalSize - config.lruCacheSizeBytes;
+      const freedSpace = await this.makeSpace(spaceNeeded, files);
+      this.log.info(
+        `Freed up ${this.makeHumanReadableSize(freedSpace)} in cache`
+      );
+    }
+  }
+
+  /**
+   * Gets the total size of the cache directory and a list of files sorted by last accessed time.
+   * @returns An object containing the total size in bytes and an array of file info objects.
+   */
+  async getCacheSizeInfo(): Promise<{
+    totalSize: number;
+    files: Array<{ path: string; size: number; lastAccessed: number }>;
+  }> {
+    let totalSize = 0;
+    const files: Array<{ path: string; size: number; lastAccessed: number }> =
+      [];
+
+    const dirFiles = await fsPromises.readdir(this.cacheDir);
+    const statsPromises = dirFiles.map(async (file) => {
+      const filePath = path.join(this.cacheDir, file);
+      const stats = await fsPromises.stat(filePath);
+      if (stats.isFile()) {
+        totalSize += stats.size;
+        files.push({
+          path: filePath,
+          size: stats.size,
+          lastAccessed: stats.atimeMs,
+        });
+      }
+    });
+
+    await Promise.all(statsPromises);
+    const sortedByLastAccessed = files.sort(
+      (a, b) => a.lastAccessed - b.lastAccessed
+    );
+
+    return { totalSize, files: sortedByLastAccessed };
+  }
+
+  private makeHumanReadableSize(sizeInBytes: number): string {
+    const units = ["B", "KB", "MB", "GB", "TB"];
+    let size = sizeInBytes;
+    let unitIndex = 0;
+
+    while (size >= 1024 && unitIndex < units.length - 1) {
+      size /= 1024;
+      unitIndex++;
+    }
+
+    return `${size.toFixed(2)} ${units[unitIndex]}`;
+  }
+
+  /**
+   *
+   * @param spaceNeeded A number in bytes that needs to be removed
+   * @param files A list of files. Files will be removed in the order of this array.
+   * @returns
+   */
+  private async makeSpace(
+    spaceNeeded: number,
+    files: Array<{ path: string; size: number }>
+  ): Promise<number> {
+    let freedSpace = 0;
+    for (const file of files) {
+      if (freedSpace >= spaceNeeded) {
+        break;
+      }
+      try {
+        await fsPromises.unlink(file.path);
+        freedSpace += file.size;
+        this.log.info(
+          `Evicted ${file.path} (${this.makeHumanReadableSize(
+            file.size
+          )}) from cache to free up space`
+        );
+      } catch (error) {
+        this.log.error(
+          { error },
+          `Error evicting file ${file.path} from cache`
+        );
+      }
+    }
+    return freedSpace;
+  }
+
   async downloadFile(
     url: string,
     outputDir: string,
@@ -204,18 +309,21 @@ class RemoteStorageManager {
     await linkIfDoesNotExist(outputPath, finalLocation, this.log);
 
     const duration = (Date.now() - start) / 1000;
-    const sizeInMB =
-      (await fsPromises.stat(await fsPromises.realpath(outputPath))).size /
-      (1024 * 1024);
-    const sizeInGB = sizeInMB / 1024;
+    const size = (await fsPromises.stat(await fsPromises.realpath(outputPath)))
+      .size;
+    const sizeInMB = size / (1024 * 1024);
+
     const speed = sizeInMB / duration;
-    const sizeStr =
-      sizeInGB >= 1 ? `${sizeInGB.toFixed(2)} GB` : `${sizeInMB.toFixed(2)} MB`;
+    const sizeStr = this.makeHumanReadableSize(sizeInMB * 1024 * 1024);
     this.log.info(
       `Downloaded ${sizeStr} from ${url} in ${duration.toFixed(
         2
       )}s (${speed.toFixed(2)} MB/s)`
     );
+
+    this.enforceCacheSize().catch((error) => {
+      this.log.error({ error }, "Error enforcing cache size after download");
+    });
 
     return finalLocation;
   }

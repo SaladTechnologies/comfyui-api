@@ -26,6 +26,7 @@ const {
   HTTP_AUTH_HEADER_VALUE,
   INPUT_DIR,
   LOG_LEVEL = "info",
+  LRU_CACHE_SIZE_GB = "0",
   MANIFEST_JSON,
   MANIFEST,
   MARKDOWN_SCHEMA_DESCRIPTIONS = "true",
@@ -75,8 +76,14 @@ assert(maxQueueDepth >= 0, "MAX_QUEUE_DEPTH must be a non-negative integer");
 
 const alwaysRestartComfyUI = ALWAYS_RESTART_COMFYUI.toLowerCase() === "true";
 const prependFilenames = PREPEND_FILENAMES.toLowerCase() === "true";
-const systemWebhook = SYSTEM_WEBHOOK_URL ?? "";
 
+const lruCacheSizeBytes = parseFloat(LRU_CACHE_SIZE_GB) * 1024 * 1024 * 1024;
+assert(
+  lruCacheSizeBytes >= 0,
+  "LRU_CACHE_SIZE_GB must be a non-negative number"
+);
+
+const systemWebhook = SYSTEM_WEBHOOK_URL ?? "";
 if (systemWebhook) {
   try {
     const webhook = new URL(systemWebhook);
@@ -118,6 +125,7 @@ const loadEnvCommand: Record<string, string> = {
 
 // The parent directory of model_dir
 const comfyDir = COMFY_HOME;
+const modelDir = MODEL_DIR ?? path.join(comfyDir, "models");
 
 let warmupPrompt: any | undefined;
 let warmupCkpt: string | undefined;
@@ -402,6 +410,13 @@ const config = {
   logLevel: LOG_LEVEL.toLowerCase(),
 
   /**
+   * The size of the LRU cache for models and files, in bytes.
+   * Specified by LRU_CACHE_SIZE_GB env var.
+   * default: 0 (disabled)
+   */
+  lruCacheSizeBytes,
+
+  /**
    * If a manifest file is provided, this is its parsed contents.
    */
   manifest,
@@ -426,6 +441,8 @@ const config = {
    * default: 0 (unlimited)
    */
   maxQueueDepth,
+
+  modelDir,
 
   /**
    * The contents of the models directory
@@ -566,7 +583,6 @@ const config = {
   wsClientId,
 };
 
-const modelDir = MODEL_DIR ?? path.join(comfyDir, "models");
 const modelSubDirs = fs.readdirSync(modelDir);
 for (const modelType of modelSubDirs) {
   const model_path = path.join(modelDir, modelType);

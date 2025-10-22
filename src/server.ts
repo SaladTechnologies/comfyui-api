@@ -30,6 +30,7 @@ import {
   runPromptAndGetOutputs,
   connectToComfyUIWebsocketStream,
   PromptOutputsWithStats,
+  getModels,
 } from "./comfy";
 import {
   PromptRequestSchema as BasePromptRequestSchema,
@@ -208,8 +209,9 @@ server.after(() => {
     },
     async (request, reply) => {
       const modelResponse: ModelResponse = {};
-      for (const modelType in config.models) {
-        modelResponse[modelType] = config.models[modelType].all;
+      const modelsByType = await getModels();
+      for (const modelType in modelsByType) {
+        modelResponse[modelType] = modelsByType[modelType].all;
       }
       return modelResponse;
     }
@@ -697,6 +699,7 @@ async function processManifest() {
 export async function start() {
   try {
     const start = Date.now();
+    await remoteStorageManager.enforceCacheSize();
     await processManifest();
     if (config.manifest) {
       server.log.info(
@@ -706,6 +709,7 @@ export async function start() {
 
     // Start ComfyUI
     await launchComfyUIAndAPIServerAndWaitForWarmup();
+    await getModels();
     const warmupTime = Date.now() - start;
     server.log.info(`ComfyUI fully ready in ${warmupTime / 1000}s`);
   } catch (err: any) {

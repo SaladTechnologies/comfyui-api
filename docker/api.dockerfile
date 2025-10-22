@@ -1,5 +1,5 @@
 ARG base=runtime
-ARG comfy_version=0.3.64
+ARG comfy_version=0.3.66
 ARG pytorch_version=2.8.0
 ARG cuda_version=12.6
 
@@ -8,7 +8,7 @@ FROM ghcr.io/saladtechnologies/comfyui-api:comfy${comfy_version}-torch${pytorch_
 ENV WORKFLOW_DIR=/workflows
 ENV STARTUP_CHECK_MAX_TRIES=30
 
-ARG api_version=1.8.2
+ARG api_version=1.12.0
 
 ADD https://github.com/SaladTechnologies/comfyui-api/releases/download/${api_version}/comfyui-api .
 

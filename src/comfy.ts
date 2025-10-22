@@ -24,6 +24,7 @@ import path from "path";
 import fsPromises from "fs/promises";
 import WebSocket, { MessageEvent } from "ws";
 import { fetch, Agent } from "undici";
+import { z } from "zod";
 
 const commandExecutor = new CommandExecutor();
 
@@ -461,4 +462,48 @@ export function connectToComfyUIWebsocketStream(
       log.info("Disconnected from Comfy UI websocket");
     });
   });
+}
+
+export async function getModels(): Promise<
+  Record<
+    string,
+    {
+      dir: string;
+      all: string[];
+      enum: z.ZodEnum<[string, ...string[]]>;
+    }
+  >
+> {
+  const modelsResp = await fetch(`${config.comfyURL}/models`);
+
+  if (!modelsResp.ok) {
+    throw new Error(`Failed to fetch model types: ${await modelsResp.text()}`);
+  }
+
+  const modelTypes = (await modelsResp.json()) as Array<string>;
+  const modelsByType: Record<
+    string,
+    { dir: string; all: string[]; enum: z.ZodEnum<[string, ...string[]]> }
+  > = {};
+
+  const modelPromises = modelTypes.map(async (modelType) => {
+    const resp = await fetch(`${config.comfyURL}/models/${modelType}`);
+
+    if (!resp.ok) {
+      throw new Error(
+        `Failed to fetch models for type ${modelType}: ${await resp.text()}`
+      );
+    }
+
+    const models = (await resp.json()) as Array<string>;
+    modelsByType[modelType] = {
+      dir: path.join(config.modelDir, modelType),
+      all: models,
+      enum: z.enum(models as [string, ...string[]]),
+    };
+  });
+  await Promise.all(modelPromises);
+
+  config.models = modelsByType;
+  return modelsByType;
 }
