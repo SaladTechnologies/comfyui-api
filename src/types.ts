@@ -148,6 +148,7 @@ export const PromptRequestSchema = z.object({
     .optional()
     .default(() => randomUUID()),
   webhook: z.string().optional(),
+  webhook_v2: z.string().optional(),
   convert_output: OutputConversionOptionsSchema.optional(),
 });
 

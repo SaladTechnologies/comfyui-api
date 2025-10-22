@@ -29,6 +29,7 @@ services:
     #   ALWAYS_RESTART_COMFYUI: "true"
     #   SYSTEM_WEBHOOK_URL: "http://host.docker.internal:1234/system"
     #   SYSTEM_WEBHOOK_EVENTS: all
+      WEBHOOK_SECRET: testsecret
     deploy:
       resources:
         reservations:

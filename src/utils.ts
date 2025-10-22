@@ -3,10 +3,11 @@ import { FastifyBaseLogger } from "fastify";
 import path from "path";
 import { ZodObject, ZodRawShape, ZodTypeAny, ZodDefault } from "zod";
 import { WebhookHandlers } from "./types";
-import { fetch, RequestInit, Response } from "undici";
+import { fetch, RequestInit, Response, Agent } from "undici";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import getStorageManager from "./remote-storage-manager";
+import crypto from "crypto";
 
 const execFilePromise = promisify(execFile);
 
@@ -315,4 +316,49 @@ export async function pipInstallPackages(
   const cmd = config.uvInstalled ? "uv" : (args.shift() as string);
 
   await execFilePromise(cmd, args);
+}
+
+export function signWebhookPayload(payload: string): string {
+  return crypto
+    .createHmac("sha256", config.webhookSecret ?? "")
+    .update(payload)
+    .digest("hex");
+}
+
+export async function sendWebhook(
+  url: string,
+  body: any,
+  log: FastifyBaseLogger,
+  version: number = 1
+): Promise<void> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  const bodyString = JSON.stringify(body);
+  if (version === 2) {
+    Object.assign(headers, {
+      "webhook-id": body.id,
+      "webhook-timestamp": Math.round(Date.now() / 1000).toString(),
+      "webhook-signature": signWebhookPayload(bodyString),
+    });
+  }
+  try {
+    fetchWithRetries(
+      url,
+      {
+        method: "POST",
+        headers,
+        body: bodyString,
+        dispatcher: new Agent({
+          headersTimeout: 0,
+          bodyTimeout: 0,
+          connectTimeout: 0,
+        }),
+      },
+      config.promptWebhookRetries,
+      log
+    );
+  } catch (e: any) {
+    log.error(`Failed to send webhook to ${url}: ${e.message}`);
+  }
 }

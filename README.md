@@ -27,8 +27,11 @@ A simple wrapper that facilitates using [ComfyUI](https://github.com/comfyanonym
     - [Additional Notes](#additional-notes)
   - [Using Synchronously](#using-synchronously)
   - [Using with Webhooks](#using-with-webhooks)
-    - [output.complete](#outputcomplete)
+    - [prompt.complete](#promptcomplete)
     - [prompt.failed](#promptfailed)
+    - [DEPRECATED: Legacy Webhook Behavior](#deprecated-legacy-webhook-behavior)
+      - [output.complete](#outputcomplete)
+      - [prompt.failed (legacy)](#promptfailed-legacy)
   - [System Events](#system-events)
     - [status](#status)
     - [progress](#progress)
@@ -57,7 +60,7 @@ If you have your own ComfyUI dockerfile, you can add the comfyui-api server to i
 
 ```dockerfile
 # Change this to the version you want to use
-ARG api_version=1.12.0
+ARG api_version=1.13.0
 
 # Download the comfyui-api binary, and make it executable
 ADD https://github.com/SaladTechnologies/comfyui-api/releases/download/${api_version}/comfyui-api .
@@ -78,6 +81,7 @@ The server hosts swagger docs at `/docs`, which can be used to interact with the
 - **Stateless API**: The server is stateless, and can be scaled horizontally to handle more requests.
 - **Swagger Docs**: The server hosts swagger docs at `/docs`, which can be used to interact with the API.
 - **"Synchronous" Support**: The server will return base64-encoded images directly in the response, if no async behavior is requested.
+- **Async Support via Webhooks**: The server can send completed outputs to a webhook URL, allowing for asynchronous processing.
 - **Modular Storage Backends**: Completed outputs can be sent base64-encoded to a webhook, or uploaded to any s3-compatible storage, an http endpoint, a huggingface repo, or azure blob storage. All of these can be used to download input media as well. More storage backends can be added easily. Supports an optional LRU cache for downloaded models and files to keep local storage from overflowing.
 - **Warmup Workflow**: The server can be configured to run a warmup workflow on startup, which can be used to load and warm up models, and to ensure the server is ready to accept requests.
 - **Return Images In PNG (default), JPEG, or WebP**: The server can return images in PNG, JPEG, or WebP format, via a parameter in the API request. Most options supported by [sharp](https://sharp.pixelplumbing.com/) are supported.
@@ -116,7 +120,7 @@ Prompts are submitted to the server via the `POST /prompt` endpoint, which accep
       "class_type": "LoadImage"
     }
   },
-  "webhook": "https://example.com/webhook",
+  "webhook_v2": "https://example.com/webhook",
   "convert_output": {
     "format": "jpeg",
     "options": {
@@ -460,6 +464,7 @@ If you are using the azure blob storage functionality, make sure to set all of t
 | SYSTEM_WEBHOOK_EVENTS        | (not set)                  | Comma separated list of events to send to the webhook. Only selected events will be sent. If not set, no events will be sent. See [System Events](#system-events). You may also use the special value `all` to subscribe to all event types. |
 | SYSTEM_WEBHOOK_URL           | (not set)                  | Optionally receive via webhook the events that ComfyUI emits on websocket. This includes progress events.                                                                                                                                    |
 | WARMUP_PROMPT_FILE           | (not set)                  | Path to warmup prompt file (optional)                                                                                                                                                                                                        |
+| WEBHOOK_SECRET               | (empty string)             | If set, the server will sign webhook_v2 requests with this secret.                                                                                                                                                                           |
 | WORKFLOW_DIR                 | "/workflows"               | Directory for workflow files                                                                                                                                                                                                                 |
 
 ### Configuration Details
@@ -512,17 +517,55 @@ Remember to set these environment variables according to your specific deploymen
 
 ## Using Synchronously
 
-The default behavior of the API is to return an array of base64-encoded outputs in the response body. All that is needed to do this is to omit the `.webhook` and `.s3` field in the request body.
+The default behavior of the API is to return an array of base64-encoded outputs in the response body.
+All that is needed to do this is to omit webhook and upload fields from the request body.
 
 ## Using with Webhooks
 
 ComfyUI API sends two types of webhooks: System Events, which are emitted by ComfyUI itself, and Workflow Events, which are emitted by the API server. See [System Events](#system-events) for more information on System Events.
 
-If a user includes the `.webhook` field in a request to `/prompt` or any of the workflow endpoints, the server will send any completed outputs to the webhook URL provided in the request. It will also send a webhook if the request fails.
+If a user includes `.webhook_v2` field in a request to `/prompt` or any of the workflow endpoints, the server will send any completed outputs to the webhook URL provided in the request.
+It will also send a webhook if the request fails.
 
-For successful requests, every output from the workflow will be sent as individual webhook requests. That means if your request generates 4 images, you will receive 4 webhook requests, each with a single image.
+For successful requests including the `.webhook_v2` field, a single webhook request will be sent once the entire workflow has completed, containing all outputs.
+Webhooks are sent as [Standard Webhooks](https://www.standardwebhooks.com/), and can be validated using the `WEBHOOK_SECRET` environment variable and any standard webhook validation library such as `svix`.
 
-### output.complete
+### prompt.complete
+
+The webhook type name for a completed prompt is `prompt.complete`. The webhook will have the following schema:
+
+```json
+{
+  "type": "prompt.complete",
+  "timestamp": "2025-01-01T00:00:00Z",
+  "id": "request-id",
+  "images": ["base64-encoded-image-1", "base64-encoded-image-2"],
+  "filenames": ["output-filename-1.png", "output-filename-2.png"],
+  "prompt": {},
+}
+```
+
+Note that if you include upload fields in your request, the `.images` field will contain the uploaded URLs instead of base64-encoded images.
+
+### prompt.failed
+
+The webhook type name for a failed request is `prompt.failed`. The webhook will have the following schema:
+
+```json
+{
+  "type": "prompt.failed",
+  "timestamp": "2025-01-01T00:00:00Z",
+  "error": "error-message",
+  "id": "request-id",
+  "prompt": {}
+}
+```
+
+### DEPRECATED: Legacy Webhook Behavior
+
+**LEGACY BEHAVIOR**: For successful requests including the now-deprecated `.webhook` field, every output from the workflow will be sent as individual webhook requests. That means if your request generates 4 images, you will receive 4 webhook requests, each with a single image.
+
+#### output.complete
 
 The webhook event name for a completed output is `output.complete`. The webhook will have the following schema:
 
@@ -536,7 +579,7 @@ The webhook event name for a completed output is `output.complete`. The webhook 
 }
 ```
 
-### prompt.failed
+#### prompt.failed (legacy)
 
 The webhook event name for a failed request is `prompt.failed`. The webhook will have the following schema:
 

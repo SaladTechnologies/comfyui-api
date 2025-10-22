@@ -18,6 +18,8 @@ import {
   installCustomNode,
   aptInstallPackages,
   pipInstallPackages,
+  signWebhookPayload,
+  sendWebhook,
 } from "./utils";
 import { convertImageBuffer } from "./image-tools";
 import getStorageManager from "./remote-storage-manager";
@@ -243,7 +245,7 @@ server.after(() => {
       },
     },
     async (request, reply) => {
-      let { prompt, id, webhook, convert_output } = request.body;
+      let { prompt, id, webhook, webhook_v2, convert_output } = request.body;
 
       /**
        * Here we go through all the nodes in the prompt to validate it,
@@ -331,9 +333,33 @@ server.after(() => {
         };
       };
 
-      let runPromptPromise = runPromptAndGetOutputs(id, prompt, log).then(
-        postProcessOutputs
-      );
+      let runPromptPromise = runPromptAndGetOutputs(id, prompt, log)
+        .catch((e: any) => {
+          log.error(`Failed to run prompt: ${e.message}`);
+          if (webhook_v2) {
+            const webhookBody = {
+              type: "prompt.failed",
+              timestamp: new Date().toISOString(),
+              id,
+              prompt,
+              error: e.message,
+            };
+            sendWebhook(webhook_v2, webhookBody, log, 2);
+          } else if (webhook) {
+            log.warn(
+              `.webhook has been deprecated in favor of .webhook_v2. Support for .webhook will be removed in a future version.`
+            );
+            const webhookBody = {
+              event: "prompt.failed",
+              id,
+              prompt,
+              error: e.message,
+            };
+            sendWebhook(webhook, webhookBody, log, 1);
+          }
+          throw e;
+        })
+        .then(postProcessOutputs);
 
       let uploadPromise: Promise<{
         images: string[];
@@ -355,6 +381,9 @@ server.after(() => {
         if (!webhook) {
           throw new Error("Webhook URL is not defined");
         }
+        log.warn(
+          `.webhook has been deprecated in favor of .webhook_v2. Support for .webhook will be removed in a future version.`
+        );
         const webhookPromises: Promise<any>[] = [];
         const images: string[] = [];
         for (let i = 0; i < buffers.length; i++) {
@@ -363,44 +392,19 @@ server.after(() => {
           const filename = filenames[i];
           log.info(`Sending image ${filename} to webhook: ${webhook}`);
           webhookPromises.push(
-            fetchWithRetries(
+            sendWebhook(
               webhook,
               {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                  event: "output.complete",
-                  image: base64File,
-                  id,
-                  filename,
-                  prompt,
-                  stats,
-                }),
-                dispatcher: new Agent({
-                  headersTimeout: 0,
-                  bodyTimeout: 0,
-                  connectTimeout: 0,
-                }),
+                event: "output.complete",
+                image: base64File,
+                id,
+                filename,
+                prompt,
+                stats,
               },
-              config.promptWebhookRetries,
-              log
+              log,
+              1
             )
-              .catch((e: any) => {
-                log.error(`Failed to send image to webhook: ${e.message}`);
-              })
-              .then(async (resp) => {
-                if (!resp) {
-                  log.error("No response from webhook");
-                } else if (!resp.ok) {
-                  log.error(
-                    `Failed to send image ${filename}: ${await resp.text()}`
-                  );
-                } else {
-                  log.info(`Sent image ${filename}`);
-                }
-              })
           );
         }
         await Promise.all(webhookPromises);
@@ -451,6 +455,7 @@ server.after(() => {
       );
       const asyncUpload =
         webhook ||
+        webhook_v2 ||
         (storageProvider &&
           storageProvider.requestBodyUploadKey &&
           request.body[storageProvider.requestBodyUploadKey]?.async);
@@ -488,15 +493,27 @@ server.after(() => {
 
       const { images, stats, filenames } = await finalStatsPromise;
 
+      const outputPayload = {
+        ...request.body,
+        id,
+        prompt,
+        images,
+        filenames,
+        stats,
+      };
+
+      if (webhook_v2) {
+        log.debug(`Sending final response to webhook_v2: ${webhook_v2}`);
+        const webhookBody = {
+          type: "prompt.complete",
+          timestamp: new Date().toISOString(),
+          ...outputPayload,
+        };
+        sendWebhook(webhook_v2, webhookBody, log, 2);
+      }
+
       if (!asyncUpload) {
-        return reply.send({
-          ...request.body,
-          id,
-          prompt,
-          images,
-          filenames,
-          stats,
-        });
+        return reply.send(outputPayload);
       }
     }
   );

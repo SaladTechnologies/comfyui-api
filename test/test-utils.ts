@@ -4,6 +4,7 @@ import fastify, { FastifyInstance } from "fastify";
 import { fetch, Agent } from "undici";
 import { S3Client } from "@aws-sdk/client-s3";
 import { BlobServiceClient, ContainerClient } from "@azure/storage-blob";
+import { Webhook } from "svix";
 
 export const s3 = new S3Client({
   region: "us-east-1",
@@ -38,7 +39,7 @@ export async function sleep(ms: number): Promise<void> {
 }
 
 export async function createWebhookListener(
-  onReceive: (body: any) => void | Promise<void>,
+  onReceive: (body: any, headers?: any) => void | Promise<void>,
   endpoint: string = "/webhook"
 ): Promise<FastifyInstance> {
   const app = fastify({
@@ -46,7 +47,7 @@ export async function createWebhookListener(
   });
   app.post(endpoint, (req, res) => {
     if (req.body) {
-      onReceive(req.body);
+      onReceive(req.body, req.headers);
     }
     res.send({ success: true });
   });
@@ -67,13 +68,17 @@ export async function submitPrompt(
   prompt: any,
   webhook: boolean = false,
   convert: any = undefined,
-  upload: any = undefined
+  upload: any = undefined,
+  webhook_v2: boolean = false
 ): Promise<any> {
   const body: any = {
     prompt,
   };
   if (webhook) {
     body["webhook"] = webhookAddress;
+  }
+  if (webhook_v2) {
+    body["webhook_v2"] = webhookAddress;
   }
   if (convert) {
     body["convert_output"] = convert;
@@ -143,5 +148,26 @@ export async function waitForServerToBeReady(): Promise<void> {
       }
     } catch (e) {}
     await sleep(100);
+  }
+}
+
+const webhook = new Webhook("testsecret");
+
+export function verifyWebhookV2(
+  body: string,
+  headers: Record<string, string>
+): boolean {
+  if (
+    !headers["webhook-id"] ||
+    !headers["webhook-timestamp"] ||
+    !headers["webhook-signature"]
+  ) {
+    return false;
+  }
+  try {
+    webhook.verify(body, headers);
+    return true;
+  } catch (e) {
+    return false;
   }
 }

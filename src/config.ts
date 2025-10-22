@@ -44,6 +44,7 @@ const {
   SYSTEM_WEBHOOK_EVENTS,
   SYSTEM_WEBHOOK_URL,
   WARMUP_PROMPT_FILE,
+  WEBHOOK_SECRET,
   WORKFLOW_DIR = "/workflows",
 } = process.env;
 
@@ -557,6 +558,11 @@ const config = {
    * If a warmup prompt file is provided, this is its parsed contents.
    */
   warmupPrompt,
+
+  /**
+   * (Optional) The secret used to sign webhooks. Specified by WEBHOOK_SECRET env var.
+   */
+  webhookSecret: WEBHOOK_SECRET,
 
   /**
    * The directory where custom workflows are stored, specified by WORKFLOW_DIR env var.
