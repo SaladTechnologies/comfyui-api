@@ -236,7 +236,7 @@ If a download for a given URL is already in progress, any subsequent requests fo
 ## LRU Caching
 
 The server uses an LRU cache to manage the cache directory, which is used to store downloaded models and other files.
-It is configured to be disabled by default, by you can set a size via the `LRU_CACHE_SIZE_GB` environment variable.
+It is configured to be disabled by default, but you can set a size via the `LRU_CACHE_SIZE_GB` environment variable.
 When the cache size exceeds the configured size, the server will delete the least recently used files until the cache size is below the configured size.
 **Note:** Cache-size is determined _after_ a download completes, so actual cache size can temporarily exceed the configured size while downloads are in progress.
 
