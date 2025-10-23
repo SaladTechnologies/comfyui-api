@@ -330,7 +330,7 @@ server.after(() => {
         };
       };
 
-      let runPromptPromise = runPromptAndGetOutputs(id, prompt, log)
+      const runPromptPromise = runPromptAndGetOutputs(id, prompt, log)
         .catch((e: any) => {
           log.error(`Failed to run prompt: ${e.message}`);
           if (webhook_v2) {

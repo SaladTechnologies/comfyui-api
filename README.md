@@ -45,6 +45,9 @@ A simple wrapper that facilitates using [ComfyUI](https://github.com/comfyanonym
     - [execution\_success](#execution_success)
     - [execution\_interrupted](#execution_interrupted)
     - [execution\_error](#execution_error)
+    - [file\_downloaded](#file_downloaded)
+    - [file\_uploaded](#file_uploaded)
+    - [file\_deleted](#file_deleted)
   - [Prebuilt Docker Images](#prebuilt-docker-images)
   - [Considerations for Running on SaladCloud](#considerations-for-running-on-saladcloud)
   - [Custom Workflows](#custom-workflows)
@@ -666,7 +669,7 @@ All webhooks have the same format, which is as follows:
 }
 ```
 
-When running on SaladCloud, `.metadata` will always include `salad_container_group_id` and `salad_machine_id`.
+When running on SaladCloud, `.metadata` will always include lowercase versions of the [Default Environment Variables](https://docs.salad.com/container-engine/how-to-guides/environment-variables#default-environment-variables).
 
 The following events are available:
 
@@ -679,10 +682,13 @@ The following events are available:
 - "execution_success"
 - "execution_interrupted"
 - "execution_error"
+- "file_downloaded"
+- "file_uploaded"
+- "file_deleted"
 
 The `SYSTEM_WEBHOOK_EVENTS` environment variable should be a comma-separated list of the events you want to send to the webhook. If not set, no events will be sent.
 
-The event name received in the webhook will be `comfy.${event_name}`, i.e. `comfy.progress`.
+The event name received in the webhook will be `comfy.${event_name}`, i.e. `comfy.progress`, or `storage.${event_name}` for file events.
 
 **Example**:
 
@@ -840,6 +846,57 @@ The following are the schemas for the event data that will be sent to the webhoo
     "current_outputs": []
   },
   "sid": "xyz789"
+}
+```
+
+### file_downloaded
+
+```jsonc
+{
+  // Where the file was downloaded from
+  "url": "https://example.com/model.safetensors",
+
+  // Local path where the file was saved
+  "local_path": "/opt/ComfyUI/models/model.safetensors",
+
+  // Size of the downloaded file in bytes
+  "size": 123456789,
+
+  // Duration of the download in seconds
+  "duration": 2.34
+}
+```
+
+### file_uploaded
+
+```jsonc
+{
+  // Local path of the file that was uploaded
+  "local_path": "/opt/ComfyUI/output/image.png",
+
+  // URL where the file was uploaded to
+  "url": "s3://my-bucket/images/image.png",
+
+  // Size of the uploaded file in bytes
+  "size": 123456,
+
+  // Duration of the upload in seconds
+  "duration": 0.56
+}
+```
+
+### file_deleted
+
+```jsonc
+{
+  // URL of the file that was deleted. Note there are edge cases where this may be unknown, and the value will be "unknown".
+  "url": "s3://my-bucket/models/old_model.safetensors",
+
+  // Local path of the file that was deleted
+  "local_path": "/opt/ComfyUI/models/old_model.safetensors",
+
+  // Size of the deleted file in bytes
+  "size": 987654321
 }
 ```
 

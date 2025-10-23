@@ -6,6 +6,7 @@ import { fetch, RequestInit, Response } from "undici";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import getStorageManager from "./remote-storage-manager";
+import crypto from "crypto";
 
 const execFilePromise = promisify(execFile);
 
@@ -125,6 +126,13 @@ export function snakeCaseToUpperCamelCase(str: string): string {
   return upperCamel;
 }
 
+export function camelCaseToSnakeCase(str: string): string {
+  return str
+    .replace(/([A-Z])/g, "_$1")
+    .toLowerCase()
+    .replace(/^_/, "");
+}
+
 export async function fetchWithRetries(
   url: string,
   options: RequestInit,
@@ -151,7 +159,7 @@ export async function fetchWithRetries(
 }
 
 export async function setDeletionCost(cost: number): Promise<void> {
-  if (!(config.saladMachineId && config.saladContainerGroupId)) {
+  if (!config.saladMetadata) {
     // If not running in Salad environment, skip setting deletion cost
     return;
   }
@@ -265,4 +273,86 @@ export async function pipInstallPackages(
   const cmd = config.uvInstalled ? "uv" : (args.shift() as string);
 
   await execFilePromise(cmd, args);
+}
+
+export function makeHumanReadableSize(sizeInBytes: number): string {
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let size = sizeInBytes;
+  let unitIndex = 0;
+
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex++;
+  }
+
+  return `${size.toFixed(2)} ${units[unitIndex]}`;
+}
+
+export function hashUrlBase64(url: string, length = 32): string {
+  return crypto
+    .createHash("sha256")
+    .update(url)
+    .digest("base64url") // URL-safe base64
+    .substring(0, length);
+}
+
+export function getContentTypeFromUrl(url: string): string {
+  const ext = path.extname(new URL(url).pathname).toLowerCase();
+  const mimeTypes: Record<string, string> = {
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".svg": "image/svg+xml",
+    ".bmp": "image/bmp",
+    ".tiff": "image/tiff",
+    ".ico": "image/x-icon",
+    ".mp4": "video/mp4",
+    ".mpeg": "video/mpeg",
+    ".webm": "video/webm",
+    ".mov": "video/quicktime",
+    ".avi": "video/x-msvideo",
+    ".mp3": "audio/mpeg",
+    ".wav": "audio/wav",
+    ".ogg": "audio/ogg",
+    ".weba": "audio/webm",
+    ".aac": "audio/aac",
+    ".pdf": "application/pdf",
+    ".doc": "application/msword",
+    ".docx":
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".xls": "application/vnd.ms-excel",
+    ".xlsx":
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".ppt": "application/vnd.ms-powerpoint",
+    ".pptx":
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ".txt": "text/plain",
+    ".csv": "text/csv",
+    ".html": "text/html",
+    ".rtf": "application/rtf",
+    ".zip": "application/zip",
+    ".tar": "application/x-tar",
+    ".gz": "application/gzip",
+    ".7z": "application/x-7z-compressed",
+    ".rar": "application/x-rar-compressed",
+    ".json": "application/json",
+    ".xml": "application/xml",
+    ".js": "application/javascript",
+    ".css": "text/css",
+    ".bin": "application/octet-stream",
+    ".pt": "application/x-pytorch",
+    ".pb": "application/x-tensorflow",
+  };
+
+  return mimeTypes[ext] || "application/octet-stream";
+}
+
+export async function getDirectorySizeInBytes(
+  directoryPath: string
+): Promise<number> {
+  const { stdout } = await execFilePromise("du", ["-sb", directoryPath]);
+  const sizeInBytes = parseInt(stdout.split("\t")[0], 10);
+  return sizeInBytes;
 }

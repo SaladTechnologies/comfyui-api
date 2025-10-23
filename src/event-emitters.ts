@@ -2,7 +2,11 @@ import crypto from "crypto";
 import config from "./config";
 import { FastifyBaseLogger } from "fastify";
 import { Agent } from "undici";
-import { fetchWithRetries, snakeCaseToUpperCamelCase } from "./utils";
+import {
+  fetchWithRetries,
+  snakeCaseToUpperCamelCase,
+  camelCaseToSnakeCase,
+} from "./utils";
 import { WebhookHandlers } from "./types";
 
 export function signWebhookPayload(payload: string): string {
@@ -55,17 +59,23 @@ export async function sendSystemWebhook(
   data: any,
   log: FastifyBaseLogger
 ): Promise<void> {
+  if (
+    !config.systemWebhookEvents.includes(eventName) ||
+    !config.systemWebhook
+  ) {
+    return;
+  }
+
   const metadata: Record<string, string> = { ...config.systemMetaData };
-  if (config.saladContainerGroupId) {
-    metadata["salad_container_group_id"] = config.saladContainerGroupId;
+  if (config.saladMetadata) {
+    for (const [key, value] of Object.entries(config.saladMetadata)) {
+      if (value) {
+        metadata[`salad_${camelCaseToSnakeCase(key)}`] = value;
+      }
+    }
   }
-  if (config.saladMachineId) {
-    metadata["salad_machine_id"] = config.saladMachineId;
-  }
-  if (config.systemWebhook) {
-    const payload = { event: eventName, data, metadata };
-    await sendWebhook(config.systemWebhook, payload, log, 2);
-  }
+  const payload = { event: eventName, data, metadata };
+  await sendWebhook(config.systemWebhook, payload, log, 2);
 }
 
 export function getConfiguredWebhookHandlers(
@@ -78,7 +88,14 @@ export function getConfiguredWebhookHandlers(
       const handlerName = `on${snakeCaseToUpperCamelCase(eventName)}`;
       handlers[handlerName] = (data: any) => {
         log.debug(`Sending system webhook for event: ${eventName}`);
-        sendSystemWebhook(`comfy.${eventName}`, data, log);
+        const eventLabel = [
+          "file_downloaded",
+          "file_uploaded",
+          "file_deleted",
+        ].includes(eventName)
+          ? "storage"
+          : "comfy";
+        sendSystemWebhook(`${eventLabel}.${eventName}`, data, log);
       };
     }
   }

@@ -3,12 +3,17 @@ import { FastifyBaseLogger } from "fastify";
 import fs from "fs";
 import fsPromises from "fs/promises";
 import path from "path";
-import crypto from "crypto";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import storageProviders from "./storage-providers";
 import { StorageProvider, Upload } from "./types";
-import { getModels } from "./comfy";
+import { sendSystemWebhook } from "./event-emitters";
+import {
+  makeHumanReadableSize,
+  hashUrlBase64,
+  getContentTypeFromUrl,
+  getDirectorySizeInBytes,
+} from "./utils";
 
 const execFilePromise = promisify(execFile);
 
@@ -34,67 +39,6 @@ async function linkIfDoesNotExist(
         throw err;
       }
     });
-}
-
-function hashUrlBase64(url: string, length = 32): string {
-  return crypto
-    .createHash("sha256")
-    .update(url)
-    .digest("base64url") // URL-safe base64
-    .substring(0, length);
-}
-
-function getContentTypeFromUrl(url: string): string {
-  const ext = path.extname(new URL(url).pathname).toLowerCase();
-  const mimeTypes: Record<string, string> = {
-    ".jpg": "image/jpeg",
-    ".jpeg": "image/jpeg",
-    ".png": "image/png",
-    ".gif": "image/gif",
-    ".webp": "image/webp",
-    ".svg": "image/svg+xml",
-    ".bmp": "image/bmp",
-    ".tiff": "image/tiff",
-    ".ico": "image/x-icon",
-    ".mp4": "video/mp4",
-    ".mpeg": "video/mpeg",
-    ".webm": "video/webm",
-    ".mov": "video/quicktime",
-    ".avi": "video/x-msvideo",
-    ".mp3": "audio/mpeg",
-    ".wav": "audio/wav",
-    ".ogg": "audio/ogg",
-    ".weba": "audio/webm",
-    ".aac": "audio/aac",
-    ".pdf": "application/pdf",
-    ".doc": "application/msword",
-    ".docx":
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    ".xls": "application/vnd.ms-excel",
-    ".xlsx":
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    ".ppt": "application/vnd.ms-powerpoint",
-    ".pptx":
-      "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-    ".txt": "text/plain",
-    ".csv": "text/csv",
-    ".html": "text/html",
-    ".rtf": "application/rtf",
-    ".zip": "application/zip",
-    ".tar": "application/x-tar",
-    ".gz": "application/gzip",
-    ".7z": "application/x-7z-compressed",
-    ".rar": "application/x-rar-compressed",
-    ".json": "application/json",
-    ".xml": "application/xml",
-    ".js": "application/javascript",
-    ".css": "text/css",
-    ".bin": "application/octet-stream",
-    ".pt": "application/x-pytorch",
-    ".pb": "application/x-tensorflow",
-  };
-
-  return mimeTypes[ext] || "application/octet-stream";
 }
 
 async function getFileByPrefix(
@@ -140,22 +84,20 @@ class RemoteStorageManager {
     this.log.info(
       `Cache populated with ${
         files.length
-      } files, total size: ${this.makeHumanReadableSize(totalSize)}`
+      } files, total size: ${makeHumanReadableSize(totalSize)}`
     );
 
     if (config.lruCacheSizeBytes > 0 && totalSize > config.lruCacheSizeBytes) {
       this.log.info(
-        `Cache size ${this.makeHumanReadableSize(
+        `Cache size ${makeHumanReadableSize(
           totalSize
-        )} exceeds max size of ${this.makeHumanReadableSize(
+        )} exceeds max size of ${makeHumanReadableSize(
           config.lruCacheSizeBytes
         )}, performing eviction`
       );
       const spaceNeeded = totalSize - config.lruCacheSizeBytes;
       const freedSpace = await this.makeSpace(spaceNeeded, files);
-      this.log.info(
-        `Freed up ${this.makeHumanReadableSize(freedSpace)} in cache`
-      );
+      this.log.info(`Freed up ${makeHumanReadableSize(freedSpace)} in cache`);
     }
   }
 
@@ -193,19 +135,6 @@ class RemoteStorageManager {
     return { totalSize, files: sortedByLastAccessed };
   }
 
-  private makeHumanReadableSize(sizeInBytes: number): string {
-    const units = ["B", "KB", "MB", "GB", "TB"];
-    let size = sizeInBytes;
-    let unitIndex = 0;
-
-    while (size >= 1024 && unitIndex < units.length - 1) {
-      size /= 1024;
-      unitIndex++;
-    }
-
-    return `${size.toFixed(2)} ${units[unitIndex]}`;
-  }
-
   /**
    *
    * @param spaceNeeded A number in bytes that needs to be removed
@@ -222,10 +151,25 @@ class RemoteStorageManager {
         break;
       }
       try {
+        const urlInCache = Object.keys(this.cache).find(
+          (url) => this.cache[url] === file.path
+        );
+        sendSystemWebhook(
+          "file_deleted",
+          {
+            url: urlInCache || "unknown",
+            local_path: file.path,
+            size: file.size,
+          },
+          this.log
+        );
+        if (urlInCache) {
+          delete this.cache[urlInCache];
+        }
         await fsPromises.unlink(file.path);
         freedSpace += file.size;
         this.log.info(
-          `Evicted ${file.path} (${this.makeHumanReadableSize(
+          `Evicted ${file.path} (${makeHumanReadableSize(
             file.size
           )}) from cache to free up space`
         );
@@ -314,11 +258,16 @@ class RemoteStorageManager {
     const sizeInMB = size / (1024 * 1024);
 
     const speed = sizeInMB / duration;
-    const sizeStr = this.makeHumanReadableSize(sizeInMB * 1024 * 1024);
+    const sizeStr = makeHumanReadableSize(sizeInMB * 1024 * 1024);
     this.log.info(
       `Downloaded ${sizeStr} from ${url} in ${duration.toFixed(
         2
       )}s (${speed.toFixed(2)} MB/s)`
+    );
+    sendSystemWebhook(
+      "file_downloaded",
+      { url, local_path: finalLocation, size, duration },
+      this.log
     );
 
     this.enforceCacheSize().catch((error) => {
@@ -337,6 +286,7 @@ class RemoteStorageManager {
       return this.activeDownloads[repoUrl];
     }
     try {
+      const start = Date.now();
       this.activeDownloads[repoUrl] = this._cloneWithinDirectory(
         repoUrl,
         targetDir
@@ -344,6 +294,20 @@ class RemoteStorageManager {
       const result = await this.activeDownloads[repoUrl];
       delete this.activeDownloads[repoUrl];
       this.cache[repoUrl] = result;
+      const duration = (Date.now() - start) / 1000;
+      const dirSize = await getDirectorySizeInBytes(result);
+      this.log.info(
+        `Cloned repository ${repoUrl} (${makeHumanReadableSize(
+          dirSize
+        )}) in ${duration.toFixed(2)}s (${makeHumanReadableSize(
+          (dirSize / duration) * 1000
+        )}/s)`
+      );
+      sendSystemWebhook(
+        "file_downloaded",
+        { url: repoUrl, local_path: result, size: dirSize, duration },
+        this.log
+      );
       return result;
     } catch (error: any) {
       this.log.error("Error cloning repository:", error);
@@ -377,8 +341,23 @@ class RemoteStorageManager {
         break; // Use only the first matching provider
       }
     }
+    if (!this.activeUploads[url]) {
+      throw new Error(`No storage provider found for URL: ${url}`);
+    }
+    const start = Date.now();
+    const size =
+      fileOrPath instanceof Buffer
+        ? fileOrPath.length
+        : (await fsPromises.stat(fileOrPath)).size;
+
     await this.activeUploads[url].upload();
     delete this.activeUploads[url];
+    const duration = (Date.now() - start) / 1000;
+    sendSystemWebhook(
+      "file_uploaded",
+      { url, local_path: fileOrPath, size, duration },
+      this.log
+    );
   }
 
   private async _cloneWithinDirectory(

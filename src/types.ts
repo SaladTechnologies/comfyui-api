@@ -357,6 +357,23 @@ export type WebhookHandlers = {
   onExecutionInterrupted?: (
     data: ComfyWSExecutionInterruptedMessage
   ) => Promise<void> | void;
+  onFileDownloaded?: (data: {
+    url: string;
+    local_path: string;
+    size: number;
+    duration: number;
+  }) => Promise<void> | void;
+  onFileUploaded?: (data: {
+    url: string;
+    local_path: string;
+    size: number;
+    duration: number;
+  }) => Promise<void> | void;
+  onFileDeleted?: (data: {
+    url: string;
+    local_path: string;
+    size: number;
+  }) => Promise<void> | void;
 };
 
 export const SystemWebhookEvents = [
@@ -370,6 +387,9 @@ export const SystemWebhookEvents = [
   "execution_success",
   "execution_interrupted",
   "execution_error",
+  "file_downloaded",
+  "file_uploaded",
+  "file_deleted",
 ] as const;
 
 export type ComfyPromptResponse = {
