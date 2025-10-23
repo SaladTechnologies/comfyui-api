@@ -652,10 +652,9 @@ The webhook event name for a failed request is `prompt.failed`. The webhook will
 }
 ```
 
-
 ## System Events
 
-ComfyUI emits a number of events over websocket during the course of a workflow. These can be configured to be sent to a webhook using the `SYSTEM_WEBHOOK_URL` and `SYSTEM_WEBHOOK_EVENTS` environment variables. Additionally, any environment variable starting with `SYSTEM_META_` will be sent as metadata with the event.
+ComfyUI emits a number of events over websocket during the course of a workflow. These can be configured to be sent to a webhook using the `SYSTEM_WEBHOOK_URL` and `SYSTEM_WEBHOOK_EVENTS` environment variables. Additionally, any environment variable starting with `SYSTEM_META_` will be sent as metadata with the event. From version 1.13.0, these are signed, and can be validated using the `WEBHOOK_SECRET` environment variable and any standard webhook validation library such as `svix`. See [above](#validating-webhooks) for examples.
 
 All webhooks have the same format, which is as follows:
 
