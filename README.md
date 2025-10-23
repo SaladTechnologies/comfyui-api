@@ -535,7 +535,7 @@ Webhooks are sent as [Standard Webhooks](https://www.standardwebhooks.com/), and
 
 ### prompt.complete
 
-The webhook type name for a completed prompt is `prompt.complete`. The webhook will have the following schema:
+The webhook type name for a completed prompt is `prompt.complete`. The webhook will have the same schema as the synchronous response, with the addition of the `type` and `timestamp` fields:
 
 ```json
 {
@@ -545,6 +545,7 @@ The webhook type name for a completed prompt is `prompt.complete`. The webhook w
   "images": ["base64-encoded-image-1", "base64-encoded-image-2"],
   "filenames": ["output-filename-1.png", "output-filename-2.png"],
   "prompt": {},
+  "stats":{}
 }
 ```
 
