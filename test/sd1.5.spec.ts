@@ -322,7 +322,7 @@ describe("Stable Diffusion 1.5", () => {
       let expected = 1;
       const webhook = await createWebhookListener(async (body, headers) => {
         expected--;
-        verifyWebhookV2(JSON.stringify(body), headers);
+        expect(verifyWebhookV2(JSON.stringify(body), headers)).toBeTruthy();
         expect(body.id).toEqual(reqId);
         expect(headers["webhook-id"]).toEqual(reqId);
         expect(body.filenames.length).toEqual(1);
@@ -341,7 +341,7 @@ describe("Stable Diffusion 1.5", () => {
       let expected = 1;
       const webhook = await createWebhookListener(async (body, headers) => {
         expected--;
-        verifyWebhookV2(JSON.stringify(body), headers);
+        expect(verifyWebhookV2(JSON.stringify(body), headers)).toBeTruthy();
         expect(body.id).toEqual(reqId);
         expect(headers["webhook-id"]).toEqual(reqId);
         expect(body.filenames.length).toEqual(4);
@@ -361,7 +361,7 @@ describe("Stable Diffusion 1.5", () => {
       let expected = 1;
       const webhook = await createWebhookListener(async (body, headers) => {
         expected--;
-        verifyWebhookV2(JSON.stringify(body), headers);
+        expect(verifyWebhookV2(JSON.stringify(body), headers)).toBeTruthy();
         expect(body.id).toEqual(reqId);
         expect(headers["webhook-id"]).toEqual(reqId);
         expect(body.filenames.length).toEqual(1);
@@ -382,7 +382,7 @@ describe("Stable Diffusion 1.5", () => {
       let expected = 1;
       const webhook = await createWebhookListener(async (body, headers) => {
         expected--;
-        verifyWebhookV2(JSON.stringify(body), headers);
+        expect(verifyWebhookV2(JSON.stringify(body), headers)).toBeTruthy();
         expect(body.id).toEqual(reqId);
         expect(headers["webhook-id"]).toEqual(reqId);
         expect(body.filenames.length).toEqual(1);
