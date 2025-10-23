@@ -27,8 +27,14 @@ A simple wrapper that facilitates using [ComfyUI](https://github.com/comfyanonym
     - [Additional Notes](#additional-notes)
   - [Using Synchronously](#using-synchronously)
   - [Using with Webhooks](#using-with-webhooks)
-    - [output.complete](#outputcomplete)
+    - [prompt.complete](#promptcomplete)
     - [prompt.failed](#promptfailed)
+    - [Validating Webhooks](#validating-webhooks)
+      - [Node.js Example](#nodejs-example)
+      - [Python Example](#python-example)
+    - [DEPRECATED: Legacy Webhook Behavior](#deprecated-legacy-webhook-behavior)
+      - [output.complete](#outputcomplete)
+      - [prompt.failed (legacy)](#promptfailed-legacy)
   - [System Events](#system-events)
     - [status](#status)
     - [progress](#progress)
@@ -39,6 +45,9 @@ A simple wrapper that facilitates using [ComfyUI](https://github.com/comfyanonym
     - [execution\_success](#execution_success)
     - [execution\_interrupted](#execution_interrupted)
     - [execution\_error](#execution_error)
+    - [file\_downloaded](#file_downloaded)
+    - [file\_uploaded](#file_uploaded)
+    - [file\_deleted](#file_deleted)
   - [Prebuilt Docker Images](#prebuilt-docker-images)
   - [Considerations for Running on SaladCloud](#considerations-for-running-on-saladcloud)
   - [Custom Workflows](#custom-workflows)
@@ -57,7 +66,7 @@ If you have your own ComfyUI dockerfile, you can add the comfyui-api server to i
 
 ```dockerfile
 # Change this to the version you want to use
-ARG api_version=1.12.0
+ARG api_version=1.13.0
 
 # Download the comfyui-api binary, and make it executable
 ADD https://github.com/SaladTechnologies/comfyui-api/releases/download/${api_version}/comfyui-api .
@@ -78,6 +87,7 @@ The server hosts swagger docs at `/docs`, which can be used to interact with the
 - **Stateless API**: The server is stateless, and can be scaled horizontally to handle more requests.
 - **Swagger Docs**: The server hosts swagger docs at `/docs`, which can be used to interact with the API.
 - **"Synchronous" Support**: The server will return base64-encoded images directly in the response, if no async behavior is requested.
+- **Async Support via Webhooks**: The server can send completed outputs to a webhook URL, allowing for asynchronous processing.
 - **Modular Storage Backends**: Completed outputs can be sent base64-encoded to a webhook, or uploaded to any s3-compatible storage, an http endpoint, a huggingface repo, or azure blob storage. All of these can be used to download input media as well. More storage backends can be added easily. Supports an optional LRU cache for downloaded models and files to keep local storage from overflowing.
 - **Warmup Workflow**: The server can be configured to run a warmup workflow on startup, which can be used to load and warm up models, and to ensure the server is ready to accept requests.
 - **Return Images In PNG (default), JPEG, or WebP**: The server can return images in PNG, JPEG, or WebP format, via a parameter in the API request. Most options supported by [sharp](https://sharp.pixelplumbing.com/) are supported.
@@ -116,7 +126,7 @@ Prompts are submitted to the server via the `POST /prompt` endpoint, which accep
       "class_type": "LoadImage"
     }
   },
-  "webhook": "https://example.com/webhook",
+  "webhook_v2": "https://example.com/webhook",
   "convert_output": {
     "format": "jpeg",
     "options": {
@@ -460,6 +470,7 @@ If you are using the azure blob storage functionality, make sure to set all of t
 | SYSTEM_WEBHOOK_EVENTS        | (not set)                  | Comma separated list of events to send to the webhook. Only selected events will be sent. If not set, no events will be sent. See [System Events](#system-events). You may also use the special value `all` to subscribe to all event types. |
 | SYSTEM_WEBHOOK_URL           | (not set)                  | Optionally receive via webhook the events that ComfyUI emits on websocket. This includes progress events.                                                                                                                                    |
 | WARMUP_PROMPT_FILE           | (not set)                  | Path to warmup prompt file (optional)                                                                                                                                                                                                        |
+| WEBHOOK_SECRET               | (empty string)             | If set, the server will sign webhook_v2 requests with this secret.                                                                                                                                                                           |
 | WORKFLOW_DIR                 | "/workflows"               | Directory for workflow files                                                                                                                                                                                                                 |
 
 ### Configuration Details
@@ -512,17 +523,112 @@ Remember to set these environment variables according to your specific deploymen
 
 ## Using Synchronously
 
-The default behavior of the API is to return an array of base64-encoded outputs in the response body. All that is needed to do this is to omit the `.webhook` and `.s3` field in the request body.
+The default behavior of the API is to return an array of base64-encoded outputs in the response body.
+All that is needed to do this is to omit webhook and upload fields from the request body.
 
 ## Using with Webhooks
 
 ComfyUI API sends two types of webhooks: System Events, which are emitted by ComfyUI itself, and Workflow Events, which are emitted by the API server. See [System Events](#system-events) for more information on System Events.
 
-If a user includes the `.webhook` field in a request to `/prompt` or any of the workflow endpoints, the server will send any completed outputs to the webhook URL provided in the request. It will also send a webhook if the request fails.
+If a user includes `.webhook_v2` field in a request to `/prompt` or any of the workflow endpoints, the server will send any completed outputs to the webhook URL provided in the request.
+It will also send a webhook if the request fails.
 
-For successful requests, every output from the workflow will be sent as individual webhook requests. That means if your request generates 4 images, you will receive 4 webhook requests, each with a single image.
+For successful requests including the `.webhook_v2` field, a single webhook request will be sent once the entire workflow has completed, containing all outputs.
+Webhooks are sent as [Standard Webhooks](https://www.standardwebhooks.com/), and can be validated using the `WEBHOOK_SECRET` environment variable and any standard webhook validation library such as `svix`.
 
-### output.complete
+### prompt.complete
+
+The webhook type name for a completed prompt is `prompt.complete`. The webhook will have the same schema as the synchronous response, with the addition of the `type` and `timestamp` fields:
+
+```json
+{
+  "type": "prompt.complete",
+  "timestamp": "2025-01-01T00:00:00Z",
+  "id": "request-id",
+  "images": ["base64-encoded-image-1", "base64-encoded-image-2"],
+  "filenames": ["output-filename-1.png", "output-filename-2.png"],
+  "prompt": {},
+  "stats":{}
+}
+```
+
+Note that if you include upload fields in your request, the `.images` field will contain the uploaded URLs instead of base64-encoded images.
+
+### prompt.failed
+
+The webhook type name for a failed request is `prompt.failed`. The webhook will have the following schema:
+
+```json
+{
+  "type": "prompt.failed",
+  "timestamp": "2025-01-01T00:00:00Z",
+  "error": "error-message",
+  "id": "request-id",
+  "prompt": {}
+}
+```
+
+### Validating Webhooks
+
+#### Node.js Example
+
+```shell
+npm install svix
+```
+
+```javascript
+const { Webhook } = require('svix')
+
+//Express.js middleware
+function validateWebhookSignature(req, res, next) {
+  const webhook = new Webhook(secret)
+  try {
+    webhook.verify(req.body, req.headers)
+    next()
+  } catch (error) {
+    console.error('Webhook verification failed:', error)
+    return res.status(401).send('Invalid signature')
+  }
+}
+```
+
+#### Python Example
+
+```shell
+pip install svix
+```
+
+```python
+from fastapi import FastAPI, Request, HTTPException
+from svix import Webhook
+from typing import Any, Dict
+
+async def validate_webhook(request: Request) -> Dict[str, Any]:
+    """
+    FastAPI Dependency to validate webhook signatures
+    """
+    try:
+        # Get the raw body
+        body = await request.body()
+
+        # Create webhook instance
+        webhook = Webhook(webhook_secret)
+
+        # Verify the webhook signature
+        payload = webhook.verify(body, dict(request.headers))
+
+        return payload
+    except Exception as e:
+        print(f"Webhook verification failed: {e}")
+        raise HTTPException(status_code=401, detail="Invalid webhook signature")
+```
+
+### DEPRECATED: Legacy Webhook Behavior
+
+**LEGACY BEHAVIOR**: For successful requests including the now-deprecated `.webhook` field, every output from the workflow will be sent as individual webhook requests. That means if your request generates 4 images, you will receive 4 webhook requests, each with a single image.
+These webhooks are not signed, so we recommend migrating to the new `.webhook_v2` field as soon as possible.
+
+#### output.complete
 
 The webhook event name for a completed output is `output.complete`. The webhook will have the following schema:
 
@@ -536,7 +642,7 @@ The webhook event name for a completed output is `output.complete`. The webhook 
 }
 ```
 
-### prompt.failed
+#### prompt.failed (legacy)
 
 The webhook event name for a failed request is `prompt.failed`. The webhook will have the following schema:
 
@@ -549,10 +655,9 @@ The webhook event name for a failed request is `prompt.failed`. The webhook will
 }
 ```
 
-
 ## System Events
 
-ComfyUI emits a number of events over websocket during the course of a workflow. These can be configured to be sent to a webhook using the `SYSTEM_WEBHOOK_URL` and `SYSTEM_WEBHOOK_EVENTS` environment variables. Additionally, any environment variable starting with `SYSTEM_META_` will be sent as metadata with the event.
+ComfyUI emits a number of events over websocket during the course of a workflow. These can be configured to be sent to a webhook using the `SYSTEM_WEBHOOK_URL` and `SYSTEM_WEBHOOK_EVENTS` environment variables. Additionally, any environment variable starting with `SYSTEM_META_` will be sent as metadata with the event. From version 1.13.0, these are signed, and can be validated using the `WEBHOOK_SECRET` environment variable and any standard webhook validation library such as `svix`. See [above](#validating-webhooks) for examples.
 
 All webhooks have the same format, which is as follows:
 
@@ -564,7 +669,7 @@ All webhooks have the same format, which is as follows:
 }
 ```
 
-When running on SaladCloud, `.metadata` will always include `salad_container_group_id` and `salad_machine_id`.
+When running on SaladCloud, `.metadata` will always include lowercase versions of the [Default Environment Variables](https://docs.salad.com/container-engine/how-to-guides/environment-variables#default-environment-variables).
 
 The following events are available:
 
@@ -577,10 +682,13 @@ The following events are available:
 - "execution_success"
 - "execution_interrupted"
 - "execution_error"
+- "file_downloaded"
+- "file_uploaded"
+- "file_deleted"
 
 The `SYSTEM_WEBHOOK_EVENTS` environment variable should be a comma-separated list of the events you want to send to the webhook. If not set, no events will be sent.
 
-The event name received in the webhook will be `comfy.${event_name}`, i.e. `comfy.progress`.
+The event name received in the webhook will be `comfy.${event_name}`, i.e. `comfy.progress`, or `storage.${event_name}` for file events.
 
 **Example**:
 
@@ -738,6 +846,57 @@ The following are the schemas for the event data that will be sent to the webhoo
     "current_outputs": []
   },
   "sid": "xyz789"
+}
+```
+
+### file_downloaded
+
+```jsonc
+{
+  // Where the file was downloaded from
+  "url": "https://example.com/model.safetensors",
+
+  // Local path where the file was saved
+  "local_path": "/opt/ComfyUI/models/model.safetensors",
+
+  // Size of the downloaded file in bytes
+  "size": 123456789,
+
+  // Duration of the download in seconds
+  "duration": 2.34
+}
+```
+
+### file_uploaded
+
+```jsonc
+{
+  // Local path of the file that was uploaded
+  "local_path": "/opt/ComfyUI/output/image.png",
+
+  // URL where the file was uploaded to
+  "url": "s3://my-bucket/images/image.png",
+
+  // Size of the uploaded file in bytes
+  "size": 123456,
+
+  // Duration of the upload in seconds
+  "duration": 0.56
+}
+```
+
+### file_deleted
+
+```jsonc
+{
+  // URL of the file that was deleted. Note there are edge cases where this may be unknown, and the value will be "unknown".
+  "url": "s3://my-bucket/models/old_model.safetensors",
+
+  // Local path of the file that was deleted
+  "local_path": "/opt/ComfyUI/models/old_model.safetensors",
+
+  // Size of the deleted file in bytes
+  "size": 987654321
 }
 ```
 

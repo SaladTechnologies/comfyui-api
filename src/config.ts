@@ -44,6 +44,7 @@ const {
   SYSTEM_WEBHOOK_EVENTS,
   SYSTEM_WEBHOOK_URL,
   WARMUP_PROMPT_FILE,
+  WEBHOOK_SECRET,
   WORKFLOW_DIR = "/workflows",
 } = process.env;
 
@@ -103,6 +104,9 @@ const allEvents = new Set([
   "execution_success",
   "execution_interrupted",
   "execution_error",
+  "file_downloaded",
+  "file_uploaded",
+  "file_deleted",
 ]);
 let systemWebhookEvents: string[] = [];
 if (SYSTEM_WEBHOOK_EVENTS === "all") {
@@ -478,15 +482,27 @@ const config = {
 
   /**
    * (optional) The Salad container group ID, specified by SALAD_CONTAINER_GROUP_ID env var.
-   * This is provided automatically in SaladCloud's environment.
+   * This is provided automatically in SaladCloud's environment. These values will be undefined if not running in SaladCloud.
    */
-  saladContainerGroupId: SALAD_CONTAINER_GROUP_ID,
-
-  /**
-   * (optional) The Salad machine ID, specified by SALAD_MACHINE_ID env var.
-   * This is provided automatically in SaladCloud's environment.
-   */
-  saladMachineId: SALAD_MACHINE_ID,
+  saladMetadata: {
+    organizationName: process.env.SALAD_ORGANIZATION_NAME,
+    organizationId: process.env.SALAD_ORGANIZATION_ID,
+    projectName: process.env.SALAD_PROJECT_NAME,
+    projectId: process.env.SALAD_PROJECT_ID,
+    containerGroupName: process.env.SALAD_CONTAINER_GROUP_NAME,
+    containerGroupId: SALAD_CONTAINER_GROUP_ID,
+    instanceId: process.env.SALAD_INSTANCE_ID,
+    machineId: SALAD_MACHINE_ID,
+  } as {
+    organizationName?: string;
+    organizationId?: string;
+    projectName?: string;
+    projectId?: string;
+    containerGroupName?: string;
+    containerGroupId?: string;
+    instanceId?: string;
+    machineId?: string;
+  } | null,
 
   /**
    * The list of samplers supported by ComfyUI, fetched from the ComfyUI codebase.
@@ -559,6 +575,11 @@ const config = {
   warmupPrompt,
 
   /**
+   * (Optional) The secret used to sign webhooks. Specified by WEBHOOK_SECRET env var.
+   */
+  webhookSecret: WEBHOOK_SECRET,
+
+  /**
    * The directory where custom workflows are stored, specified by WORKFLOW_DIR env var.
    * default: /workflows
    */
@@ -604,6 +625,13 @@ for (const varName of Object.keys(process.env)) {
     const key = varName.substring("SYSTEM_META_".length);
     config.systemMetaData[key] = process.env[varName] ?? "";
   }
+}
+
+if (
+  config.saladMetadata &&
+  Object.entries(config.saladMetadata).every(([_, v]) => v === undefined)
+) {
+  config.saladMetadata = null;
 }
 
 export default config;

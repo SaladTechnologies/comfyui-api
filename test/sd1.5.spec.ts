@@ -10,6 +10,7 @@ import {
   waitForServerToBeReady,
   s3,
   getAzureContainer,
+  verifyWebhookV2,
 } from "./test-utils";
 import sd15Txt2Img from "./workflows/sd1.5-txt2img.json";
 import sd15Img2Img from "./workflows/sd1.5-img2img.json";
@@ -309,6 +310,103 @@ describe("Stable Diffusion 1.5", () => {
         });
       });
       const { id: reqId } = await submitPrompt(sd15Img2Img, true);
+      while (expected > 0) {
+        await sleep(100);
+      }
+      await webhook.close();
+    });
+  });
+
+  describe("Return content in webhook - v2", () => {
+    it("text2image works with 1 image", async () => {
+      let expected = 1;
+      const webhook = await createWebhookListener(async (body, headers) => {
+        expected--;
+        expect(verifyWebhookV2(JSON.stringify(body), headers)).toBeTruthy();
+        expect(body.id).toEqual(reqId);
+        expect(headers["webhook-id"]).toEqual(reqId);
+        expect(body.filenames.length).toEqual(1);
+        expect(body.images.length).toEqual(1);
+        await checkImage(body.filenames[0], body.images[0]);
+        await checkImage(body.filenames[0], body.images[0]);
+      });
+      const { id: reqId } = await submitPrompt(sd15Txt2Img, true);
+      while (expected > 0) {
+        await sleep(100);
+      }
+      await webhook.close();
+    });
+
+    it("text2image works with multiple images", async () => {
+      let expected = 1;
+      const webhook = await createWebhookListener(async (body, headers) => {
+        expected--;
+        expect(verifyWebhookV2(JSON.stringify(body), headers)).toBeTruthy();
+        expect(body.id).toEqual(reqId);
+        expect(headers["webhook-id"]).toEqual(reqId);
+        expect(body.filenames.length).toEqual(4);
+        expect(body.images.length).toEqual(4);
+        for (let i = 0; i < body.filenames.length; i++) {
+          await checkImage(body.filenames[i], body.images[i]);
+        }
+      });
+      const { id: reqId } = await submitPrompt(sd15Txt2ImgBatch4, true);
+      while (expected > 0) {
+        await sleep(100);
+      }
+      await webhook.close();
+    });
+
+    it("image2image works with base64 encoded images", async () => {
+      let expected = 1;
+      const webhook = await createWebhookListener(async (body, headers) => {
+        expected--;
+        expect(verifyWebhookV2(JSON.stringify(body), headers)).toBeTruthy();
+        expect(body.id).toEqual(reqId);
+        expect(headers["webhook-id"]).toEqual(reqId);
+        expect(body.filenames.length).toEqual(1);
+        expect(body.images.length).toEqual(1);
+        await checkImage(body.filenames[0], body.images[0], {
+          width: 768,
+          height: 768,
+        });
+      });
+      const { id: reqId } = await submitPrompt(sd15Img2Img, true);
+      while (expected > 0) {
+        await sleep(100);
+      }
+      await webhook.close();
+    });
+
+    it("works with s3 uploads", async () => {
+      let expected = 1;
+      const webhook = await createWebhookListener(async (body, headers) => {
+        expected--;
+        expect(verifyWebhookV2(JSON.stringify(body), headers)).toBeTruthy();
+        expect(body.id).toEqual(reqId);
+        expect(headers["webhook-id"]).toEqual(reqId);
+        expect(body.filenames.length).toEqual(1);
+        expect(body.images.length).toEqual(1);
+        expect(
+          body.images[0].startsWith("s3://") && body.images[0].endsWith(".png")
+        ).toBeTruthy();
+        const s3Url = new URL(body.images[0]);
+        const bucket = s3Url.hostname;
+        const key = s3Url.pathname.slice(1);
+        const s3Resp = await s3.send(
+          new GetObjectCommand({
+            Bucket: bucket,
+            Key: key,
+          })
+        );
+        const imageBuffer = Buffer.from(
+          await s3Resp.Body!.transformToByteArray()
+        );
+        await checkImage(key, imageBuffer.toString("base64"));
+      });
+      const { id: reqId } = await submitPrompt(sd15Txt2Img, true, undefined, {
+        s3: { bucket: bucketName, prefix: "webhook-v2-test/", async: true },
+      });
       while (expected > 0) {
         await sleep(100);
       }
