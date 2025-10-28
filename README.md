@@ -9,6 +9,13 @@ A simple wrapper that facilitates using [ComfyUI](https://github.com/comfyanonym
   - [Stateless API](#stateless-api)
     - [Request Format](#request-format)
     - [Response Format](#response-format)
+    - [Example Usage](#example-usage)
+      - [Base64 Response](#base64-response)
+      - [Webhook Response with Base64 Images](#webhook-response-with-base64-images)
+      - [S3 Urls in Response](#s3-urls-in-response)
+      - [S3 Urls in Webhook Payload](#s3-urls-in-webhook-payload)
+      - [Azure Blob Urls in Response](#azure-blob-urls-in-response)
+      - [Azure Blob Urls in Webhook Payload](#azure-blob-urls-in-webhook-payload)
   - [Model Manifest](#model-manifest)
   - [Downloading Behavior](#downloading-behavior)
   - [LRU Caching](#lru-caching)
@@ -183,6 +190,348 @@ For synchronous requests (i.e. no webhook or s3.async is false), the server will
 ```
 
 If you requested image conversion, the images will be in the requested format (e.g. JPEG or WebP) instead of PNG.
+
+### Example Usage
+
+#### Base64 Response
+
+**Request:**
+
+```json
+{
+  "prompt": { ... }
+}
+```
+
+**Response:**
+
+```json
+{
+  "id": "generated-uuid",
+  "prompt": { ... },
+  "images": ["base64-encoded-image-1", "base64-encoded-image-2"],
+  "filenames": ["generated-uuid_ComfyUI_0.png", "generated-uuid_ComfyUI_1.png"],
+  "stats": {
+    "comfy_execution": {
+      "total": {
+        "start": 1700000000000,
+        "end": 1700000005000,
+        "duration": 5000
+      },
+      "nodes": {
+        "3": {
+          "start": 1700000000000
+        },
+        ...
+      }
+    },
+    "preprocess_time": 1200,
+    "upload_time": 1,
+    "total_time": 6205
+  }
+}
+```
+
+#### Webhook Response with Base64 Images
+
+**Request:**
+
+```json
+{
+  "prompt": { ... },
+  "webhook_v2": "https://example.com/webhook"
+}
+```
+
+**HTTP Response: 202 Accepted**
+
+```json
+{
+  "id": "generated-uuid",
+  "status": "ok",
+  "webhook_v2": "https://example.com/webhook",
+  "prompt": { ... }
+}
+```
+
+**Webhook Payload**
+
+```json
+{
+  "type": "prompt.complete",
+  "id": "generated-uuid",
+  "prompt": { ... },
+  "webhook_v2": "https://example.com/webhook",
+  "images": [
+    "base64-encoded-image-1",
+    "base64-encoded-image-2"
+  ],
+  "filenames": [
+    "output-filename-1.png",
+    "output-filename-2.png"
+  ],
+  "stats": {
+    "comfy_execution": {
+      "total": {
+        "start": 1700000000000,
+        "end": 1700000005000,
+        "duration": 5000
+      },
+      "nodes": {
+        "3": {
+          "start": 1700000000000
+        },
+        ...
+      }
+    },
+    "preprocess_time": 1200,
+    "upload_time": 1,
+    "total_time": 6205
+  }
+}
+```
+
+#### S3 Urls in Response
+
+**Request:**
+
+```json
+{
+  "prompt": { ... },
+  "s3": {
+    "bucket": "my-bucket",
+    "prefix": "outputs/",
+    "async": false
+  }
+}
+```
+
+**Response:**
+
+```json
+{
+  "id": "generated-uuid",
+  "prompt": { ... },
+  "images": [
+    "s3://my-bucket/outputs/generated-uuid_ComfyUI_0.png",
+    "s3://my-bucket/outputs/generated-uuid_ComfyUI_1.png"
+  ],
+  "filenames": [
+    "generated-uuid_ComfyUI_0.png",
+    "generated-uuid_ComfyUI_1.png"
+  ],
+  "stats": {
+    "comfy_execution": {
+      "total": {
+        "start": 1700000000000,
+        "end": 1700000005000,
+        "duration": 5000
+      },
+      "nodes": {
+        "3": {
+          "start": 1700000000000
+        },
+        ...
+      }
+    },
+    "preprocess_time": 1200,
+    "upload_time": 300,
+    "total_time": 6505
+  }
+}
+```
+
+#### S3 Urls in Webhook Payload
+
+**Request:**
+
+```json
+{
+  "prompt": { ... },
+  "s3": {
+    "bucket": "my-bucket",
+    "prefix": "outputs/"
+  },
+  "webhook_v2": "https://example.com/webhook"
+}
+```
+
+**HTTP Response: 202 Accepted**
+
+```json
+{
+  "id": "generated-uuid",
+  "status": "ok",
+  "webhook_v2": "https://example.com/webhook",
+  "s3": {
+    "bucket": "my-bucket",
+    "prefix": "outputs/",
+  },
+  "prompt": { ... }
+}
+```
+
+**Webhook Payload**
+
+```json
+{
+  "type": "prompt.complete",
+  "id": "generated-uuid",
+  "prompt": { ... },
+  "webhook_v2": "https://example.com/webhook",
+  "s3": {
+    "bucket": "my-bucket",
+    "prefix": "outputs/"
+  },
+  "images": [
+    "s3://my-bucket/outputs/generated-uuid_ComfyUI_0.png",
+    "s3://my-bucket/outputs/generated-uuid_ComfyUI_1.png"
+  ],
+  "filenames": [
+    "generated-uuid_ComfyUI_0.png",
+    "generated-uuid_ComfyUI_1.png"
+  ],
+  "stats": {
+    "comfy_execution": {
+      "total": {
+        "start": 1700000000000,
+        "end": 1700000005000,
+        "duration": 5000
+      },
+      "nodes": {
+        "3": {
+          "start": 1700000000000
+        },
+        ...
+      }
+    },
+    "preprocess_time": 1200,
+    "upload_time": 300,
+    "total_time": 6505
+  }
+}
+```
+
+#### Azure Blob Urls in Response
+
+**Request:**
+
+```json
+{
+  "prompt": { ... },
+  "azure_blob_upload": {
+    "container": "my-container",
+    "blob_prefix": "outputs/",
+    "async": false
+  }
+}
+```
+
+**Response:**
+
+```json
+{
+  "id": "generated-uuid",
+  "prompt": { ... },
+  "images": [
+    "https://<your-account>.blob.core.windows.net/my-container/outputs/generated-uuid_ComfyUI_0.png",
+    "https://<your-account>.blob.core.windows.net/my-container/outputs/generated-uuid_ComfyUI_1.png"
+  ],
+  "filenames": [
+    "generated-uuid_ComfyUI_0.png",
+    "generated-uuid_ComfyUI_1.png"
+  ],
+  "stats": {
+    "comfy_execution": {
+      "total": {
+        "start": 1700000000000,
+        "end": 1700000005000,
+        "duration": 5000
+      },
+      "nodes": {
+        "3": {
+          "start": 1700000000000
+        },
+        ...
+      }
+    },
+    "preprocess_time": 1200,
+    "upload_time": 300,
+    "total_time": 6505
+  }
+}
+```
+
+#### Azure Blob Urls in Webhook Payload
+
+**Request:**
+
+```json
+{
+  "prompt": { ... },
+  "azure_blob_upload": {
+    "container": "my-container",
+    "blob_prefix": "outputs/"
+  },
+  "webhook_v2": "https://example.com/webhook"
+}
+```
+
+**HTTP Response: 202 Accepted**
+
+```json
+{
+  "id": "generated-uuid",
+  "status": "ok",
+  "webhook_v2": "https://example.com/webhook",
+  "azure_blob_upload": {
+    "container": "my-container",
+    "blob_prefix": "outputs/",
+  },
+  "prompt": { ... }
+}
+```
+
+**Webhook Payload**
+
+```json
+{
+  "type": "prompt.complete",
+  "id": "generated-uuid",
+  "prompt": { ... },
+  "webhook_v2": "https://example.com/webhook",
+  "azure_blob_upload": {
+    "container": "my-container",
+    "blob_prefix": "outputs/"
+  },
+  "images": [
+    "https://<your-account>.blob.core.windows.net/my-container/outputs/generated-uuid_ComfyUI_0.png",
+    "https://<your-account>.blob.core.windows.net/my-container/outputs/generated-uuid_ComfyUI_1.png"
+  ],
+  "filenames": [
+    "generated-uuid_ComfyUI_0.png",
+    "generated-uuid_ComfyUI_1.png"
+  ],
+  "stats": {
+    "comfy_execution": {
+      "total": {
+        "start": 1700000000000,
+        "end": 1700000005000,
+        "duration": 5000
+      },
+      "nodes": {
+        "3": {
+          "start": 1700000000000
+        },
+        ...
+      }
+    },
+    "preprocess_time": 1200,
+    "upload_time": 300,
+    "total_time": 6505
+  }
+}
+```
 
 ## Model Manifest
 
