@@ -4,7 +4,7 @@ import { ComfyNode, ComfyPrompt } from "./types";
 import config from "./config";
 import getStorageManager from "./remote-storage-manager";
 import { isValidUrl } from "./utils";
-import { processImageOrVideo } from "./image-tools";
+import { processInputMedia } from "./image-tools";
 import { z } from "zod";
 
 const configPath = path.join(config.comfyDir, "models", "configs");
@@ -302,7 +302,7 @@ export async function processLoadImageNode(
   node: ComfyNode,
   log: FastifyBaseLogger
 ): Promise<ComfyNode> {
-  node.inputs.image = await processImageOrVideo(node.inputs.image, log);
+  node.inputs.image = await processInputMedia(node.inputs.image, log);
   return node;
 }
 
@@ -313,7 +313,7 @@ export async function processLoadDirectoryOfImagesNode(
 ): Promise<ComfyNode> {
   const processPromises: Promise<string>[] = [];
   for (const imageInput of node.inputs.directory) {
-    processPromises.push(processImageOrVideo(imageInput, log, jobId));
+    processPromises.push(processInputMedia(imageInput, log, jobId));
   }
   await Promise.all(processPromises);
   node.inputs.directory = jobId;
@@ -326,19 +326,30 @@ export async function processLoadVideoNode(
 ): Promise<ComfyNode> {
   const { video, file } = node.inputs;
   if (video) {
-    node.inputs.video = await processImageOrVideo(video, log);
+    node.inputs.video = await processInputMedia(video, log);
   }
   if (file) {
-    node.inputs.file = await processImageOrVideo(file, log);
+    node.inputs.file = await processInputMedia(file, log);
   }
   return node;
 }
 
-const loadDirectoryOfImagesNodes = new Set<string>([
+export async function processLoadAudioNode(
+  node: ComfyNode,
+  log: FastifyBaseLogger
+): Promise<ComfyNode> {
+  const { audio } = node.inputs;
+  if (audio) {
+    node.inputs.audio = await processInputMedia(audio, log);
+  }
+  return node;
+}
+
+const loadDirectoryOfImagesNodeTypes = new Set<string>([
   "VHS_LoadImages",
   "VHS_LoadImagesPath",
 ]);
-const loadVideoNodes = new Set<string>([
+const loadVideoNodeTypes = new Set<string>([
   "LoadVideo",
   "VHS_LoadVideo",
   "VHS_LoadVideoPath",
@@ -364,6 +375,8 @@ const modelLoadingNodeTypes = new Set([
   "GLIGENLoader",
   "UpscaleModelLoader",
 ]);
+
+const audioLoadingNodeTypes = new Set(["LoadAudio"]);
 
 export type NodeProcessError = Error & {
   code?: number;
@@ -415,7 +428,7 @@ export async function preprocessNodes(
         throw err;
       }
     } else if (
-      loadDirectoryOfImagesNodes.has(node.class_type) &&
+      loadDirectoryOfImagesNodeTypes.has(node.class_type) &&
       Array.isArray(node.inputs.directory) &&
       node.inputs.directory.every((x: any) => typeof x === "string")
     ) {
@@ -438,7 +451,7 @@ export async function preprocessNodes(
         err.location = `prompt.${nodeId}.inputs.directory`;
         throw err;
       }
-    } else if (loadVideoNodes.has(node.class_type)) {
+    } else if (loadVideoNodeTypes.has(node.class_type)) {
       /**
        * If the node is for loading a video, the user will have provided
        * the video as base64 encoded data, or as a url. we need to download
@@ -452,6 +465,22 @@ export async function preprocessNodes(
         ) as NodeProcessError;
         err.code = 400;
         err.location = `prompt.${nodeId}.inputs.video`;
+        throw err;
+      }
+    } else if (audioLoadingNodeTypes.has(node.class_type)) {
+      /**
+       * If the node is for loading audio, the user will have provided
+       * the audio as base64 encoded data, or as a url. we need to download
+       * the audio if it's a url, and save it to a local file.
+       */
+      try {
+        Object.assign(node, await processLoadAudioNode(node, log));
+      } catch (e: any) {
+        const err = new Error(
+          `Failed to download audio for node ${nodeId}: ${e.message}`
+        ) as NodeProcessError;
+        err.code = 400;
+        err.location = `prompt.${nodeId}.inputs.audio`;
         throw err;
       }
     } else if (modelLoadingNodeTypes.has(node.class_type)) {

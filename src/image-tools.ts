@@ -8,7 +8,7 @@ import sharp from "sharp";
 import { OutputConversionOptions } from "./types";
 import { isValidUrl } from "./utils";
 
-export async function processImageOrVideo(
+export async function processInputMedia(
   fileInput: string,
   log: FastifyBaseLogger,
   dirWithinInputDir?: string
