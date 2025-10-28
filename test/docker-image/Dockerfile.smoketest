@@ -1,4 +1,4 @@
-FROM ghcr.io/saladtechnologies/comfyui-api:comfy0.3.66-torch2.8.0-cuda12.6-runtime
+FROM ghcr.io/saladtechnologies/comfyui-api:comfy0.3.67-torch2.8.0-cuda12.6-runtime
 
 COPY test/docker-image/dreamshaper_8.safetensors $MODEL_DIR/checkpoints/dreamshaper_8.safetensors
 
