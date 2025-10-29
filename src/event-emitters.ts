@@ -27,10 +27,14 @@ export async function sendWebhook(
   };
   const bodyString = JSON.stringify(body);
   if (version === 2) {
+    const webhookId = body.id;
+    const timestamp = Math.round(Date.now() / 1000).toString();
+    const signedContent = `${webhookId}.${timestamp}.${bodyString}`;
+    const signature = signWebhookPayload(signedContent);
     Object.assign(headers, {
-      "webhook-id": body.id,
-      "webhook-timestamp": Math.round(Date.now() / 1000).toString(),
-      "webhook-signature": signWebhookPayload(bodyString),
+      "webhook-id": webhookId,
+      "webhook-timestamp": timestamp,
+      "webhook-signature": `v1,${signature}`,
     });
   }
   try {
