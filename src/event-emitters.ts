@@ -34,7 +34,7 @@ export async function sendWebhook(
     });
   }
   try {
-    fetchWithRetries(
+    await fetchWithRetries(
       url,
       {
         method: "POST",
