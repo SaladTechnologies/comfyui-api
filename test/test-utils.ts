@@ -165,7 +165,7 @@ export function verifyWebhookV2(
     return false;
   }
   try {
-    webhook.verify(body, headers);
+    console.log(webhook.verify(body, headers));
     return true;
   } catch (e) {
     return false;
