@@ -11,9 +11,9 @@ import { WebhookHandlers } from "./types";
 
 export function signWebhookPayload(payload: string): string {
   return crypto
-    .createHmac("sha256", config.webhookSecret ?? "")
+    .createHmac("sha256", Buffer.from(config.webhookSecret ?? "", "base64"))
     .update(payload)
-    .digest("hex");
+    .digest("base64");
 }
 
 export async function sendWebhook(
