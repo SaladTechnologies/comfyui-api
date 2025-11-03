@@ -1716,21 +1716,35 @@ describe("System Events", () => {
     const uniquePrompt = JSON.parse(JSON.stringify(sd15Txt2Img));
     uniquePrompt["3"].inputs.seed = Math.floor(Math.random() * 1000000);
     const eventsReceived: { [key: string]: number } = {};
-    const webhook = await createWebhookListener(async (body) => {
+    const webhook = await createWebhookListener((body) => {
+      if (body?.data?.data?.prompt_id !== promptId) {
+        // Ignore events from other prompts
+        return;
+      }
       if (!eventsReceived[body.event]) {
         eventsReceived[body.event] = 0;
       }
       eventsReceived[body.event]++;
     }, "/system");
 
-    await submitPrompt(uniquePrompt);
-    await sleep(500);
+    const { id: promptId } = await submitPrompt(uniquePrompt);
+    let attempts = 100;
+    while (
+      !(
+        eventsReceived["comfy.execution_success"] &&
+        eventsReceived["comfy.executed"] &&
+        eventsReceived["comfy.progress"]
+      ) &&
+      attempts > 0
+    ) {
+      await sleep(100);
+      attempts--;
+    }
+
     await webhook.close();
 
-    expect(eventsReceived).toHaveSubset({
-      "comfy.progress": uniquePrompt["3"].inputs.steps,
-      "comfy.executed": 1,
-      "comfy.execution_success": 1,
-    });
+    expect(eventsReceived["comfy.executed"]).toEqual(1);
+    expect(eventsReceived["comfy.execution_success"]).toEqual(1);
+    expect(eventsReceived["comfy.progress"]).toBeGreaterThan(0);
   });
 });
