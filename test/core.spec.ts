@@ -1727,8 +1727,6 @@ describe("System Events", () => {
     await sleep(500);
     await webhook.close();
 
-    console.log(eventsReceived);
-
     expect(eventsReceived).toHaveSubset({
       "comfy.progress": uniquePrompt["3"].inputs.steps,
       "comfy.executed": 1,
