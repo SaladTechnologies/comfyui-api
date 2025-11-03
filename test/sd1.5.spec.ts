@@ -317,15 +317,18 @@ describe("Stable Diffusion 1.5", () => {
     });
   });
 
-  describe.only("Return content in webhook - v2", () => {
-    it.only("text2image works with 1 image", async () => {
+  describe("Return content in webhook - v2", () => {
+    const submitPromptWebhookV2 = async (prompt: any, upload?: any) => {
+      return submitPrompt(prompt, false, undefined, upload, true);
+    };
+    it("text2image works with 1 image", async () => {
       let expected = 1;
       const responses: any[] = [];
       const webhook = await createWebhookListener(async (body, headers) => {
         responses.push({ body, headers });
         expected--;
       });
-      const { id: reqId } = await submitPrompt(sd15Txt2Img, true);
+      const { id: reqId } = await submitPromptWebhookV2(sd15Txt2Img);
       while (expected > 0) {
         await sleep(100);
       }
@@ -349,7 +352,7 @@ describe("Stable Diffusion 1.5", () => {
         responses.push({ body, headers });
         expected--;
       });
-      const { id: reqId } = await submitPrompt(sd15Txt2ImgBatch4, true);
+      const { id: reqId } = await submitPromptWebhookV2(sd15Txt2ImgBatch4);
       while (expected > 0) {
         await sleep(100);
       }
@@ -375,7 +378,7 @@ describe("Stable Diffusion 1.5", () => {
         responses.push({ body, headers });
         expected--;
       });
-      const { id: reqId } = await submitPrompt(sd15Img2Img, true);
+      const { id: reqId } = await submitPromptWebhookV2(sd15Img2Img);
       while (expected > 0) {
         await sleep(100);
       }
@@ -402,7 +405,10 @@ describe("Stable Diffusion 1.5", () => {
         expected--;
         responses.push({ body, headers });
       });
-      const { id: reqId } = await submitPrompt(sd15Img2Img, true);
+      const { id: reqId } = await submitPromptWebhookV2(sd15Img2Img, {
+        bucket: bucketName,
+        prefix: "sd15-img2img/",
+      });
       while (expected > 0) {
         await sleep(100);
       }
@@ -431,7 +437,10 @@ describe("Stable Diffusion 1.5", () => {
         const imageBuffer = Buffer.from(
           await s3Resp.Body!.transformToByteArray()
         );
-        await checkImage(key, imageBuffer.toString("base64"));
+        await checkImage(key, imageBuffer.toString("base64"), {
+          width: 768,
+          height: 768,
+        });
       }
     });
   });
