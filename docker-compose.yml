@@ -15,7 +15,7 @@ services:
       - "3000:3000"
       - "8188:8188"
     environment:
-      # LOG_LEVEL: "debug"
+      LOG_LEVEL: "debug"
       AWS_ENDPOINT_URL: "http://localstack:4566"
       AWS_ACCESS_KEY_ID: "test"
       AWS_SECRET_ACCESS_KEY: "test"
@@ -23,12 +23,10 @@ services:
       MANIFEST: "/app/manifest.yml"
       STARTUP_CHECK_MAX_TRIES: "30"
       HF_TOKEN: ${HF_TOKEN}
-      # Azurite configuration
-      # AZURE_STORAGE_ACCOUNT: "devstoreaccount1"
       AZURE_STORAGE_CONNECTION_STRING: "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;"
     #   ALWAYS_RESTART_COMFYUI: "true"
-    #   SYSTEM_WEBHOOK_URL: "http://host.docker.internal:1234/system"
-    #   SYSTEM_WEBHOOK_EVENTS: all
+      SYSTEM_WEBHOOK_URL: "http://host.docker.internal:1234/system"
+      SYSTEM_WEBHOOK_EVENTS: all
       WEBHOOK_SECRET: testsecret
     deploy:
       resources:

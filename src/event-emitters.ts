@@ -67,6 +67,9 @@ export async function sendSystemWebhook(
     !config.systemWebhookEvents.includes(eventName) ||
     !config.systemWebhook
   ) {
+    log.debug(
+      `System webhook for event ${eventName} is not configured to be sent.`
+    );
     return;
   }
 
@@ -105,6 +108,12 @@ export function getConfiguredWebhookHandlers(
       };
     }
   }
+
+  log.debug(
+    `Configured webhook handlers for events: ${Object.keys(handlers).join(
+      ", "
+    )}`
+  );
 
   return handlers as WebhookHandlers;
 }
