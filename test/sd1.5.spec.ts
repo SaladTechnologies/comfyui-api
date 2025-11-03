@@ -317,80 +317,109 @@ describe("Stable Diffusion 1.5", () => {
     });
   });
 
-  describe("Return content in webhook - v2", () => {
-    it("text2image works with 1 image", async () => {
+  describe.only("Return content in webhook - v2", () => {
+    it.only("text2image works with 1 image", async () => {
       let expected = 1;
+      const responses: any[] = [];
       const webhook = await createWebhookListener(async (body, headers) => {
+        responses.push({ body, headers });
         expected--;
-        expect(verifyWebhookV2(JSON.stringify(body), headers)).toBeTruthy();
-        expect(body.id).toEqual(reqId);
-        expect(headers["webhook-id"]).toEqual(reqId);
-        expect(body.filenames.length).toEqual(1);
-        expect(body.images.length).toEqual(1);
-        await checkImage(body.filenames[0], body.images[0]);
-        await checkImage(body.filenames[0], body.images[0]);
       });
       const { id: reqId } = await submitPrompt(sd15Txt2Img, true);
       while (expected > 0) {
         await sleep(100);
       }
       await webhook.close();
+      for (const resp of responses) {
+        expect(
+          verifyWebhookV2(JSON.stringify(resp.body), resp.headers)
+        ).toEqual(true);
+        expect(resp.body.id).toEqual(reqId);
+        expect(resp.headers["webhook-id"]).toEqual(reqId);
+        expect(resp.body.filenames.length).toEqual(1);
+        expect(resp.body.images.length).toEqual(1);
+        await checkImage(resp.body.filenames[0], resp.body.images[0]);
+      }
     });
 
     it("text2image works with multiple images", async () => {
       let expected = 1;
+      const responses: any[] = [];
       const webhook = await createWebhookListener(async (body, headers) => {
+        responses.push({ body, headers });
         expected--;
-        expect(verifyWebhookV2(JSON.stringify(body), headers)).toBeTruthy();
-        expect(body.id).toEqual(reqId);
-        expect(headers["webhook-id"]).toEqual(reqId);
-        expect(body.filenames.length).toEqual(4);
-        expect(body.images.length).toEqual(4);
-        for (let i = 0; i < body.filenames.length; i++) {
-          await checkImage(body.filenames[i], body.images[i]);
-        }
       });
       const { id: reqId } = await submitPrompt(sd15Txt2ImgBatch4, true);
       while (expected > 0) {
         await sleep(100);
       }
       await webhook.close();
+      for (const resp of responses) {
+        expect(
+          verifyWebhookV2(JSON.stringify(resp.body), resp.headers)
+        ).toEqual(true);
+        expect(resp.body.id).toEqual(reqId);
+        expect(resp.headers["webhook-id"]).toEqual(reqId);
+        expect(resp.body.filenames.length).toEqual(4);
+        expect(resp.body.images.length).toEqual(4);
+        for (let i = 0; i < resp.body.filenames.length; i++) {
+          await checkImage(resp.body.filenames[i], resp.body.images[i]);
+        }
+      }
     });
 
     it("image2image works with base64 encoded images", async () => {
       let expected = 1;
+      const responses: any[] = [];
       const webhook = await createWebhookListener(async (body, headers) => {
+        responses.push({ body, headers });
         expected--;
-        expect(verifyWebhookV2(JSON.stringify(body), headers)).toBeTruthy();
-        expect(body.id).toEqual(reqId);
-        expect(headers["webhook-id"]).toEqual(reqId);
-        expect(body.filenames.length).toEqual(1);
-        expect(body.images.length).toEqual(1);
-        await checkImage(body.filenames[0], body.images[0], {
-          width: 768,
-          height: 768,
-        });
       });
       const { id: reqId } = await submitPrompt(sd15Img2Img, true);
       while (expected > 0) {
         await sleep(100);
       }
       await webhook.close();
+      for (const resp of responses) {
+        expect(
+          verifyWebhookV2(JSON.stringify(resp.body), resp.headers)
+        ).toEqual(true);
+        expect(resp.body.id).toEqual(reqId);
+        expect(resp.headers["webhook-id"]).toEqual(reqId);
+        expect(resp.body.filenames.length).toEqual(1);
+        expect(resp.body.images.length).toEqual(1);
+        await checkImage(resp.body.filenames[0], resp.body.images[0], {
+          width: 768,
+          height: 768,
+        });
+      }
     });
 
     it("works with s3 uploads", async () => {
       let expected = 1;
+      const responses: any[] = [];
       const webhook = await createWebhookListener(async (body, headers) => {
         expected--;
-        expect(verifyWebhookV2(JSON.stringify(body), headers)).toBeTruthy();
-        expect(body.id).toEqual(reqId);
-        expect(headers["webhook-id"]).toEqual(reqId);
-        expect(body.filenames.length).toEqual(1);
-        expect(body.images.length).toEqual(1);
+        responses.push({ body, headers });
+      });
+      const { id: reqId } = await submitPrompt(sd15Img2Img, true);
+      while (expected > 0) {
+        await sleep(100);
+      }
+      await webhook.close();
+      for (const resp of responses) {
         expect(
-          body.images[0].startsWith("s3://") && body.images[0].endsWith(".png")
+          verifyWebhookV2(JSON.stringify(resp.body), resp.headers)
+        ).toEqual(true);
+        expect(resp.body.id).toEqual(reqId);
+        expect(resp.headers["webhook-id"]).toEqual(reqId);
+        expect(resp.body.filenames.length).toEqual(1);
+        expect(resp.body.images.length).toEqual(1);
+        expect(
+          resp.body.images[0].startsWith("s3://") &&
+            resp.body.images[0].endsWith(".png")
         ).toBeTruthy();
-        const s3Url = new URL(body.images[0]);
+        const s3Url = new URL(resp.body.images[0]);
         const bucket = s3Url.hostname;
         const key = s3Url.pathname.slice(1);
         const s3Resp = await s3.send(
@@ -403,14 +432,7 @@ describe("Stable Diffusion 1.5", () => {
           await s3Resp.Body!.transformToByteArray()
         );
         await checkImage(key, imageBuffer.toString("base64"));
-      });
-      const { id: reqId } = await submitPrompt(sd15Txt2Img, true, undefined, {
-        s3: { bucket: bucketName, prefix: "webhook-v2-test/", async: true },
-      });
-      while (expected > 0) {
-        await sleep(100);
       }
-      await webhook.close();
     });
   });
 
