@@ -70,6 +70,14 @@ export async function sendSystemWebhook(
     return;
   }
 
+  const eventLabel = [
+    "file_downloaded",
+    "file_uploaded",
+    "file_deleted",
+  ].includes(eventName)
+    ? "storage"
+    : "comfy";
+
   const metadata: Record<string, string> = { ...config.systemMetaData };
   if (config.saladMetadata) {
     for (const [key, value] of Object.entries(config.saladMetadata)) {
@@ -78,7 +86,7 @@ export async function sendSystemWebhook(
       }
     }
   }
-  const payload = { event: eventName, data, metadata };
+  const payload = { event: `${eventLabel}.${eventName}`, data, metadata };
   await sendWebhook(config.systemWebhook, payload, log, 2);
 }
 
@@ -92,14 +100,8 @@ export function getConfiguredWebhookHandlers(
       const handlerName = `on${snakeCaseToUpperCamelCase(eventName)}`;
       handlers[handlerName] = (data: any) => {
         log.debug(`Sending system webhook for event: ${eventName}`);
-        const eventLabel = [
-          "file_downloaded",
-          "file_uploaded",
-          "file_deleted",
-        ].includes(eventName)
-          ? "storage"
-          : "comfy";
-        sendSystemWebhook(`${eventLabel}.${eventName}`, data, log);
+
+        sendSystemWebhook(eventName, data, log);
       };
     }
   }
