@@ -27,7 +27,7 @@ export async function sendWebhook(
   };
   const bodyString = JSON.stringify(body);
   if (version === 2) {
-    const webhookId = body.id;
+    const webhookId = body.id || crypto.randomUUID();
     const timestamp = Math.round(Date.now() / 1000).toString();
     const signedContent = `${webhookId}.${timestamp}.${bodyString}`;
     const signature = signWebhookPayload(signedContent);
