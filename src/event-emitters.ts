@@ -11,9 +11,9 @@ import { WebhookHandlers } from "./types";
 
 export function signWebhookPayload(payload: string): string {
   return crypto
-    .createHmac("sha256", config.webhookSecret ?? "")
+    .createHmac("sha256", Buffer.from(config.webhookSecret ?? "", "base64"))
     .update(payload)
-    .digest("hex");
+    .digest("base64");
 }
 
 export async function sendWebhook(
@@ -27,7 +27,7 @@ export async function sendWebhook(
   };
   const bodyString = JSON.stringify(body);
   if (version === 2) {
-    const webhookId = body.id;
+    const webhookId = body.id || crypto.randomUUID();
     const timestamp = Math.round(Date.now() / 1000).toString();
     const signedContent = `${webhookId}.${timestamp}.${bodyString}`;
     const signature = signWebhookPayload(signedContent);
@@ -67,8 +67,19 @@ export async function sendSystemWebhook(
     !config.systemWebhookEvents.includes(eventName) ||
     !config.systemWebhook
   ) {
+    log.debug(
+      `System webhook for event ${eventName} is not configured to be sent.`
+    );
     return;
   }
+
+  const eventLabel = [
+    "file_downloaded",
+    "file_uploaded",
+    "file_deleted",
+  ].includes(eventName)
+    ? "storage"
+    : "comfy";
 
   const metadata: Record<string, string> = { ...config.systemMetaData };
   if (config.saladMetadata) {
@@ -78,7 +89,7 @@ export async function sendSystemWebhook(
       }
     }
   }
-  const payload = { event: eventName, data, metadata };
+  const payload = { event: `${eventLabel}.${eventName}`, data, metadata };
   await sendWebhook(config.systemWebhook, payload, log, 2);
 }
 
@@ -92,17 +103,17 @@ export function getConfiguredWebhookHandlers(
       const handlerName = `on${snakeCaseToUpperCamelCase(eventName)}`;
       handlers[handlerName] = (data: any) => {
         log.debug(`Sending system webhook for event: ${eventName}`);
-        const eventLabel = [
-          "file_downloaded",
-          "file_uploaded",
-          "file_deleted",
-        ].includes(eventName)
-          ? "storage"
-          : "comfy";
-        sendSystemWebhook(`${eventLabel}.${eventName}`, data, log);
+
+        sendSystemWebhook(eventName, data, log);
       };
     }
   }
+
+  log.debug(
+    `Configured webhook handlers for events: ${Object.keys(handlers).join(
+      ", "
+    )}`
+  );
 
   return handlers as WebhookHandlers;
 }
