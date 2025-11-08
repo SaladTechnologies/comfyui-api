@@ -2,6 +2,7 @@ import crypto from "crypto";
 import config from "./config";
 import { FastifyBaseLogger } from "fastify";
 import { Agent } from "undici";
+import { getProxyDispatcher } from "./proxy-dispatcher";
 import {
   fetchWithRetries,
   snakeCaseToUpperCamelCase,
@@ -44,11 +45,7 @@ export async function sendWebhook(
         method: "POST",
         headers,
         body: bodyString,
-        dispatcher: new Agent({
-          headersTimeout: 0,
-          bodyTimeout: 0,
-          connectTimeout: 0,
-        }),
+        dispatcher: getProxyDispatcher(),
       },
       config.promptWebhookRetries,
       log

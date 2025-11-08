@@ -23,7 +23,8 @@ import {
 import path from "path";
 import fsPromises from "fs/promises";
 import WebSocket, { MessageEvent } from "ws";
-import { fetch, Agent } from "undici";
+import { fetch } from "undici";
+import { getProxyDispatcher } from "./proxy-dispatcher";
 import { z } from "zod";
 
 const commandExecutor = new CommandExecutor();
@@ -45,7 +46,7 @@ export function shutdownComfyUI() {
 }
 
 export async function pingComfyUI(): Promise<void> {
-  const res = await fetch(config.comfyURL);
+  const res = await fetch(config.comfyURL, { dispatcher: getProxyDispatcher() });
   if (!res.ok) {
     throw new Error(`Failed to ping Comfy UI: ${await res.text()}`);
   }
@@ -82,11 +83,7 @@ export async function warmupComfyUI(): Promise<void> {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ prompt: config.warmupPrompt }),
-      dispatcher: new Agent({
-        headersTimeout: 0,
-        bodyTimeout: 0,
-        connectTimeout: 0,
-      }),
+      dispatcher: getProxyDispatcher(),
     });
     if (!resp.ok) {
       throw new Error(`Failed to warmup Comfy UI: ${await resp.text()}`);
@@ -101,6 +98,7 @@ export async function queuePrompt(prompt: ComfyPrompt): Promise<string> {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ prompt, client_id: config.wsClientId }),
+    dispatcher: getProxyDispatcher(),
   });
   if (!resp.ok) {
     throw new Error(`Failed to queue prompt: ${await resp.text()}`);
@@ -113,7 +111,7 @@ export async function getPromptOutputs(
   promptId: string,
   log: FastifyBaseLogger
 ): Promise<Record<string, Buffer> | null> {
-  const resp = await fetch(`${config.comfyURL}/history/${promptId}`);
+  const resp = await fetch(`${config.comfyURL}/history/${promptId}`, { dispatcher: getProxyDispatcher() });
   if (!resp.ok) {
     const txt = await resp.text();
     log.error(`Failed to get prompt outputs: ${txt}`);
@@ -474,7 +472,7 @@ export async function getModels(): Promise<
     }
   >
 > {
-  const modelsResp = await fetch(`${config.comfyURL}/models`);
+  const modelsResp = await fetch(`${config.comfyURL}/models`, { dispatcher: getProxyDispatcher() });
 
   if (!modelsResp.ok) {
     throw new Error(`Failed to fetch model types: ${await modelsResp.text()}`);
@@ -487,7 +485,7 @@ export async function getModels(): Promise<
   > = {};
 
   const modelPromises = modelTypes.map(async (modelType) => {
-    const resp = await fetch(`${config.comfyURL}/models/${modelType}`);
+    const resp = await fetch(`${config.comfyURL}/models/${modelType}`, { dispatcher: getProxyDispatcher() });
 
     if (!resp.ok) {
       throw new Error(
