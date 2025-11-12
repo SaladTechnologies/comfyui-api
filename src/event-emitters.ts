@@ -1,7 +1,6 @@
 import crypto from "crypto";
 import config from "./config";
 import { FastifyBaseLogger } from "fastify";
-import { Agent } from "undici";
 import { getProxyDispatcher } from "./proxy-dispatcher";
 import {
   fetchWithRetries,
