@@ -41,7 +41,8 @@ import {
 import workflows from "./workflows";
 import { z } from "zod";
 import { WebSocket } from "ws";
-import { fetch, Agent } from "undici";
+import { fetch } from "undici";
+import { getProxyDispatcher } from "./proxy-dispatcher";
 
 const { apiVersion: version } = config;
 
@@ -573,11 +574,7 @@ server.after(() => {
                   prompt,
                   input: undefined,
                 }),
-                dispatcher: new Agent({
-                  headersTimeout: 0,
-                  bodyTimeout: 0,
-                  connectTimeout: 0,
-                }),
+                dispatcher: getProxyDispatcher(),
               }
             );
             const body = (await resp.json()) as any;

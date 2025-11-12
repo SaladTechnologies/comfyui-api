@@ -822,6 +822,55 @@ If you are using the azure blob storage functionality, make sure to set all of t
 | WEBHOOK_SECRET               | (empty string)             | If set, the server will sign webhook_v2 requests with this secret.                                                                                                                                                                           |
 | WORKFLOW_DIR                 | "/workflows"               | Directory for workflow files                                                                                                                                                                                                                 |
 
+#### Kubernetes Deployment: Proxy Environment Variables
+
+To enable outbound requests (e.g., webhook delivery) to use a corporate proxy in Kubernetes, configure the standard proxy environment variables. The server uses undici's EnvHttpProxyAgent, which reads `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY` and routes requests accordingly.
+
+- Recommended `NO_PROXY`: include localhost and common Kubernetes internal addresses so local and in-cluster services do not go through the proxy.
+- Set only one set of variables (prefer uppercase). If both lowercase and uppercase are set, the lowercase variables take precedence and the uppercase ones are ignored.
+
+Example Deployment snippet:
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: comfyui-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: comfyui-api
+  template:
+    metadata:
+      labels:
+        app: comfyui-api
+    spec:
+      containers:
+        - name: comfyui-api
+          image: your.registry/comfyui-api:latest
+          env:
+            # Recommended: set only uppercase vars
+            - name: HTTP_PROXY
+              value: "http://your-http-proxy:3128"
+            - name: HTTPS_PROXY
+              value: "http://your-https-proxy:3129"
+            - name: NO_PROXY
+              value: "localhost,127.0.0.1,::1,.svc,.svc.cluster.local,169.254.169.254"
+          ports:
+            - name: http
+              containerPort: 3000
+```
+
+Notes:
+- If your proxy requires authentication, include credentials in the proxy URL (e.g., `http://user:pass@proxy.company:3128`).
+- `NO_PROXY="*"` bypasses the proxy for all requests.
+- When only `HTTP_PROXY` is set, it is used for both HTTP and HTTPS.
+- Suggested `NO_PROXY` entries:
+  - `localhost,127.0.0.1,::1` for in-container loopback
+  - `.svc,.svc.cluster.local` for Kubernetes service DNS
+  - `169.254.169.254` for cloud/container metadata service
+
 ### Configuration Details
 
 1. **ComfyUI Settings**:

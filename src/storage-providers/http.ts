@@ -5,6 +5,9 @@ import fs from "fs";
 import { Readable } from "stream";
 import config from "../config";
 import { z } from "zod";
+import { fetch } from "undici";
+import type { Response as UndiciResponse } from "undici";
+import { getProxyDispatcher } from "../proxy-dispatcher";
 
 export class HTTPStorageProvider implements StorageProvider {
   log: FastifyBaseLogger;
@@ -48,7 +51,7 @@ export class HTTPStorageProvider implements StorageProvider {
     try {
       // Fetch the image
       const headers = getAuthHeadersFromUrl(url);
-      const response = await fetch(url, { headers });
+      const response = await fetch(url, { headers, dispatcher: getProxyDispatcher() });
 
       if (!response.ok) {
         throw new Error(`Error downloading file: ${response.statusText}`);
@@ -145,6 +148,7 @@ class HTTPUpload implements Upload {
         headers,
         body: body as any,
         signal: this.abortController.signal,
+        dispatcher: getProxyDispatcher(),
       });
 
       if (!response.ok) {
@@ -253,7 +257,7 @@ function mimeToExtension(mimeType: string): string | null {
 }
 
 function getIntendedFileExtensionFromResponse(
-  response: Response
+  response: UndiciResponse
 ): string | null {
   // 1. Try content-disposition header for filename
   const contentDisposition = response.headers.get("content-disposition");

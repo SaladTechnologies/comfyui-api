@@ -1,6 +1,6 @@
 {
   "name": "comfyui-api",
-  "version": "1.13.3",
+  "version": "1.13.4",
   "description": "Wraps comfyui to make it easier to use as a stateless web service",
   "main": "dist/src/index.js",
   "scripts": {
@@ -36,7 +36,7 @@
     "@smithy/node-http-handler": "^4.0.5",
     "fastify": "^5.3.3",
     "fastify-type-provider-zod": "^4.0.2",
-    "sharp": "^0.34.4",
+    "sharp": "^0.34.5",
     "typescript": "^5.8.3",
     "undici": "^7.10.0",
     "ws": "^8.18.2",

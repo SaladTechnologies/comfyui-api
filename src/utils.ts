@@ -3,6 +3,7 @@ import { FastifyBaseLogger } from "fastify";
 import path from "path";
 import { ZodObject, ZodRawShape, ZodTypeAny, ZodDefault } from "zod";
 import { fetch, RequestInit, Response } from "undici";
+import { getProxyDispatcher } from "./proxy-dispatcher";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import getStorageManager from "./remote-storage-manager";
@@ -142,7 +143,10 @@ export async function fetchWithRetries(
   let retries = 0;
   while (retries < maxRetries) {
     try {
-      const response = await fetch(url, options);
+      const response = await fetch(
+        url,
+        options.dispatcher ? options : { ...options, dispatcher: getProxyDispatcher() }
+      );
       if (response.ok) {
         return response;
       }
@@ -171,6 +175,7 @@ export async function setDeletionCost(cost: number): Promise<void> {
         Metadata: "true",
       },
       body: JSON.stringify({ deletion_cost: cost }),
+      dispatcher: getProxyDispatcher(),
     });
   } catch (error) {
     console.error("Error setting deletion cost:", error);
