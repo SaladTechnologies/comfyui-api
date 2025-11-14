@@ -7,6 +7,7 @@ import {
   ComfyWSMessage,
   isStatusMessage,
   isProgressMessage,
+  isProgressStateMessage,
   isExecutionStartMessage,
   isExecutionCachedMessage,
   isExecutedMessage,
@@ -417,6 +418,8 @@ export function connectToComfyUIWebsocketStream(
           hooks.onStatus(message);
         } else if (isProgressMessage(message) && hooks.onProgress) {
           hooks.onProgress(message);
+        } else if (isProgressStateMessage(message) && hooks.onProgressState) {
+          hooks.onProgressState(message);
         } else if (isExecutionStartMessage(message) && hooks.onExecutionStart) {
           hooks.onExecutionStart(message);
         } else if (

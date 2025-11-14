@@ -183,6 +183,7 @@ export interface ComfyWSMessage {
   type:
     | "status"
     | "progress"
+    | "progress_state"
     | "executing"
     | "execution_start"
     | "execution_cached"
@@ -212,6 +213,26 @@ export interface ComfyWSProgressMessage extends ComfyWSMessage {
     max: number;
     prompt_id: string;
     node: string | null;
+  };
+}
+
+export interface ComfyWSProgressStateMessage extends ComfyWSMessage {
+  type: "progress_state";
+  data: {
+    prompt_id: string;
+    nodes: Record<
+      string,
+      {
+        value: number;
+        max: number;
+        state: string;
+        node_id: string;
+        prompt_id: string;
+        display_node_id?: string;
+        parent_node_id?: string;
+        real_node_id?: string;
+      }
+    >;
   };
 }
 
@@ -296,6 +317,12 @@ export function isProgressMessage(
   return msg.type === "progress";
 }
 
+export function isProgressStateMessage(
+  msg: ComfyWSMessage
+): msg is ComfyWSProgressStateMessage {
+  return msg.type === "progress_state";
+}
+
 export function isExecutingMessage(
   msg: ComfyWSMessage
 ): msg is ComfyWSExecutingMessage {
@@ -342,6 +369,7 @@ export type WebhookHandlers = {
   onMessage?: (msg: RawData) => Promise<void> | void;
   onStatus?: (data: ComfyWSStatusMessage) => Promise<void> | void;
   onProgress?: (data: ComfyWSProgressMessage) => Promise<void> | void;
+  onProgressState?: (data: ComfyWSProgressStateMessage) => Promise<void> | void;
   onExecuting?: (data: ComfyWSExecutingMessage) => Promise<void> | void;
   onExecutionStart?: (
     data: ComfyWSExecutionStartMessage
