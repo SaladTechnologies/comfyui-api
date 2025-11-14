@@ -97,6 +97,7 @@ if (systemWebhook) {
 const allEvents = new Set([
   "status",
   "progress",
+  "progress_state",
   "executing",
   "execution_start",
   "execution_cached",
@@ -180,10 +181,10 @@ with open("${temptComfyFilePath}", "w") as f:
 `;
 
   const tempFilePath = path.join(comfyDir, "temp_comfy_description.py");
-  let command = `python ${tempFilePath}`;
+  let command = `python3 ${tempFilePath}`;
   if (BASE in loadEnvCommand) {
     command = `${loadEnvCommand[BASE]} \
-    && python ${tempFilePath}`;
+    && python3 ${tempFilePath}`;
   }
 
   try {
@@ -197,12 +198,27 @@ with open("${temptComfyFilePath}", "w") as f:
       shell: process.env.SHELL,
       env: {
         ...process.env,
+        CUDA_VISIBLE_DEVICES: "-1",
+        PYTORCH_ENABLE_MPS: "0",
       },
     });
     const output = fs.readFileSync(temptComfyFilePath, { encoding: "utf-8" });
     return JSON.parse(output.trim()) as ComfyDescription;
   } catch (error: any) {
-    throw new Error(`Failed to get ComfyUI description: ${error.message}`);
+    let ver = "unknown";
+    try {
+      const versionTxt = fs.readFileSync(
+        path.join(comfyDir, "comfyui_version.py"),
+        { encoding: "utf-8" }
+      );
+      const m = versionTxt.match(/__version__\s*=\s*["']([^"']+)["']/);
+      if (m) ver = m[1];
+    } catch {}
+    return {
+      samplers: ["euler", "euler_a", "heun", "dpmpp_2m"],
+      schedulers: ["normal", "karras", "exponential", "sgm"],
+      version: ver,
+    };
   } finally {
     // Clean up the temporary file
     try {
