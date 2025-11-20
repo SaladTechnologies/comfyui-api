@@ -82,8 +82,7 @@ class RemoteStorageManager {
   async enforceCacheSize(): Promise<void> {
     const { totalSize, files } = await this.getCacheSizeInfo();
     this.log.info(
-      `Cache populated with ${
-        files.length
+      `Cache populated with ${files.length
       } files, total size: ${makeHumanReadableSize(totalSize)}`
     );
 
@@ -358,6 +357,15 @@ class RemoteStorageManager {
       { url, local_path: fileOrPath, size, duration },
       this.log
     );
+  }
+
+  async getSignedUrl(url: string): Promise<string> {
+    for (const provider of this.storageProviders) {
+      if (provider.getSignedUrl && provider.testUrl(url)) {
+        return provider.getSignedUrl(url);
+      }
+    }
+    return url;
   }
 
   private async _cloneWithinDirectory(

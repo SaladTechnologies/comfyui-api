@@ -6,6 +6,7 @@ import {
   GetObjectCommand,
   PutObjectCommand,
 } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { NodeHttpHandler } from "@smithy/node-http-handler";
 import config from "../config";
 import { FastifyBaseLogger } from "fastify";
@@ -90,8 +91,15 @@ export class S3StorageProvider implements StorageProvider {
     } catch (error: any) {
       console.error(error);
       this.log.error("Error downloading file from S3:", error);
+      this.log.error("Error downloading file from S3:", error);
       throw error;
     }
+  }
+
+  async getSignedUrl(s3Url: string): Promise<string> {
+    const { bucket, key } = parseS3Url(s3Url);
+    const command = new GetObjectCommand({ Bucket: bucket, Key: key });
+    return getSignedUrl(this.s3, command, { expiresIn: 3600 });
   }
 }
 

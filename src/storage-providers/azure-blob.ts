@@ -8,6 +8,8 @@ import { DefaultAzureCredential } from "@azure/identity";
 import {
   BlobServiceClient,
   StorageSharedKeyCredential,
+  generateBlobSASQueryParameters,
+  BlobSASPermissions,
 } from "@azure/storage-blob";
 import fs, { ReadStream } from "fs";
 
@@ -71,10 +73,10 @@ export class AzureBlobStorageProvider implements StorageProvider {
     } else {
       throw new Error(
         "Azure Storage configuration required. Set either:\n" +
-          "- AZURE_STORAGE_CONNECTION_STRING (for Azurite or full connection)\n" +
-          "- AZURE_STORAGE_ACCOUNT with AZURE_STORAGE_KEY (shared key auth)\n" +
-          "- AZURE_STORAGE_ACCOUNT with AZURE_STORAGE_SAS_TOKEN (SAS auth)\n" +
-          "- AZURE_STORAGE_ACCOUNT with DefaultAzureCredential (Azure AD/CLI/etc)"
+        "- AZURE_STORAGE_CONNECTION_STRING (for Azurite or full connection)\n" +
+        "- AZURE_STORAGE_ACCOUNT with AZURE_STORAGE_KEY (shared key auth)\n" +
+        "- AZURE_STORAGE_ACCOUNT with AZURE_STORAGE_SAS_TOKEN (SAS auth)\n" +
+        "- AZURE_STORAGE_ACCOUNT with DefaultAzureCredential (Azure AD/CLI/etc)"
       );
     }
   }
@@ -173,6 +175,75 @@ export class AzureBlobStorageProvider implements StorageProvider {
       writableStream.on("error", reject);
     });
     return downloadedFilePath;
+  }
+
+  async getSignedUrl(url: string): Promise<string> {
+    if (!this.client) {
+      return url;
+    }
+
+    // Only support signing if we have a shared key (connection string or explicit key)
+    // SAS tokens are already signed (mostly), and DefaultAzureCredential requires user delegation key which is more complex
+    // For now, we'll support the common case of connection string / shared key.
+
+    let credential: StorageSharedKeyCredential | undefined;
+
+    if (config.azureStorageAccount && config.azureStorageKey) {
+      credential = new StorageSharedKeyCredential(
+        config.azureStorageAccount,
+        config.azureStorageKey
+      );
+    } else if (config.azureStorageConnectionString) {
+      // Parsing connection string to get key is tedious, but BlobServiceClient might have it if we used it.
+      // Actually, if we used connection string, we can't easily extract the key back out from the client object in JS SDK v12+
+      // without parsing the string ourselves.
+      const match = config.azureStorageConnectionString.match(/AccountKey=([^;]+)/);
+      const accountMatch = config.azureStorageConnectionString.match(/AccountName=([^;]+)/);
+      if (match && accountMatch) {
+        credential = new StorageSharedKeyCredential(accountMatch[1], match[1]);
+      }
+    }
+
+    if (!credential) {
+      this.log.warn("Cannot generate signed URL: No shared key credential available");
+      return url;
+    }
+
+    try {
+      const parsedUrl = new URL(url);
+      let pathParts = parsedUrl.pathname.split("/").filter(Boolean);
+
+      // Handle Azurite/DevStore
+      if (pathParts[0] === "devstoreaccount1") {
+        pathParts = pathParts.slice(1);
+      }
+
+      if (pathParts.length < 2) {
+        return url;
+      }
+
+      const containerName = pathParts[0];
+      const blobName = pathParts.slice(1).join("/");
+
+      const startsOn = new Date();
+      const expiresOn = new Date(new Date().valueOf() + 3600 * 1000); // 1 hour
+
+      const sasToken = generateBlobSASQueryParameters(
+        {
+          containerName,
+          blobName,
+          permissions: BlobSASPermissions.parse("r"),
+          startsOn,
+          expiresOn,
+        },
+        credential
+      ).toString();
+
+      return `${url}?${sasToken}`;
+    } catch (error) {
+      this.log.error({ error }, "Error generating Azure SAS token");
+      return url;
+    }
   }
 }
 

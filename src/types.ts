@@ -178,6 +178,7 @@ export const PromptRequestSchema = z.object({
   webhook_v2: z.string().optional(),
   convert_output: OutputConversionOptionsSchema.optional(),
   compress_outputs: z.boolean().optional(),
+  signed_url: z.boolean().optional(),
 });
 
 export const PromptErrorResponseSchema = z.object({
@@ -534,4 +535,11 @@ export interface StorageProvider {
     outputDir: string,
     filenameOverride?: string
   ): Promise<string>;
+
+  /**
+   * Get a signed URL for the given URL.
+   * @param url URL to sign
+   * @returns A promise that resolves to the signed URL
+   */
+  getSignedUrl?(url: string): Promise<string>;
 }

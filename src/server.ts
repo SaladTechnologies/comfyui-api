@@ -253,6 +253,7 @@ server.after(() => {
         webhook_v2,
         convert_output,
         compress_outputs,
+        signed_url,
       } = request.body;
 
       /**
@@ -542,6 +543,17 @@ server.after(() => {
       }
 
       const { images, stats, filenames } = await finalStatsPromise;
+      if (stats.total_time) {
+        log.info(`Total time: ${stats.total_time.toFixed(3)}s`);
+      }
+
+      if (request.body.signed_url) {
+        const signedImages: string[] = await Promise.all(
+          images.map((url) => remoteStorageManager.getSignedUrl(url))
+        );
+        // Replace images with signed versions
+        images.splice(0, images.length, ...signedImages);
+      }
 
       const outputPayload = {
         ...request.body,
