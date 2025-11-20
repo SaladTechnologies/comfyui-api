@@ -163,6 +163,20 @@ interface ComfyDescription {
  * description of the samplers and schedulers.
  * @returns ComfyDescription
  */
+function getPythonCommand(): string {
+  try {
+    execSync("python3 --version", { stdio: "ignore" });
+    return "python3";
+  } catch {
+    try {
+      execSync("python --version", { stdio: "ignore" });
+      return "python";
+    } catch {
+      return "python3";
+    }
+  }
+}
+
 function getComfyUIDescription(): ComfyDescription {
   const temptComfyFilePath = path.join(comfyDir, "temp_comfy_description.json");
   const pythonCode = `
@@ -181,10 +195,11 @@ with open("${temptComfyFilePath}", "w") as f:
 `;
 
   const tempFilePath = path.join(comfyDir, "temp_comfy_description.py");
-  let command = `python3 ${tempFilePath}`;
+  const pythonCommand = getPythonCommand();
+  let command = `${pythonCommand} ${tempFilePath}`;
   if (BASE in loadEnvCommand) {
     command = `${loadEnvCommand[BASE]} \
-    && python3 ${tempFilePath}`;
+    && ${pythonCommand} ${tempFilePath}`;
   }
 
   try {
@@ -205,6 +220,9 @@ with open("${temptComfyFilePath}", "w") as f:
     const output = fs.readFileSync(temptComfyFilePath, { encoding: "utf-8" });
     return JSON.parse(output.trim()) as ComfyDescription;
   } catch (error: any) {
+    console.warn(
+      `Failed to get ComfyUI description: ${error.message}. Using default values.`
+    );
     let ver = "unknown";
     try {
       const versionTxt = fs.readFileSync(
@@ -213,7 +231,7 @@ with open("${temptComfyFilePath}", "w") as f:
       );
       const m = versionTxt.match(/__version__\s*=\s*["']([^"']+)["']/);
       if (m) ver = m[1];
-    } catch {}
+    } catch { }
     return {
       samplers: ["euler", "euler_a", "heun", "dpmpp_2m"],
       schedulers: ["normal", "karras", "exponential", "sgm"],

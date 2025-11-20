@@ -1142,6 +1142,27 @@ The following are the schemas for the event data that will be sent to the webhoo
 }
 ```
 
+### progress_state
+
+```json
+{
+  "type": "progress_state",
+  "data": {
+    "prompt_id": "123e4567-e89b-12d3-a456-426614174000",
+    "nodes": {
+      "42": {
+        "value": 5,
+        "max": 20,
+        "state": "executing",
+        "node_id": "42",
+        "prompt_id": "123e4567-e89b-12d3-a456-426614174000"
+      }
+    }
+  },
+  "sid": "xyz789"
+}
+```
+
 ### executing
 
 ```json

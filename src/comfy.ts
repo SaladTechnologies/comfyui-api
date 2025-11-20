@@ -70,8 +70,7 @@ export async function waitForComfyUIToStart(
   }
 
   throw new Error(
-    `Comfy UI did not start after ${
-      (config.startupCheckInterval / 1000) * config.startupCheckMaxTries
+    `Comfy UI did not start after ${(config.startupCheckInterval / 1000) * config.startupCheckMaxTries
     } seconds`
   );
 }
@@ -249,8 +248,7 @@ class HistoryEndpointPoller {
   async poll(): Promise<Record<string, Buffer> | null> {
     while (this.currentTries < this.getMaxTries() || this.maxTries === 0) {
       this.log.debug(
-        `Polling history endpoint for prompt ${this.promptId}, try ${
-          this.currentTries
+        `Polling history endpoint for prompt ${this.promptId}, try ${this.currentTries
         } of ${this.getMaxTries()}`
       );
       const outputs = await getPromptOutputs(this.promptId, this.log);
@@ -259,8 +257,7 @@ class HistoryEndpointPoller {
       }
       this.currentTries++;
       this.log.debug(
-        `Polling history endpoint for prompt ${
-          this.promptId
+        `Polling history endpoint for prompt ${this.promptId
         }, sleep for ${this.getInterval()}ms`
       );
       await new Promise<void>((resolve) => {
@@ -419,6 +416,14 @@ export function connectToComfyUIWebsocketStream(
         } else if (isProgressMessage(message) && hooks.onProgress) {
           hooks.onProgress(message);
         } else if (isProgressStateMessage(message) && hooks.onProgressState) {
+          if (useApiIDs && message.data.nodes) {
+            for (const nodeId in message.data.nodes) {
+              const node = message.data.nodes[nodeId];
+              if (node.prompt_id && comfyIDToApiID[node.prompt_id]) {
+                node.prompt_id = comfyIDToApiID[node.prompt_id];
+              }
+            }
+          }
           hooks.onProgressState(message);
         } else if (isExecutionStartMessage(message) && hooks.onExecutionStart) {
           hooks.onExecutionStart(message);
