@@ -19,6 +19,7 @@ import {
 } from "./utils";
 import { getConfiguredWebhookHandlers, sendWebhook } from "./event-emitters";
 import { convertImageBuffer } from "./image-tools";
+import { convertMediaBuffer } from "./media-tools";
 import getStorageManager from "./remote-storage-manager";
 import { NodeProcessError, preprocessNodes } from "./comfy-node-preprocessors";
 import {
@@ -312,15 +313,31 @@ server.after(() => {
           let fileBuffer = outputs[filename];
           if (convert_output) {
             try {
-              fileBuffer = await convertImageBuffer(fileBuffer, convert_output);
+              const isOutputVideoAudio = [
+                "mp4",
+                "webm",
+                "mp3",
+                "wav",
+                "ogg",
+              ].includes(convert_output.format);
+              const isInputVideoAudio =
+                /\.(mp4|mkv|avi|mov|webm|mp3|wav|ogg|flac|m4a)$/i.test(filename);
 
-              /**
-               * If the user has provided an output format, we need to update the filename
-               */
-              filename = originalFilename.replace(
-                /\.[^/.]+$/,
-                `.${convert_output.format}`
-              );
+              if (isOutputVideoAudio || isInputVideoAudio) {
+                fileBuffer = await convertMediaBuffer(fileBuffer, convert_output);
+                filename =
+                  filename.replace(/\.[^/.]+$/, "") + "." + convert_output.format;
+              } else {
+                fileBuffer = await convertImageBuffer(fileBuffer, convert_output);
+                if (
+                  convert_output.format === "jpg" ||
+                  convert_output.format === "jpeg"
+                ) {
+                  filename = filename.replace(/\.[^/.]+$/, "") + ".jpg";
+                } else if (convert_output.format === "webp") {
+                  filename = filename.replace(/\.[^/.]+$/, "") + ".webp";
+                }
+              }
             } catch (e: any) {
               log.warn(`Failed to convert image: ${e.message}`);
             }

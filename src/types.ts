@@ -109,9 +109,36 @@ export const WebpOptionsSchema = z.object({
 
 export type WebpOptions = z.infer<typeof WebpOptionsSchema>;
 
+export const VideoOptionsSchema = z.object({
+  codec: z.string().optional().describe("video codec"),
+  fps: z.number().optional().describe("frames per second"),
+  crf: z.number().optional().describe("constant rate factor"),
+  preset: z.string().optional().describe("encoder preset"),
+  bitrate: z.string().optional().describe("video bitrate"),
+});
+
+export type VideoOptions = z.infer<typeof VideoOptionsSchema>;
+
+export const AudioOptionsSchema = z.object({
+  codec: z.string().optional().describe("audio codec"),
+  bitrate: z.string().optional().describe("audio bitrate"),
+  frequency: z.number().optional().describe("audio frequency"),
+});
+
+export type AudioOptions = z.infer<typeof AudioOptionsSchema>;
+
 export const OutputConversionOptionsSchema = z.object({
-  format: z.enum(["jpeg", "jpg", "webp"]).describe("output format"),
-  options: z.union([JPEGOptionsSchema, WebpOptionsSchema]).optional(),
+  format: z
+    .enum(["jpeg", "jpg", "webp", "mp4", "gif", "webm", "mp3", "wav", "ogg"])
+    .describe("output format"),
+  options: z
+    .union([
+      JPEGOptionsSchema,
+      WebpOptionsSchema,
+      VideoOptionsSchema,
+      AudioOptionsSchema,
+    ])
+    .optional(),
 });
 
 export type OutputConversionOptions = z.infer<

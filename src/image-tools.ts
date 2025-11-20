@@ -5,7 +5,7 @@ import path from "path";
 import { randomUUID } from "crypto";
 import getStorageManager from "./remote-storage-manager";
 import sharp from "sharp";
-import { OutputConversionOptions } from "./types";
+import { OutputConversionOptions, WebpOptions, JPEGOptions } from "./types";
 import { isValidUrl } from "./utils";
 
 export async function processInputMedia(
@@ -205,9 +205,9 @@ export async function convertImageBuffer(
   let image = sharp(imageBuffer);
 
   if (format === "webp") {
-    image = image.webp(conversionOptions);
+    image = image.webp(conversionOptions as WebpOptions);
   } else if (format === "jpg" || format === "jpeg") {
-    image = image.jpeg(conversionOptions);
+    image = image.jpeg(conversionOptions as JPEGOptions);
   }
 
   return image.toBuffer();
