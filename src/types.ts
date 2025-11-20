@@ -150,6 +150,7 @@ export const PromptRequestSchema = z.object({
   webhook: z.string().optional(),
   webhook_v2: z.string().optional(),
   convert_output: OutputConversionOptionsSchema.optional(),
+  compress_outputs: z.boolean().optional(),
 });
 
 export const PromptErrorResponseSchema = z.object({
@@ -181,16 +182,16 @@ export interface WorkflowTree {
 
 export interface ComfyWSMessage {
   type:
-    | "status"
-    | "progress"
-    | "progress_state"
-    | "executing"
-    | "execution_start"
-    | "execution_cached"
-    | "executed"
-    | "execution_success"
-    | "execution_interrupted"
-    | "execution_error";
+  | "status"
+  | "progress"
+  | "progress_state"
+  | "executing"
+  | "execution_start"
+  | "execution_cached"
+  | "executed"
+  | "execution_success"
+  | "execution_interrupted"
+  | "execution_error";
   data: any;
   sid: string | null;
 }

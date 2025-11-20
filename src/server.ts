@@ -44,6 +44,7 @@ import { z } from "zod";
 import { WebSocket } from "ws";
 import { fetch } from "undici";
 import { getProxyDispatcher } from "./proxy-dispatcher";
+import archiver from "archiver";
 
 const { apiVersion: version } = config;
 
@@ -244,7 +245,14 @@ server.after(() => {
       },
     },
     async (request, reply) => {
-      let { prompt, id, webhook, webhook_v2, convert_output } = request.body;
+      let {
+        prompt,
+        id,
+        webhook,
+        webhook_v2,
+        convert_output,
+        compress_outputs,
+      } = request.body;
 
       /**
        * Here we go through all the nodes in the prompt to validate it,
@@ -297,7 +305,7 @@ server.after(() => {
         stats.preprocess_time = preprocessTime - start;
         stats.comfy_round_trip_time = Date.now() - preprocessTime;
         const filenames: string[] = [];
-        const buffers: Buffer[] = [];
+        const fileBuffers: Buffer[] = [];
         const unlinks: Promise<void>[] = [];
         for (const originalFilename in outputs) {
           let filename = originalFilename;
@@ -318,7 +326,7 @@ server.after(() => {
             }
           }
           filenames.push(filename);
-          buffers.push(fileBuffer);
+          fileBuffers.push(fileBuffer);
           unlinks.push(
             fsPromises.unlink(path.join(config.outputDir, originalFilename))
           );
@@ -326,8 +334,31 @@ server.after(() => {
         await Promise.all(unlinks);
         stats.postprocess_time =
           Date.now() - stats.comfy_round_trip_time - preprocessTime;
+        if (compress_outputs) {
+          const archive = archiver("zip", { zlib: { level: 9 } });
+          const buffers: Buffer[] = [];
+          archive.on("data", (data) => buffers.push(data));
+
+          const archivePromise = new Promise<void>((resolve, reject) => {
+            archive.on("end", resolve);
+            archive.on("error", reject);
+          });
+
+          for (let i = 0; i < filenames.length; i++) {
+            archive.append(fileBuffers[i], { name: filenames[i] });
+          }
+          archive.finalize();
+          await archivePromise;
+
+          return {
+            buffers: [Buffer.concat(buffers)],
+            filenames: ["outputs.zip"],
+            stats,
+          };
+        }
+
         return {
-          buffers,
+          buffers: fileBuffers,
           filenames,
           stats,
         };
