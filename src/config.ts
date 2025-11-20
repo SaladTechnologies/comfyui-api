@@ -97,6 +97,7 @@ if (systemWebhook) {
 const allEvents = new Set([
   "status",
   "progress",
+  "progress_state",
   "executing",
   "execution_start",
   "execution_cached",
@@ -157,6 +158,20 @@ interface ComfyDescription {
   version: string;
 }
 
+function getPythonCommand(): string {
+  try {
+    execSync("python3 --version", { stdio: "ignore" });
+    return "python3";
+  } catch {
+    try {
+      execSync("python --version", { stdio: "ignore" });
+      return "python";
+    } catch {
+      return "python3";
+    }
+  }
+}
+
 /**
  * This function uses python to import some of the ComfyUI code and get the
  * description of the samplers and schedulers.
@@ -180,10 +195,11 @@ with open("${temptComfyFilePath}", "w") as f:
 `;
 
   const tempFilePath = path.join(comfyDir, "temp_comfy_description.py");
-  let command = `python ${tempFilePath}`;
+  const pythonCommand = getPythonCommand();
+  let command = `${pythonCommand} ${tempFilePath}`;
   if (BASE in loadEnvCommand) {
     command = `${loadEnvCommand[BASE]} \
-    && python ${tempFilePath}`;
+    && ${pythonCommand} ${tempFilePath}`;
   }
 
   try {
@@ -202,7 +218,23 @@ with open("${temptComfyFilePath}", "w") as f:
     const output = fs.readFileSync(temptComfyFilePath, { encoding: "utf-8" });
     return JSON.parse(output.trim()) as ComfyDescription;
   } catch (error: any) {
-    throw new Error(`Failed to get ComfyUI description: ${error.message}`);
+    console.warn(
+      `Failed to get ComfyUI description: ${error.message}. Using default values.`
+    );
+    let ver = "unknown";
+    try {
+      const versionTxt = fs.readFileSync(
+        path.join(comfyDir, "comfyui_version.py"),
+        { encoding: "utf-8" }
+      );
+      const m = versionTxt.match(/__version__\s*=\s*["']([^"']+)["']/);
+      if (m) ver = m[1];
+    } catch {}
+    return {
+      samplers: ["euler", "euler_a", "heun", "dpmpp_2m"],
+      schedulers: ["normal", "karras", "exponential", "sgm"],
+      version: ver,
+    };
   } finally {
     // Clean up the temporary file
     try {
