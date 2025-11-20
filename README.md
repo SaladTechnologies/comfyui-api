@@ -30,6 +30,7 @@ A simple wrapper that facilitates using [ComfyUI](https://github.com/comfyanonym
   - [Probes](#probes)
   - [API Configuration Guide](#api-configuration-guide)
     - [Environment Variables](#environment-variables)
+      - [Kubernetes Deployment: Proxy Environment Variables](#kubernetes-deployment-proxy-environment-variables)
     - [Configuration Details](#configuration-details)
     - [Additional Notes](#additional-notes)
   - [Using Synchronously](#using-synchronously)
@@ -45,6 +46,7 @@ A simple wrapper that facilitates using [ComfyUI](https://github.com/comfyanonym
   - [System Events](#system-events)
     - [status](#status)
     - [progress](#progress)
+    - [progress\_state](#progress_state)
     - [executing](#executing)
     - [execution\_start](#execution_start)
     - [execution\_cached](#execution_cached)
@@ -73,7 +75,7 @@ If you have your own ComfyUI dockerfile, you can add the comfyui-api server to i
 
 ```dockerfile
 # Change this to the version you want to use
-ARG api_version=1.13.3
+ARG api_version=1.13.5
 
 # Download the comfyui-api binary, and make it executable
 ADD https://github.com/SaladTechnologies/comfyui-api/releases/download/${api_version}/comfyui-api .
@@ -1055,6 +1057,8 @@ The webhook event name for a failed request is `prompt.failed`. The webhook will
 
 ## System Events
 
+> Note: From version 1.13.5, the frontend aggregate progress event `progress_state` is included in the supported system event set and can be forwarded like other events. Use `SYSTEM_WEBHOOK_EVENTS=progress_state` or `SYSTEM_WEBHOOK_EVENTS=all` to subscribe.
+
 ComfyUI emits a number of events over websocket during the course of a workflow. These can be configured to be sent to a webhook using the `SYSTEM_WEBHOOK_URL` and `SYSTEM_WEBHOOK_EVENTS` environment variables. Additionally, any environment variable starting with `SYSTEM_META_` will be sent as metadata with the event. From version 1.13.0, these are signed, and can be validated using the `WEBHOOK_SECRET` environment variable and any standard webhook validation library such as `svix`. See [above](#validating-webhooks) for examples.
 
 All webhooks have the same format, which is as follows:
@@ -1073,6 +1077,7 @@ The following events are available:
 
 - "status"
 - "progress"
+- "progress_state"
 - "executing"
 - "execution_start"
 - "execution_cached"
@@ -1133,6 +1138,27 @@ The following are the schemas for the event data that will be sent to the webhoo
     "max": 100,
     "prompt_id": "123e4567-e89b-12d3-a456-426614174000",
     "node": "42"
+  },
+  "sid": "xyz789"
+}
+```
+
+### progress_state
+
+```json
+{
+  "type": "progress_state",
+  "data": {
+    "prompt_id": "123e4567-e89b-12d3-a456-426614174000",
+    "nodes": {
+      "42": {
+        "value": 5,
+        "max": 20,
+        "state": "executing",
+        "node_id": "42",
+        "prompt_id": "123e4567-e89b-12d3-a456-426614174000"
+      }
+    }
   },
   "sid": "xyz789"
 }

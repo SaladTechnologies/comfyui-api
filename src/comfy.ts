@@ -7,6 +7,7 @@ import {
   ComfyWSMessage,
   isStatusMessage,
   isProgressMessage,
+  isProgressStateMessage,
   isExecutionStartMessage,
   isExecutionCachedMessage,
   isExecutedMessage,
@@ -46,7 +47,9 @@ export function shutdownComfyUI() {
 }
 
 export async function pingComfyUI(): Promise<void> {
-  const res = await fetch(config.comfyURL, { dispatcher: getProxyDispatcher() });
+  const res = await fetch(config.comfyURL, {
+    dispatcher: getProxyDispatcher(),
+  });
   if (!res.ok) {
     throw new Error(`Failed to ping Comfy UI: ${await res.text()}`);
   }
@@ -111,7 +114,9 @@ export async function getPromptOutputs(
   promptId: string,
   log: FastifyBaseLogger
 ): Promise<Record<string, Buffer> | null> {
-  const resp = await fetch(`${config.comfyURL}/history/${promptId}`, { dispatcher: getProxyDispatcher() });
+  const resp = await fetch(`${config.comfyURL}/history/${promptId}`, {
+    dispatcher: getProxyDispatcher(),
+  });
   if (!resp.ok) {
     const txt = await resp.text();
     log.error(`Failed to get prompt outputs: ${txt}`);
@@ -440,6 +445,16 @@ export function connectToComfyUIWebsocketStream(
           hooks.onExecutionInterrupted(message);
         } else if (isExecutionErrorMessage(message) && hooks.onExecutionError) {
           hooks.onExecutionError(message);
+        } else if (isProgressStateMessage(message) && hooks.onProgressState) {
+          if (useApiIDs && message.data.nodes) {
+            for (const nodeId in message.data.nodes) {
+              const node = message.data.nodes[nodeId];
+              if (node.prompt_id && comfyIDToApiID[node.prompt_id]) {
+                node.prompt_id = comfyIDToApiID[node.prompt_id];
+              }
+            }
+          }
+          hooks.onProgressState(message);
         }
       } else {
         log.info(`Received binary message`);
@@ -472,7 +487,9 @@ export async function getModels(): Promise<
     }
   >
 > {
-  const modelsResp = await fetch(`${config.comfyURL}/models`, { dispatcher: getProxyDispatcher() });
+  const modelsResp = await fetch(`${config.comfyURL}/models`, {
+    dispatcher: getProxyDispatcher(),
+  });
 
   if (!modelsResp.ok) {
     throw new Error(`Failed to fetch model types: ${await modelsResp.text()}`);
@@ -485,7 +502,9 @@ export async function getModels(): Promise<
   > = {};
 
   const modelPromises = modelTypes.map(async (modelType) => {
-    const resp = await fetch(`${config.comfyURL}/models/${modelType}`, { dispatcher: getProxyDispatcher() });
+    const resp = await fetch(`${config.comfyURL}/models/${modelType}`, {
+      dispatcher: getProxyDispatcher(),
+    });
 
     if (!resp.ok) {
       throw new Error(
