@@ -43,9 +43,12 @@ const {
   STARTUP_CHECK_MAX_TRIES = "20",
   SYSTEM_WEBHOOK_EVENTS,
   SYSTEM_WEBHOOK_URL,
+  TELEMETRY_INTERVAL_S = "3600",
+  TELEMETRY_URL,
   WARMUP_PROMPT_FILE,
   WEBHOOK_SECRET,
   WORKFLOW_DIR = "/workflows",
+  ENABLE_TELEMETRY = "false",
 } = process.env;
 
 fs.mkdirSync(WORKFLOW_DIR, { recursive: true });
@@ -636,6 +639,26 @@ const config = {
    * Generated randomly on each startup.
    */
   wsClientId,
+
+  /**
+   * If true, telemetry is enabled.
+   * Specified by ENABLE_TELEMETRY env var.
+   * default: false
+   */
+  enableTelemetry: ENABLE_TELEMETRY.toLowerCase() === "true",
+
+  /**
+   * The URL to send telemetry data to.
+   * Specified by TELEMETRY_URL env var.
+   */
+  telemetryUrl: TELEMETRY_URL,
+
+  /**
+   * The interval between telemetry reports, in milliseconds.
+   * Specified by TELEMETRY_INTERVAL_S env var.
+   * default: 3600s (1 hour)
+   */
+  telemetryInterval: parseInt(TELEMETRY_INTERVAL_S, 10) * 1000,
 };
 
 const modelSubDirs = fs.readdirSync(modelDir);

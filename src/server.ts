@@ -31,6 +31,7 @@ import {
   PromptOutputsWithStats,
   getModels,
 } from "./comfy";
+import { telemetry } from "./telemetry";
 import {
   PromptRequestSchema as BasePromptRequestSchema,
   PromptErrorResponseSchema,
@@ -260,6 +261,7 @@ server.after(() => {
         prompt = preprocessedPrompt;
         hasSaveImage = saveImageFound;
       } catch (e: NodeProcessError | any) {
+        telemetry.trackFailure(Date.now() - start);
         log.error(`Failed to preprocess nodes: ${e.message}`);
         const code = e.code && [400, 422].includes(e.code) ? e.code : 400;
         return reply.code(code).send({
@@ -333,6 +335,7 @@ server.after(() => {
 
       const runPromptPromise = runPromptAndGetOutputs(id, prompt, log)
         .catch((e: any) => {
+          telemetry.trackFailure(Date.now() - start);
           log.error(`Failed to run prompt: ${e.message}`);
           if (webhook_v2) {
             const webhookBody = {
@@ -481,6 +484,7 @@ server.after(() => {
             stats.postprocess_time;
           stats.total_time = Date.now() - start;
           log.debug(stats);
+          telemetry.trackSuccess(stats.total_time);
           return { images, stats, filenames };
         }
       );
