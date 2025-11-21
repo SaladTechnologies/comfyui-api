@@ -32,6 +32,8 @@ const {
   MARKDOWN_SCHEMA_DESCRIPTIONS = "true",
   MAX_BODY_SIZE_MB = "100",
   MAX_QUEUE_DEPTH = "0",
+  MAX_CONCURRENT_DOWNLOADS = "10",
+  MAX_CONCURRENT_UPLOADS = "10",
   MODEL_DIR,
   OUTPUT_DIR,
   PORT = "3000",
@@ -85,6 +87,18 @@ const lruCacheSizeBytes = parseFloat(LRU_CACHE_SIZE_GB) * 1024 * 1024 * 1024;
 assert(
   lruCacheSizeBytes >= 0,
   "LRU_CACHE_SIZE_GB must be a non-negative number"
+);
+
+const maxConcurrentDownloads = parseInt(MAX_CONCURRENT_DOWNLOADS, 10);
+assert(
+  maxConcurrentDownloads > 0,
+  "MAX_CONCURRENT_DOWNLOADS must be a positive integer"
+);
+
+const maxConcurrentUploads = parseInt(MAX_CONCURRENT_UPLOADS, 10);
+assert(
+  maxConcurrentUploads > 0,
+  "MAX_CONCURRENT_UPLOADS must be a positive integer"
 );
 
 const systemWebhook = SYSTEM_WEBHOOK_URL ?? "";
@@ -664,6 +678,8 @@ const config = {
   amqpUrl: process.env.AMQP_URL,
   amqpQueueInput: process.env.AMQP_QUEUE_INPUT || "comfyui_input",
   amqpQueueOutput: process.env.AMQP_QUEUE_OUTPUT || "comfyui_output",
+  maxConcurrentDownloads,
+  maxConcurrentUploads,
 };
 
 const modelSubDirs = fs.readdirSync(modelDir);

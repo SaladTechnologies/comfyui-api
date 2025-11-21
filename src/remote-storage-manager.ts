@@ -8,6 +8,7 @@ import { promisify } from "util";
 import storageProviders from "./storage-providers";
 import { StorageProvider, Upload } from "./types";
 import { sendSystemWebhook } from "./event-emitters";
+import { TaskQueue } from "./task-queue";
 import {
   makeHumanReadableSize,
   hashUrlBase64,
@@ -50,10 +51,13 @@ async function getFileByPrefix(
   return matchingFile ? path.join(dir, matchingFile) : null;
 }
 
+
 class RemoteStorageManager {
   private cache: Record<string, string> = {};
   private activeDownloads: Record<string, Promise<string>> = {};
   private activeUploads: Record<string, Upload> = {};
+  private downloadQueue: TaskQueue;
+  private uploadQueue: TaskQueue;
   log: FastifyBaseLogger;
   cacheDir: string;
   storageProviders: StorageProvider[] = [];
@@ -61,6 +65,8 @@ class RemoteStorageManager {
   constructor(cacheDir: string, log: FastifyBaseLogger) {
     this.cacheDir = cacheDir;
     this.log = log.child({ module: "RemoteStorageManager" });
+    this.downloadQueue = new TaskQueue(config.maxConcurrentDownloads);
+    this.uploadQueue = new TaskQueue(config.maxConcurrentUploads);
     fs.mkdirSync(this.cacheDir, { recursive: true });
     this.storageProviders = storageProviders
       .map((Provider) => {
@@ -187,93 +193,95 @@ class RemoteStorageManager {
     outputDir: string,
     filenameOverride?: string
   ): Promise<string> {
-    if (this.cache[url]) {
-      const finalLocation = path.join(
-        outputDir,
-        filenameOverride || path.basename(this.cache[url])
-      );
-      await linkIfDoesNotExist(this.cache[url], finalLocation, this.log);
-      this.log.debug(`Using cached file for ${url}`);
-      return finalLocation;
-    }
-    if (url in this.activeDownloads) {
-      this.log.info(`Awaiting in-progress download for ${url}`);
-      const cachedPath = await this.activeDownloads[url];
-      const finalLocation = path.join(
-        outputDir,
-        filenameOverride || path.basename(cachedPath)
-      );
-      await linkIfDoesNotExist(cachedPath, finalLocation, this.log);
-      return finalLocation;
-    }
-
-    const hashedUrl = hashUrlBase64(url);
-    const preDownloadedFile = await getFileByPrefix(this.cacheDir, hashedUrl);
-    if (preDownloadedFile) {
-      this.log.debug(`Found ${preDownloadedFile} for ${url} in cache dir`);
-      this.cache[url] = preDownloadedFile;
-      const finalLocation = path.join(
-        outputDir,
-        filenameOverride || path.basename(this.cache[url])
-      );
-      await linkIfDoesNotExist(this.cache[url], finalLocation, this.log);
-      return finalLocation;
-    }
-
-    const start = Date.now();
-    const ext = path.extname(new URL(url).pathname);
-    const tempFilename = `${hashedUrl}${ext}`;
-
-    for (const provider of this.storageProviders) {
-      if (provider.downloadFile && provider.testUrl(url)) {
-        this.log.info(
-          `Downloading ${url} using provider ${provider.constructor.name}`
+    return this.downloadQueue.add(async () => {
+      if (this.cache[url]) {
+        const finalLocation = path.join(
+          outputDir,
+          filenameOverride || path.basename(this.cache[url])
         );
-        this.activeDownloads[url] = provider
-          .downloadFile(url, this.cacheDir, filenameOverride || tempFilename)
-          .then((outputLocation: string) => {
-            this.cache[url] = outputLocation;
-            return outputLocation;
-          })
-          .finally(() => {
-            delete this.activeDownloads[url];
-          });
-        break;
+        await linkIfDoesNotExist(this.cache[url], finalLocation, this.log);
+        this.log.debug(`Using cached file for ${url}`);
+        return finalLocation;
       }
-    }
-    if (!this.activeDownloads[url]) {
-      throw new Error(`No storage provider found for URL: ${url}`);
-    }
-    const outputPath = await this.activeDownloads[url];
-    const finalLocation = path.join(
-      outputDir,
-      filenameOverride || path.basename(this.cache[url])
-    );
-    await linkIfDoesNotExist(outputPath, finalLocation, this.log);
+      if (url in this.activeDownloads) {
+        this.log.info(`Awaiting in-progress download for ${url}`);
+        const cachedPath = await this.activeDownloads[url];
+        const finalLocation = path.join(
+          outputDir,
+          filenameOverride || path.basename(cachedPath)
+        );
+        await linkIfDoesNotExist(cachedPath, finalLocation, this.log);
+        return finalLocation;
+      }
 
-    const duration = (Date.now() - start) / 1000;
-    const size = (await fsPromises.stat(await fsPromises.realpath(outputPath)))
-      .size;
-    const sizeInMB = size / (1024 * 1024);
+      const hashedUrl = hashUrlBase64(url);
+      const preDownloadedFile = await getFileByPrefix(this.cacheDir, hashedUrl);
+      if (preDownloadedFile) {
+        this.log.debug(`Found ${preDownloadedFile} for ${url} in cache dir`);
+        this.cache[url] = preDownloadedFile;
+        const finalLocation = path.join(
+          outputDir,
+          filenameOverride || path.basename(this.cache[url])
+        );
+        await linkIfDoesNotExist(this.cache[url], finalLocation, this.log);
+        return finalLocation;
+      }
 
-    const speed = sizeInMB / duration;
-    const sizeStr = makeHumanReadableSize(sizeInMB * 1024 * 1024);
-    this.log.info(
-      `Downloaded ${sizeStr} from ${url} in ${duration.toFixed(
-        2
-      )}s (${speed.toFixed(2)} MB/s)`
-    );
-    sendSystemWebhook(
-      "file_downloaded",
-      { url, local_path: finalLocation, size, duration },
-      this.log
-    );
+      const start = Date.now();
+      const ext = path.extname(new URL(url).pathname);
+      const tempFilename = `${hashedUrl}${ext}`;
 
-    this.enforceCacheSize().catch((error) => {
-      this.log.error({ error }, "Error enforcing cache size after download");
+      for (const provider of this.storageProviders) {
+        if (provider.downloadFile && provider.testUrl(url)) {
+          this.log.info(
+            `Downloading ${url} using provider ${provider.constructor.name}`
+          );
+          this.activeDownloads[url] = provider
+            .downloadFile(url, this.cacheDir, filenameOverride || tempFilename)
+            .then((outputLocation: string) => {
+              this.cache[url] = outputLocation;
+              return outputLocation;
+            })
+            .finally(() => {
+              delete this.activeDownloads[url];
+            });
+          break;
+        }
+      }
+      if (!this.activeDownloads[url]) {
+        throw new Error(`No storage provider found for URL: ${url}`);
+      }
+      const outputPath = await this.activeDownloads[url];
+      const finalLocation = path.join(
+        outputDir,
+        filenameOverride || path.basename(this.cache[url])
+      );
+      await linkIfDoesNotExist(outputPath, finalLocation, this.log);
+
+      const duration = (Date.now() - start) / 1000;
+      const size = (await fsPromises.stat(await fsPromises.realpath(outputPath)))
+        .size;
+      const sizeInMB = size / (1024 * 1024);
+
+      const speed = sizeInMB / duration;
+      const sizeStr = makeHumanReadableSize(sizeInMB * 1024 * 1024);
+      this.log.info(
+        `Downloaded ${sizeStr} from ${url} in ${duration.toFixed(
+          2
+        )}s (${speed.toFixed(2)} MB/s)`
+      );
+      sendSystemWebhook(
+        "file_downloaded",
+        { url, local_path: finalLocation, size, duration },
+        this.log
+      );
+
+      this.enforceCacheSize().catch((error) => {
+        this.log.error({ error }, "Error enforcing cache size after download");
+      });
+
+      return finalLocation;
     });
-
-    return finalLocation;
   }
 
   async downloadRepo(repoUrl: string, targetDir: string): Promise<string> {
@@ -319,44 +327,46 @@ class RemoteStorageManager {
     fileOrPath: string | Buffer,
     contentType?: string
   ): Promise<void> {
-    if (url in this.activeUploads) {
-      await this.activeUploads[url].abort();
-      delete this.activeUploads[url];
-    }
-
-    // Determine content type from URL if not provided
-    const mimeType = contentType || getContentTypeFromUrl(url);
-
-    for (const provider of this.storageProviders) {
-      if (provider.uploadFile && provider.testUrl(url)) {
-        this.log.info(
-          `Uploading to ${url} using provider ${provider.constructor.name}`
-        );
-        this.activeUploads[url] = provider.uploadFile(
-          url,
-          fileOrPath,
-          mimeType
-        );
-        break; // Use only the first matching provider
+    return this.uploadQueue.add(async () => {
+      if (url in this.activeUploads) {
+        await this.activeUploads[url].abort();
+        delete this.activeUploads[url];
       }
-    }
-    if (!this.activeUploads[url]) {
-      throw new Error(`No storage provider found for URL: ${url}`);
-    }
-    const start = Date.now();
-    const size =
-      fileOrPath instanceof Buffer
-        ? fileOrPath.length
-        : (await fsPromises.stat(fileOrPath)).size;
 
-    await this.activeUploads[url].upload();
-    delete this.activeUploads[url];
-    const duration = (Date.now() - start) / 1000;
-    sendSystemWebhook(
-      "file_uploaded",
-      { url, local_path: fileOrPath, size, duration },
-      this.log
-    );
+      // Determine content type from URL if not provided
+      const mimeType = contentType || getContentTypeFromUrl(url);
+
+      for (const provider of this.storageProviders) {
+        if (provider.uploadFile && provider.testUrl(url)) {
+          this.log.info(
+            `Uploading to ${url} using provider ${provider.constructor.name}`
+          );
+          this.activeUploads[url] = provider.uploadFile(
+            url,
+            fileOrPath,
+            mimeType
+          );
+          break; // Use only the first matching provider
+        }
+      }
+      if (!this.activeUploads[url]) {
+        throw new Error(`No storage provider found for URL: ${url}`);
+      }
+      const start = Date.now();
+      const size =
+        fileOrPath instanceof Buffer
+          ? fileOrPath.length
+          : (await fsPromises.stat(fileOrPath)).size;
+
+      await this.activeUploads[url].upload();
+      delete this.activeUploads[url];
+      const duration = (Date.now() - start) / 1000;
+      sendSystemWebhook(
+        "file_uploaded",
+        { url, local_path: fileOrPath, size, duration },
+        this.log
+      );
+    });
   }
 
   async getSignedUrl(url: string): Promise<string> {
