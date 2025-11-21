@@ -304,6 +304,45 @@ server.after(() => {
       },
     },
     async (request, reply) => {
+      const accept = request.headers.accept;
+      if (accept && accept.includes("text/event-stream")) {
+        reply.hijack();
+        reply.raw.writeHead(200, {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          "Connection": "keep-alive",
+        });
+
+        const sendEvent = (event: string, data: any) => {
+          reply.raw.write(`event: ${event}\n`);
+          reply.raw.write(`data: ${JSON.stringify(data)}\n\n`);
+        };
+
+        try {
+          const result = await processPrompt(
+            request.body as PromptRequest,
+            app.log,
+            (message) => {
+              sendEvent("message", message);
+            }
+          );
+          sendEvent("complete", {
+            ...request.body,
+            ...result,
+          });
+        } catch (e: any) {
+          const code = e.code && [400, 422].includes(e.code) ? e.code : 400;
+          sendEvent("error", {
+            error: e.message || "Failed to process prompt",
+            location: e.location || "prompt",
+            code,
+          });
+        } finally {
+          reply.raw.end();
+        }
+        return;
+      }
+
       try {
         const result = await processPrompt(request.body as PromptRequest, app.log);
         if (

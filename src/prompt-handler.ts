@@ -33,9 +33,12 @@ export type ProcessedOutput = {
     stats: any;
 };
 
+import { ComfyWSMessage } from "./types";
+
 export async function processPrompt(
     requestBody: PromptRequest,
-    log: FastifyBaseLogger
+    log: FastifyBaseLogger,
+    onProgress?: (message: ComfyWSMessage) => void
 ): Promise<ProcessedOutput> {
     let {
         prompt,
@@ -156,7 +159,7 @@ export async function processPrompt(
         };
     };
 
-    const runPromptPromise = runPromptAndGetOutputs(id, prompt, log)
+    const runPromptPromise = runPromptAndGetOutputs(id, prompt, log, onProgress)
         .catch((e: any) => {
             telemetry.trackFailure(Date.now() - start);
             log.error(`Failed to run prompt: ${e.message}`);

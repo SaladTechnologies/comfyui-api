@@ -172,7 +172,8 @@ export async function getPromptOutputs(
 
 async function collectExecutionStats(
   promptId: string,
-  log: FastifyBaseLogger
+  log: FastifyBaseLogger,
+  onProgress?: (message: ComfyWSMessage) => void
 ): Promise<ExecutionStats> {
   let start = Date.now();
   return new Promise((resolve, reject) => {
@@ -184,6 +185,11 @@ async function collectExecutionStats(
       if (typeof data === "string") {
         const message = JSON.parse(data) as ComfyWSMessage;
         if (message?.data?.prompt_id !== promptId) return;
+
+        if (onProgress) {
+          onProgress(message);
+        }
+
         if (isExecutionStartMessage(message)) {
           start = Date.now();
           stats.comfy_execution.start = start;
@@ -309,7 +315,8 @@ export type PromptOutputsWithStats = {
 export async function runPromptAndGetOutputs(
   id: string,
   prompt: ComfyPrompt,
-  log: FastifyBaseLogger
+  log: FastifyBaseLogger,
+  onProgress?: (message: ComfyWSMessage) => void
 ): Promise<PromptOutputsWithStats> {
   const promptId = await queuePrompt(prompt);
   comfyIDToApiID[promptId] = id;
@@ -330,7 +337,7 @@ export async function runPromptAndGetOutputs(
   /**
    * We also listen to the websocket stream for the prompt to complete.
    */
-  const executionStatsPromise = collectExecutionStats(promptId, log);
+  const executionStatsPromise = collectExecutionStats(promptId, log, onProgress);
 
   /**
    * We wait for either the history endpoint to return the outputs, or the websocket

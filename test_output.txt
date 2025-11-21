@@ -1,0 +1,51 @@
+
+
+  POST /prompt (Streaming)
+    1) "before all" hook for "should stream events when Accept header is text/event-stream"
+
+
+  0 passing (583ms)
+  1 failing
+
+  1) POST /prompt (Streaming)
+       "before all" hook for "should stream events when Accept header is text/event-stream":
+     Error: ENOENT: no such file or directory, mkdir '/workflows'
+      at Object.mkdirSync (node:fs:1361:26)
+      at Object.<anonymous> (src/config.ts:56:4)
+      at Module._compile (node:internal/modules/cjs/loader:1723:14)
+      at Module.m._compile (node_modules/ts-node/src/index.ts:1618:23)
+      at loadTS (node:internal/modules/cjs/loader:1815:10)
+      at Object.require.extensions.<computed> [as .ts] (node_modules/ts-node/src/index.ts:1621:12)
+      at Module.load (node:internal/modules/cjs/loader:1458:32)
+      at Function._load (node:internal/modules/cjs/loader:1275:12)
+      at TracingChannel.traceSync (node:diagnostics_channel:322:14)
+      at wrapModuleLoad (node:internal/modules/cjs/loader:234:24)
+      at Module.require (node:internal/modules/cjs/loader:1480:12)
+      at require (node:internal/modules/helpers:135:16)
+      at Object.<anonymous> (src/utils.ts:1:1)
+      at Module._compile (node:internal/modules/cjs/loader:1723:14)
+      at Module.m._compile (node_modules/ts-node/src/index.ts:1618:23)
+      at loadTS (node:internal/modules/cjs/loader:1815:10)
+      at Object.require.extensions.<computed> [as .ts] (node_modules/ts-node/src/index.ts:1621:12)
+      at Module.load (node:internal/modules/cjs/loader:1458:32)
+      at Function._load (node:internal/modules/cjs/loader:1275:12)
+      at TracingChannel.traceSync (node:diagnostics_channel:322:14)
+      at wrapModuleLoad (node:internal/modules/cjs/loader:234:24)
+      at Module.require (node:internal/modules/cjs/loader:1480:12)
+      at require (node:internal/modules/helpers:135:16)
+      at Object.<anonymous> (src/comfy.ts:1:1)
+      at Module._compile (node:internal/modules/cjs/loader:1723:14)
+      at Module.m._compile (node_modules/ts-node/src/index.ts:1618:23)
+      at loadTS (node:internal/modules/cjs/loader:1815:10)
+      at Object.require.extensions.<computed> [as .ts] (node_modules/ts-node/src/index.ts:1621:12)
+      at Module.load (node:internal/modules/cjs/loader:1458:32)
+      at Function._load (node:internal/modules/cjs/loader:1275:12)
+      at TracingChannel.traceSync (node:diagnostics_channel:322:14)
+      at wrapModuleLoad (node:internal/modules/cjs/loader:234:24)
+      at Module.require (node:internal/modules/cjs/loader:1480:12)
+      at require (node:internal/modules/helpers:135:16)
+      at Context.<anonymous> (test/streaming.spec.ts:41:23)
+      at processImmediate (node:internal/timers:511:21)
+
+
+
