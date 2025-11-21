@@ -18,7 +18,7 @@ const styleModelPath = path.join(config.comfyDir, "models", "style_models");
 const gligenPath = path.join(config.comfyDir, "models", "gligen");
 const upscaleModelPath = path.join(config.comfyDir, "models", "upscale_models");
 
-function updateModelsInConfig(modelType: string, modelName: string) {
+export function updateModelsInConfig(modelType: string, modelName: string) {
   if (config.models[modelType].all.includes(modelName)) {
     return;
   }

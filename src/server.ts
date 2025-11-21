@@ -21,7 +21,7 @@ import { getConfiguredWebhookHandlers, sendWebhook } from "./event-emitters";
 import { convertImageBuffer } from "./image-tools";
 import { convertMediaBuffer } from "./media-tools";
 import getStorageManager from "./remote-storage-manager";
-import { NodeProcessError, preprocessNodes } from "./comfy-node-preprocessors";
+import { NodeProcessError, preprocessNodes, updateModelsInConfig } from "./comfy-node-preprocessors";
 import {
   warmupComfyUI,
   waitForComfyUIToStart,
@@ -51,7 +51,7 @@ import { AmqpClient } from "./amqp-client";
 
 const { apiVersion: version } = config;
 
-const server = Fastify({
+export const server = Fastify({
   bodyLimit: config.maxBodySize,
   logger: { level: config.logLevel },
   connectionTimeout: 0,
@@ -219,6 +219,62 @@ server.after(() => {
         modelResponse[modelType] = modelsByType[modelType].all;
       }
       return modelResponse;
+    }
+  );
+
+  app.post<{
+    Body: {
+      url: string;
+      type: string;
+      filename?: string;
+    };
+  }>(
+    "/models",
+    {
+      schema: {
+        summary: "Download Model",
+        description: "Download a model from a URL.",
+        body: z.object({
+          url: z.string().url(),
+          type: z.enum(Object.keys(config.models) as [string, ...string[]]),
+          filename: z.string().optional(),
+        }),
+        response: {
+          200: z.object({
+            status: z.literal("ok"),
+            path: z.string(),
+          }),
+        },
+      },
+    },
+    async (request, reply) => {
+      const { url, type, filename } = request.body;
+      const modelConfig = config.models[type];
+      if (!modelConfig) {
+        return reply.code(400).send({
+          error: `Invalid model type: ${type}`,
+          location: "body.type",
+        } as any);
+      }
+
+      try {
+        const downloadedPath = await remoteStorageManager.downloadFile(
+          url,
+          modelConfig.dir,
+          filename
+        );
+        const finalFilename = path.basename(downloadedPath);
+
+        // Update config with new model
+        updateModelsInConfig(type, finalFilename);
+
+        return { status: "ok", path: downloadedPath };
+      } catch (e: any) {
+        return reply.code(500).send({
+          error: `Failed to download model: ${e.message}`,
+          location: "body.url",
+        } as any);
+      }
     }
   );
 
