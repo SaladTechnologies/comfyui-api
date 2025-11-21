@@ -659,6 +659,11 @@ const config = {
    * default: 3600s (1 hour)
    */
   telemetryInterval: parseInt(TELEMETRY_INTERVAL_S, 10) * 1000,
+
+  // AMQP Configuration
+  amqpUrl: process.env.AMQP_URL,
+  amqpQueueInput: process.env.AMQP_QUEUE_INPUT || "comfyui_input",
+  amqpQueueOutput: process.env.AMQP_QUEUE_OUTPUT || "comfyui_output",
 };
 
 const modelSubDirs = fs.readdirSync(modelDir);

@@ -46,6 +46,8 @@ import { WebSocket } from "ws";
 import { fetch } from "undici";
 import { getProxyDispatcher } from "./proxy-dispatcher";
 import archiver from "archiver";
+import { processPrompt, PromptRequest } from "./prompt-handler";
+import { AmqpClient } from "./amqp-client";
 
 const { apiVersion: version } = config;
 
@@ -77,7 +79,7 @@ for (const provider of remoteStorageManager.storageProviders) {
   });
 }
 
-type PromptRequest = z.infer<typeof PromptRequestSchema>;
+// type PromptRequest = z.infer<typeof PromptRequestSchema>;
 
 const WorkflowRequestSchema = PromptRequestSchema.omit({ prompt: true }).extend(
   {
@@ -246,336 +248,27 @@ server.after(() => {
       },
     },
     async (request, reply) => {
-      let {
-        prompt,
-        id,
-        webhook,
-        webhook_v2,
-        convert_output,
-        compress_outputs,
-        signed_url,
-      } = request.body;
-
-      /**
-       * Here we go through all the nodes in the prompt to validate it,
-       * and also to do some pre-processing.
-       */
-      let hasSaveImage = false;
-
-      const log = app.log.child({ id });
-
-      const start = Date.now();
       try {
-        const { prompt: preprocessedPrompt, hasSaveImage: saveImageFound } =
-          await preprocessNodes(prompt, id, log);
-        prompt = preprocessedPrompt;
-        hasSaveImage = saveImageFound;
-      } catch (e: NodeProcessError | any) {
-        telemetry.trackFailure(Date.now() - start);
-        log.error(`Failed to preprocess nodes: ${e.message}`);
+        const result = await processPrompt(request.body as PromptRequest, app.log);
+        if (
+          request.body.webhook ||
+          request.body.webhook_v2 ||
+          (request.body.signed_url && !result.images)
+        ) {
+          return reply
+            .code(202)
+            .send({ ...request.body, status: "ok", id: request.body.id });
+        }
+        return reply.send({
+          ...request.body,
+          ...result,
+        });
+      } catch (e: any) {
         const code = e.code && [400, 422].includes(e.code) ? e.code : 400;
         return reply.code(code).send({
-          error: e.message || "Failed to preprocess nodes",
+          error: e.message || "Failed to process prompt",
           location: e.location || "prompt",
         });
-      }
-
-      const preprocessTime = Date.now();
-      log.debug(`Preprocessed prompt in ${preprocessTime}ms`);
-
-      /**
-       * If the prompt has no outputs, there's no point in running it.
-       */
-      if (!hasSaveImage) {
-        return reply.code(400).send({
-          error:
-            'Prompt must contain a node with a "filename_prefix" input, such as "SaveImage"',
-          location: "prompt",
-        });
-      }
-
-      type ProcessedOutput = {
-        buffers: Buffer[];
-        filenames: string[];
-        stats: any;
-      };
-
-      const postProcessOutputs = async ({
-        outputs,
-        stats,
-      }: PromptOutputsWithStats): Promise<ProcessedOutput> => {
-        stats.preprocess_time = preprocessTime - start;
-        stats.comfy_round_trip_time = Date.now() - preprocessTime;
-        const filenames: string[] = [];
-        const fileBuffers: Buffer[] = [];
-        const unlinks: Promise<void>[] = [];
-        for (const originalFilename in outputs) {
-          let filename = originalFilename;
-          let fileBuffer = outputs[filename];
-          if (convert_output) {
-            try {
-              const isOutputVideoAudio = [
-                "mp4",
-                "webm",
-                "mp3",
-                "wav",
-                "ogg",
-              ].includes(convert_output.format);
-              const isInputVideoAudio =
-                /\.(mp4|mkv|avi|mov|webm|mp3|wav|ogg|flac|m4a)$/i.test(filename);
-
-              if (isOutputVideoAudio || isInputVideoAudio) {
-                fileBuffer = await convertMediaBuffer(fileBuffer, convert_output);
-                filename =
-                  filename.replace(/\.[^/.]+$/, "") + "." + convert_output.format;
-              } else {
-                fileBuffer = await convertImageBuffer(fileBuffer, convert_output);
-                if (
-                  convert_output.format === "jpg" ||
-                  convert_output.format === "jpeg"
-                ) {
-                  filename = filename.replace(/\.[^/.]+$/, "") + ".jpg";
-                } else if (convert_output.format === "webp") {
-                  filename = filename.replace(/\.[^/.]+$/, "") + ".webp";
-                }
-              }
-            } catch (e: any) {
-              log.warn(`Failed to convert image: ${e.message}`);
-            }
-          }
-          filenames.push(filename);
-          fileBuffers.push(fileBuffer);
-          unlinks.push(
-            fsPromises.unlink(path.join(config.outputDir, originalFilename))
-          );
-        }
-        await Promise.all(unlinks);
-        stats.postprocess_time =
-          Date.now() - stats.comfy_round_trip_time - preprocessTime;
-        if (compress_outputs) {
-          const archive = archiver("zip", { zlib: { level: 9 } });
-          const buffers: Buffer[] = [];
-          archive.on("data", (data) => buffers.push(data));
-
-          const archivePromise = new Promise<void>((resolve, reject) => {
-            archive.on("end", resolve);
-            archive.on("error", reject);
-          });
-
-          for (let i = 0; i < filenames.length; i++) {
-            archive.append(fileBuffers[i], { name: filenames[i] });
-          }
-          archive.finalize();
-          await archivePromise;
-
-          return {
-            buffers: [Buffer.concat(buffers)],
-            filenames: ["outputs.zip"],
-            stats,
-          };
-        }
-
-        return {
-          buffers: fileBuffers,
-          filenames,
-          stats,
-        };
-      };
-
-      const runPromptPromise = runPromptAndGetOutputs(id, prompt, log)
-        .catch((e: any) => {
-          telemetry.trackFailure(Date.now() - start);
-          log.error(`Failed to run prompt: ${e.message}`);
-          if (webhook_v2) {
-            const webhookBody = {
-              type: "prompt.failed",
-              timestamp: new Date().toISOString(),
-              id,
-              prompt,
-              error: e.message,
-            };
-            sendWebhook(webhook_v2, webhookBody, log, 2);
-          } else if (webhook) {
-            log.warn(
-              `.webhook has been deprecated in favor of .webhook_v2. Support for .webhook will be removed in a future version.`
-            );
-            const webhookBody = {
-              event: "prompt.failed",
-              id,
-              prompt,
-              error: e.message,
-            };
-            sendWebhook(webhook, webhookBody, log, 1);
-          }
-          throw e;
-        })
-        .then(postProcessOutputs);
-
-      let uploadPromise: Promise<{
-        images: string[];
-        filenames: string[];
-        stats: any;
-      }> | null = null;
-
-      type Handler = (data: ProcessedOutput) => Promise<{
-        images: string[];
-        filenames: string[];
-        stats: any;
-      }>;
-
-      const webhookHandler: Handler = async ({
-        buffers,
-        filenames,
-        stats,
-      }: ProcessedOutput) => {
-        if (!webhook) {
-          throw new Error("Webhook URL is not defined");
-        }
-        log.warn(
-          `.webhook has been deprecated in favor of .webhook_v2. Support for .webhook will be removed in a future version.`
-        );
-        const webhookPromises: Promise<any>[] = [];
-        const images: string[] = [];
-        for (let i = 0; i < buffers.length; i++) {
-          const base64File = buffers[i].toString("base64");
-          images.push(base64File);
-          const filename = filenames[i];
-          log.info(`Sending image ${filename} to webhook: ${webhook}`);
-          webhookPromises.push(
-            sendWebhook(
-              webhook,
-              {
-                event: "output.complete",
-                image: base64File,
-                id,
-                filename,
-                prompt,
-                stats,
-              },
-              log,
-              1
-            )
-          );
-        }
-        await Promise.all(webhookPromises);
-        return { images, filenames, stats };
-      };
-
-      const uploadHandler: Handler = async ({
-        buffers,
-        filenames,
-        stats,
-      }): Promise<{
-        images: string[];
-        filenames: string[];
-        stats: any;
-      }> => {
-        const uploadPromises: Promise<void>[] = [];
-        const images: string[] = [];
-        for (let i = 0; i < buffers.length; i++) {
-          const fileBuffer = buffers[i];
-          const filename = filenames[i];
-          for (const provider of remoteStorageManager.storageProviders) {
-            if (
-              provider.requestBodyUploadKey &&
-              request.body[provider.requestBodyUploadKey]
-            ) {
-              images.push(
-                provider.createUrl({
-                  ...request.body[provider.requestBodyUploadKey],
-                  filename,
-                })
-              );
-              break;
-            }
-          }
-          uploadPromises.push(
-            remoteStorageManager.uploadFile(images[i], fileBuffer)
-          );
-        }
-
-        await Promise.all(uploadPromises);
-        return { images, filenames, stats };
-      };
-
-      const storageProvider = remoteStorageManager.storageProviders.find(
-        (provider) =>
-          provider.requestBodyUploadKey &&
-          !!request.body[provider.requestBodyUploadKey]
-      );
-      const asyncUpload =
-        webhook ||
-        webhook_v2 ||
-        (storageProvider &&
-          storageProvider.requestBodyUploadKey &&
-          request.body[storageProvider.requestBodyUploadKey]?.async);
-
-      if (webhook) {
-        uploadPromise = runPromptPromise.then(webhookHandler);
-      } else if (!!storageProvider) {
-        uploadPromise = runPromptPromise.then(uploadHandler);
-      } else {
-        uploadPromise = runPromptPromise.then(
-          async ({ buffers, filenames, stats }) => {
-            const images: string[] = buffers.map((b) => b.toString("base64"));
-            return { images, filenames, stats };
-          }
-        );
-      }
-
-      const finalStatsPromise = uploadPromise.then(
-        ({ images, stats, filenames }) => {
-          stats.upload_time =
-            Date.now() -
-            start -
-            stats.preprocess_time -
-            stats.comfy_round_trip_time -
-            stats.postprocess_time;
-          stats.total_time = Date.now() - start;
-          log.debug(stats);
-          telemetry.trackSuccess(stats.total_time);
-          return { images, stats, filenames };
-        }
-      );
-
-      if (asyncUpload) {
-        reply.code(202).send({ ...request.body, status: "ok", id, prompt });
-      }
-
-      const { images, stats, filenames } = await finalStatsPromise;
-      if (stats.total_time) {
-        log.info(`Total time: ${stats.total_time.toFixed(3)}s`);
-      }
-
-      if (request.body.signed_url) {
-        const signedImages: string[] = await Promise.all(
-          images.map((url) => remoteStorageManager.getSignedUrl(url))
-        );
-        // Replace images with signed versions
-        images.splice(0, images.length, ...signedImages);
-      }
-
-      const outputPayload = {
-        ...request.body,
-        id,
-        prompt,
-        images,
-        filenames,
-        stats,
-      };
-
-      if (webhook_v2) {
-        log.debug(`Sending final response to webhook_v2: ${webhook_v2}`);
-        const webhookBody = {
-          type: "prompt.complete",
-          timestamp: new Date().toISOString(),
-          ...outputPayload,
-        };
-        sendWebhook(webhook_v2, webhookBody, log, 2);
-      }
-
-      if (!asyncUpload) {
-        return reply.send(outputPayload);
       }
     }
   );
@@ -692,8 +385,19 @@ async function launchComfyUIAndAPIServerAndWaitForWarmup() {
   if (!wasEverWarm) {
     await server.ready();
     server.swagger();
-    // Start the server
-    await server.listen({ port: config.wrapperPort, host: config.wrapperHost });
+    // Initialize AMQP Client
+    const amqpClient = new AmqpClient(server.log);
+    amqpClient.connect();
+
+    const start = async () => {
+      try {
+        await server.listen({ port: config.wrapperPort, host: config.wrapperHost });
+      } catch (err) {
+        server.log.error(err);
+        process.exit(1);
+      }
+    };
+    start();
     server.log.info(`ComfyUI API ${config.apiVersion} started.`);
   }
   const handlers = getConfiguredWebhookHandlers(server.log);

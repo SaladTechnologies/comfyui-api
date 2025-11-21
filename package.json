@@ -14,6 +14,7 @@
   "license": "MIT",
   "devDependencies": {
     "@anthropic-ai/sdk": "^0.26.1",
+    "@types/amqplib": "^0.10.8",
     "@types/archiver": "^7.0.0",
     "@types/fluent-ffmpeg": "^2.1.28",
     "@types/mocha": "^10.0.10",
@@ -37,6 +38,7 @@
     "@fastify/swagger": "^9.5.0",
     "@fastify/swagger-ui": "^5.2.2",
     "@smithy/node-http-handler": "^4.0.5",
+    "amqplib": "^0.10.9",
     "archiver": "^7.0.1",
     "fastify": "^5.3.3",
     "fastify-type-provider-zod": "^4.0.2",
