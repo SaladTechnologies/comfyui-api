@@ -76,7 +76,7 @@ If you have your own ComfyUI dockerfile, you can add the comfyui-api server to i
 
 ```dockerfile
 # Change this to the version you want to use
-ARG api_version=1.13.5
+ARG api_version=1.2.0
 
 # Download the comfyui-api binary, and make it executable
 ADD https://github.com/SaladTechnologies/comfyui-api/releases/download/${api_version}/comfyui-api .
@@ -98,6 +98,13 @@ The server hosts swagger docs at `/docs`, which can be used to interact with the
 - **Swagger Docs**: The server hosts swagger docs at `/docs`, which can be used to interact with the API.
 - **"Synchronous" Support**: The server will return base64-encoded images directly in the response, if no async behavior is requested.
 - **Async Support via Webhooks**: The server can send completed outputs to a webhook URL, allowing for asynchronous processing.
+- **AMQP Support**: Submit prompts and receive results via AMQP (e.g., RabbitMQ).
+- **Streaming Responses**: Receive real-time updates via Server-Sent Events (SSE).
+- **Model Management**: Dynamically download models via API.
+- **Media Conversion**: Convert output images to video or audio formats.
+- **Compressed Uploads**: Support for uploading compressed archives (zip/tar) of input images.
+- **Signed URLs**: Generate signed URLs for S3/Azure Blob storage uploads.
+- **Custom Node Support**: Automatically import samplers and schedulers from custom nodes.
 - **Modular Storage Backends**: Completed outputs can be sent base64-encoded to a webhook, or uploaded to any s3-compatible storage, an http endpoint, a huggingface repo, or azure blob storage. All of these can be used to download input media as well. More storage backends can be added easily. Supports an optional LRU cache for downloaded models and files to keep local storage from overflowing.
 - **Warmup Workflow**: The server can be configured to run a warmup workflow on startup, which can be used to load and warm up models, and to ensure the server is ready to accept requests.
 - **Return Images In PNG (default), JPEG, or WebP**: The server can return images in PNG, JPEG, or WebP format, via a parameter in the API request. Most options supported by [sharp](https://sharp.pixelplumbing.com/) are supported.
