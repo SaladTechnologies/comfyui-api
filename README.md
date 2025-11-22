@@ -43,6 +43,8 @@ A simple wrapper that facilitates using [ComfyUI](https://github.com/comfyanonym
     - [DEPRECATED: Legacy Webhook Behavior](#deprecated-legacy-webhook-behavior)
       - [output.complete](#outputcomplete)
       - [prompt.failed (legacy)](#promptfailed-legacy)
+  - [AMQP Support](#amqp-support)
+  - [Streaming Responses](#streaming-responses)
   - [System Events](#system-events)
     - [status](#status)
     - [progress](#progress)
@@ -141,7 +143,9 @@ Prompts are submitted to the server via the `POST /prompt` endpoint, which accep
       "quality": 80,
       "progressive": true
     }
-  }
+  },
+  "compress_outputs": true,
+  "signed_url": true
 }
 ```
 
@@ -726,10 +730,34 @@ The LoRA may be generated on-the-fly by another service, and provided to the Com
     "ckpt_name": "https://civitai.com/api/download/models/76750?type=Model&format=SafeTensor&size=pruned&fp=fp16"
   },
   "class_type": "CheckpointLoaderSimple",
-  "_meta": {
-    "title": "Load Checkpoint"
-  }
 },
+
+## Model Management
+
+You can download models dynamically using the `POST /models` endpoint. This is useful for managing models without restarting the server.
+
+**Request:**
+
+```json
+{
+  "url": "https://civitai.com/api/download/models/128713?type=Model&format=SafeTensor&size=pruned&fp=fp16",
+  "type": "checkpoints",
+  "filename": "my_model.safetensors"
+}
+```
+
+- `url`: The URL of the model to download.
+- `type`: The type of model (e.g., `checkpoints`, `loras`, `vae`, `controlnet`, etc.). Must match a valid ComfyUI model directory.
+- `filename`: (Optional) The filename to save the model as. If omitted, it will be derived from the URL or headers.
+
+**Response:**
+
+```json
+{
+  "status": "success",
+  "path": "/opt/ComfyUI/models/checkpoints/my_model.safetensors"
+}
+```
 ```
 
 ## Server-side image processing
@@ -767,6 +795,38 @@ Omitting the `convert_output` object will default to PNG format, which is lossle
 - `preset`: named preset for preprocessing/filtering, one of `default`, `picture`, `photo`, `drawing`, `icon`, or `text`. Default is `default`.
 - `effort`: CPU effort level, between 0 (fastest) and 6 (slowest). Default is `4`.
 
+**Video options**:
+
+- `codec`: The video codec to use (e.g., `libx264`).
+- `fps`: Frames per second.
+- `crf`: Constant Rate Factor.
+- `preset`: Encoder preset (e.g., `medium`).
+- `bitrate`: Video bitrate.
+
+**Audio options**:
+
+- `codec`: The audio codec to use (e.g., `aac`).
+- `bitrate`: Audio bitrate.
+- `frequency`: Audio frequency.
+
+You can also specify `mp4`, `webm`, `gif`, `mp3`, `wav`, or `ogg` as the `format`.
+
+**Video options**:
+
+- `codec`: The video codec to use (e.g., `libx264`).
+- `fps`: Frames per second.
+- `crf`: Constant Rate Factor.
+- `preset`: Encoder preset (e.g., `medium`).
+- `bitrate`: Video bitrate.
+
+**Audio options**:
+
+- `codec`: The audio codec to use (e.g., `aac`).
+- `bitrate`: Audio bitrate.
+- `frequency`: Audio frequency.
+
+You can also specify `mp4`, `webm`, `gif`, `mp3`, `wav`, or `ogg` as the `format`.
+
 ## Probes
 
 The server has two probes, `/health` and `/ready`.
@@ -798,6 +858,14 @@ If you are using the azure blob storage functionality, make sure to set all of t
 | COMFYUI_PORT_HOST            | "8188"                     | ComfyUI port number                                                                                                                                                                                                                          |
 | DIRECT_ADDRESS               | "127.0.0.1"                | Direct address for ComfyUI                                                                                                                                                                                                                   |
 | HOST                         | "::"                       | Wrapper host address                                                                                                                                                                                                                         |
+| AMQP_URL                     | (not set)                  | Connection URL for the AMQP broker (e.g., amqp://localhost).                                                                                                                                                                                 |
+| AMQP_QUEUE_INPUT             | "comfyui_input"            | Name of the input queue for AMQP.                                                                                                                                                                                                            |
+| AMQP_QUEUE_OUTPUT            | "comfyui_output"           | Name of the output queue for AMQP.                                                                                                                                                                                                           |
+| MAX_CONCURRENT_DOWNLOADS     | "10"                       | Maximum number of concurrent downloads.                                                                                                                                                                                                      |
+| MAX_CONCURRENT_UPLOADS       | "10"                       | Maximum number of concurrent uploads.                                                                                                                                                                                                        |
+| ENABLE_TELEMETRY             | "false"                    | If set to "true", enables telemetry.                                                                                                                                                                                                         |
+| TELEMETRY_URL                | (not set)                  | URL to send telemetry data to.                                                                                                                                                                                                               |
+| TELEMETRY_INTERVAL_S         | "3600"                     | Interval in seconds between telemetry reports.                                                                                                                                                                                               |
 | HTTP_AUTH_HEADER_NAME        | (not set)                  | If set, the server will include this header name with the value from HTTP_AUTH_HEADER_VALUE in all outgoing HTTP requests for uploading and downloading files. This can be used to add basic auth or bearer tokens to requests.              |
 | HTTP_AUTH_HEADER_VALUE       | (not set)                  | The value to use for the HTTP_AUTH_HEADER_NAME header in all outgoing HTTP requests for uploading and downloading files.                                                                                                                     |
 | INPUT_DIR                    | "/opt/ComfyUI/input"       | Directory for input files                                                                                                                                                                                                                    |
@@ -1052,6 +1120,46 @@ The webhook event name for a failed request is `prompt.failed`. The webhook will
   "id": "request-id",
   "prompt": {}
 }
+```
+
+## AMQP Support
+
+The ComfyUI API server supports submitting prompts and receiving results via an AMQP broker (e.g., RabbitMQ). This is useful for decoupling the client from the server and handling high loads.
+
+To enable AMQP support, set the `AMQP_URL` environment variable (e.g., `amqp://localhost`). You can also configure the input and output queues via `AMQP_QUEUE_INPUT` and `AMQP_QUEUE_OUTPUT`.
+
+### Input Format
+
+Send a JSON message to the input queue with the same format as the HTTP `POST /prompt` request body.
+
+### Output Format
+
+The server will publish the result to the output queue. The format depends on the result:
+
+- **Success**: JSON object containing `prompt_id`, `images` (base64 or URLs), `filenames`, and `stats`.
+- **Error**: JSON object containing `prompt_id`, `error`, `node_errors` (if available).
+
+## Streaming Responses
+
+The `POST /prompt` endpoint supports streaming responses using Server-Sent Events (SSE). This allows you to receive real-time updates on the progress of your prompt execution.
+
+To use streaming, set the `Accept` header to `text/event-stream`.
+
+### Events
+
+The server sends the following events:
+
+- `message`: Contains a JSON data payload with a `type` field indicating the event type.
+  - `status`: Queue status updates.
+  - `executing`: Indicates which node is currently executing.
+  - `progress`: Progress of the current node (e.g., KSampler steps).
+- `complete`: Sent when the prompt execution is finished. Contains the final output (images, stats).
+- `error`: Sent if an error occurs.
+
+### Example
+
+```bash
+curl -N -H "Accept: text/event-stream" -H "Content-Type: application/json" -d @prompt.json http://localhost:3000/prompt
 ```
 
 ## System Events

@@ -197,9 +197,23 @@ function getPythonCommand(): string {
 function getComfyUIDescription(): ComfyDescription {
   const temptComfyFilePath = path.join(comfyDir, "temp_comfy_description.json");
   const pythonCode = `
+import os
+import sys
+
+# Ensure we can import modules from the current directory (ComfyUI root)
+sys.path.append(os.getcwd())
+
 import comfy.samplers
 import comfyui_version
 import json
+
+# Attempt to load custom nodes to register extra samplers/schedulers
+try:
+    import nodes
+    # This function loads custom nodes
+    nodes.init_extra_nodes()
+except Exception as e:
+    print(f"Warning: Failed to load custom nodes: {e}", file=sys.stderr)
 
 comfy_description = {
     "samplers": comfy.samplers.KSampler.SAMPLERS,
@@ -213,10 +227,10 @@ with open("${temptComfyFilePath}", "w") as f:
 
   const tempFilePath = path.join(comfyDir, "temp_comfy_description.py");
   const pythonCommand = getPythonCommand();
-  let command = `${pythonCommand} ${tempFilePath}`;
+  let command = `${pythonCommand} ${tempFilePath} `;
   if (BASE in loadEnvCommand) {
     command = `${loadEnvCommand[BASE]} \
-    && ${pythonCommand} ${tempFilePath}`;
+    && ${pythonCommand} ${tempFilePath} `;
   }
 
   try {
@@ -259,7 +273,7 @@ with open("${temptComfyFilePath}", "w") as f:
     try {
       fs.unlinkSync(tempFilePath);
     } catch (unlinkError: any) {
-      console.error(`Failed to delete temporary file: ${unlinkError.message}`);
+      console.error(`Failed to delete temporary file: ${unlinkError.message} `);
     }
   }
 }
@@ -268,7 +282,7 @@ const comfyDescription = getComfyUIDescription();
 
 function parseManifest(manifestPath: string): any {
   if (!fs.existsSync(manifestPath)) {
-    throw new Error(`Manifest file not found at path: ${manifestPath}`);
+    throw new Error(`Manifest file not found at path: ${manifestPath} `);
   }
 
   const isYAML =
@@ -317,7 +331,7 @@ if (MANIFEST_JSON) {
     }
     manifest = parsed;
   } catch (e: any) {
-    throw new Error(`Failed to parse MANIFEST_JSON: ${e.message}`);
+    throw new Error(`Failed to parse MANIFEST_JSON: ${e.message} `);
   }
 } else if (MANIFEST) {
   manifest = parseManifest(MANIFEST);
