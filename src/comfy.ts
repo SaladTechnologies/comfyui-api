@@ -531,7 +531,7 @@ export async function interruptPrompt(id: string): Promise<void> {
   );
 
   if (!comfyPromptId) {
-    throw new Error(`Prompt ${id} not found in active queue`);
+    throw new Error(`Prompt ${id} not found`);
   }
 
   const resp = await fetch(`${config.comfyURL}/interrupt`, {
