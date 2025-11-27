@@ -15,6 +15,8 @@ import {
   isExecutingMessage,
   isExecutionInterruptedMessage,
   isExecutionErrorMessage,
+  isLogsMessage,
+  isFeatureFlagsMessage,
   WebhookHandlers,
   ComfyPromptResponse,
   ComfyHistoryResponse,
@@ -105,6 +107,20 @@ export async function queuePrompt(prompt: ComfyPrompt): Promise<string> {
   }
   const { prompt_id } = (await resp.json()) as ComfyPromptResponse;
   return prompt_id;
+}
+
+export async function subscribeToLogs(enabled: boolean = true): Promise<void> {
+  const resp = await fetch(`${config.comfyURL}/internal/logs/subscribe`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ clientId: config.wsClientId, enabled }),
+    dispatcher: getProxyDispatcher(),
+  });
+  if (!resp.ok) {
+    throw new Error(`Failed to subscribe to logs: ${await resp.text()}`);
+  }
 }
 
 export async function getPromptOutputs(
@@ -455,6 +471,10 @@ export function connectToComfyUIWebsocketStream(
           hooks.onExecutionInterrupted(message);
         } else if (isExecutionErrorMessage(message) && hooks.onExecutionError) {
           hooks.onExecutionError(message);
+        } else if (isLogsMessage(message) && hooks.onLogs) {
+          hooks.onLogs(message);
+        } else if (isFeatureFlagsMessage(message) && hooks.onFeatureFlags) {
+          hooks.onFeatureFlags(message);
         }
       } else {
         log.info(`Received binary message`);

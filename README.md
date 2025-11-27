@@ -76,7 +76,7 @@ If you have your own ComfyUI dockerfile, you can add the comfyui-api server to i
 
 ```dockerfile
 # Change this to the version you want to use
-ARG api_version=1.14.3
+ARG api_version=1.14.4
 
 # Download the comfyui-api binary, and make it executable
 ADD https://github.com/SaladTechnologies/comfyui-api/releases/download/${api_version}/comfyui-api .
@@ -1174,9 +1174,11 @@ The server sends the following events:
 curl -N -H "Accept: text/event-stream" -H "Content-Type: application/json" -d @prompt.json http://localhost:3000/prompt
 ```
 
-## System Events
+#### System Events
 
 Note: From version 1.13.5, the frontend aggregate progress event `progress_state` is included in the supported system event set and can be forwarded like other events. Use `SYSTEM_WEBHOOK_EVENTS=progress_state` or `SYSTEM_WEBHOOK_EVENTS=all` to subscribe.
+
+**New in v1.14.4**: Added support for `logs` and `feature_flags` events.
 
 ComfyUI emits a number of events over websocket during the course of a workflow. These can be configured to be sent to a webhook using the `SYSTEM_WEBHOOK_URL` and `SYSTEM_WEBHOOK_EVENTS` environment variables. Additionally, any environment variable starting with `SYSTEM_META_` will be sent as metadata with the event. From version 1.13.0, these are signed, and can be validated using the `WEBHOOK_SECRET` environment variable and any standard webhook validation library such as `svix`. See [above](#validating-webhooks) for examples.
 
@@ -1192,18 +1194,30 @@ All webhooks have the same format, which is as follows:
 
 When running on SaladCloud, `.metadata` will always include lowercase versions of the [Default Environment Variables](https://docs.salad.com/container-engine/how-to-guides/environment-variables#default-environment-variables).
 
+##### Available Events
+
 The following events are available:
 
-- "status"
-- "progress"
-- "progress_state"
-- "executing"
-- "execution_start"
-- "execution_cached"
-- "executed"
-- "execution_success"
-- "execution_interrupted"
-- "execution_error"
+**Execution Events** (automatically sent during workflow execution):
+
+- `status` - Queue status updates
+- `progress` - Overall execution progress
+- `progress_state` - Detailed per-node progress information
+- `executing` - Currently executing node
+- `execution_start` - Workflow execution started
+- `execution_cached` - Cached execution results
+- `executed` - Node execution completed
+- `execution_success` - Workflow execution succeeded
+- `execution_interrupted` - Workflow execution interrupted
+- `execution_error` - Workflow execution failed
+
+**Special Events**:
+
+- `logs` - Log entries from ComfyUI terminal service (**requires subscription**, see below)
+- `feature_flags` - Feature flags negotiation data
+
+**Storage Events**:
+
 - "file_downloaded"
 - "file_uploaded"
 - "file_deleted"

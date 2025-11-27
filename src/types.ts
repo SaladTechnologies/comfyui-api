@@ -219,7 +219,9 @@ export interface ComfyWSMessage {
   | "executed"
   | "execution_success"
   | "execution_interrupted"
-  | "execution_error";
+  | "execution_error"
+  | "logs"
+  | "feature_flags";
   data: any;
   sid: string | null;
 }
@@ -394,6 +396,40 @@ export function isExecutionErrorMessage(
   return msg.type === "execution_error";
 }
 
+export interface ComfyWSLogsMessage extends ComfyWSMessage {
+  type: "logs";
+  data: {
+    entries: Array<{
+      level: string;
+      message: string;
+      timestamp?: number;
+    }>;
+    terminal?: {
+      rows: number;
+      cols: number;
+    };
+  };
+}
+
+export function isLogsMessage(
+  msg: ComfyWSMessage
+): msg is ComfyWSLogsMessage {
+  return msg.type === "logs";
+}
+
+export interface ComfyWSFeatureFlagsMessage extends ComfyWSMessage {
+  type: "feature_flags";
+  data: {
+    flags: Record<string, boolean | string | number>;
+  };
+}
+
+export function isFeatureFlagsMessage(
+  msg: ComfyWSMessage
+): msg is ComfyWSFeatureFlagsMessage {
+  return msg.type === "feature_flags";
+}
+
 export type WebhookHandlers = {
   onMessage?: (msg: RawData) => Promise<void> | void;
   onStatus?: (data: ComfyWSStatusMessage) => Promise<void> | void;
@@ -414,6 +450,8 @@ export type WebhookHandlers = {
   onExecutionInterrupted?: (
     data: ComfyWSExecutionInterruptedMessage
   ) => Promise<void> | void;
+  onLogs?: (data: ComfyWSLogsMessage) => Promise<void> | void;
+  onFeatureFlags?: (data: ComfyWSFeatureFlagsMessage) => Promise<void> | void;
   onFileDownloaded?: (data: {
     url: string;
     local_path: string;
@@ -445,6 +483,8 @@ export const SystemWebhookEvents = [
   "execution_success",
   "execution_interrupted",
   "execution_error",
+  "logs",
+  "feature_flags",
   "file_downloaded",
   "file_uploaded",
   "file_deleted",
