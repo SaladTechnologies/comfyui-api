@@ -32,11 +32,15 @@ export class AzureBlobStorageProvider implements StorageProvider {
   constructor(log: FastifyBaseLogger) {
     this.log = log.child({ provider: "AzureBlobStorageProvider" });
 
+    // Configure proxy settings if available
+    const proxySettings = this.getProxySettings();
+
     // Priority 1: Connection string (for Azurite or full connection strings)
     if (config.azureStorageConnectionString) {
       this.log.debug("Using Azure Storage connection string");
       this.client = BlobServiceClient.fromConnectionString(
-        config.azureStorageConnectionString
+        config.azureStorageConnectionString,
+        proxySettings ? { proxyOptions: proxySettings } : undefined
       );
     }
     // Priority 2: Storage account with explicit key
@@ -48,7 +52,8 @@ export class AzureBlobStorageProvider implements StorageProvider {
       );
       this.client = new BlobServiceClient(
         `https://${config.azureStorageAccount}.blob.core.windows.net`,
-        sharedKeyCredential
+        sharedKeyCredential,
+        proxySettings ? { proxyOptions: proxySettings } : undefined
       );
     }
     // Priority 3: Storage account with SAS token
@@ -59,7 +64,9 @@ export class AzureBlobStorageProvider implements StorageProvider {
         ? config.azureStorageSasToken
         : `?${config.azureStorageSasToken}`;
       this.client = new BlobServiceClient(
-        `https://${config.azureStorageAccount}.blob.core.windows.net${sasToken}`
+        `https://${config.azureStorageAccount}.blob.core.windows.net${sasToken}`,
+        undefined,
+        proxySettings ? { proxyOptions: proxySettings } : undefined
       );
     }
     // Priority 4: DefaultAzureCredential (handles many auth methods automatically)
@@ -68,7 +75,8 @@ export class AzureBlobStorageProvider implements StorageProvider {
       const defaultAzureCredential = new DefaultAzureCredential();
       this.client = new BlobServiceClient(
         `https://${config.azureStorageAccount}.blob.core.windows.net`,
-        defaultAzureCredential
+        defaultAzureCredential,
+        proxySettings ? { proxyOptions: proxySettings } : undefined
       );
     } else {
       throw new Error(
@@ -78,6 +86,24 @@ export class AzureBlobStorageProvider implements StorageProvider {
         "- AZURE_STORAGE_ACCOUNT with AZURE_STORAGE_SAS_TOKEN (SAS auth)\n" +
         "- AZURE_STORAGE_ACCOUNT with DefaultAzureCredential (Azure AD/CLI/etc)"
       );
+    }
+  }
+
+  private getProxySettings() {
+    const proxyUrl = config.httpsProxy || config.httpProxy;
+    if (!proxyUrl) {
+      return undefined;
+    }
+
+    try {
+      const url = new URL(proxyUrl);
+      return {
+        host: url.hostname,
+        port: parseInt(url.port || (url.protocol === "https:" ? "443" : "80"), 10),
+      };
+    } catch (error) {
+      this.log.warn({ error, proxyUrl }, "Failed to parse proxy URL");
+      return undefined;
     }
   }
 

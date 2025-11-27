@@ -76,7 +76,7 @@ If you have your own ComfyUI dockerfile, you can add the comfyui-api server to i
 
 ```dockerfile
 # Change this to the version you want to use
-ARG api_version=1.2.0
+ARG api_version=1.14.2
 
 # Download the comfyui-api binary, and make it executable
 ADD https://github.com/SaladTechnologies/comfyui-api/releases/download/${api_version}/comfyui-api .
@@ -653,7 +653,7 @@ Works with both public and private repos, model and dataset repos, and large fil
 
 For downloads, use the format `https://huggingface.co/username/repo/resolve/revision/path/to/file` or `https://huggingface.co/datasets/username/repo/resolve/revision/path/to/file`.
 
-For uploads, include the `hf_upload` field in the request body, like 
+For uploads, include the `hf_upload` field in the request body, like
 
 ```json
 {
@@ -765,6 +765,7 @@ You can download models dynamically using the `POST /models` endpoint. This is u
   "path": "/opt/ComfyUI/models/checkpoints/my_model.safetensors"
 }
 ```
+
 ```
 
 ## Server-side image processing
@@ -849,6 +850,7 @@ The following table lists the available environment variables and their default 
 For historical reasons, the default values mostly assume this will run on top of an [ai-dock](https://github.com/ai-dock/comfyui) image, but we currently provide [our own more minimal image](#prebuilt-docker-images) here in this repo.
 
 If you are using the s3 storage functionality, make sure to set all of the appropriate environment variables for your S3 bucket, such as `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_REGION`.
+For non-AWS S3-compatible storage (e.g., Tencent COS, MinIO), you must also set `AWS_ENDPOINT` or `S3_ENDPOINT` to the appropriate endpoint URL.
 The server will automatically use these to upload images to S3.
 
 If you are using the huggingface storage functionality, make sure to set the `HF_TOKEN` environment variable with a valid Huggingface token with appropriate permissions.
@@ -870,6 +872,8 @@ If you are using the azure blob storage functionality, make sure to set all of t
 | AMQP_QUEUE_OUTPUT            | "comfyui_output"           | Name of the output queue for AMQP.                                                                                                                                                                                                           |
 | MAX_CONCURRENT_DOWNLOADS     | "10"                       | Maximum number of concurrent downloads.                                                                                                                                                                                                      |
 | MAX_CONCURRENT_UPLOADS       | "10"                       | Maximum number of concurrent uploads.                                                                                                                                                                                                        |
+| AWS_ENDPOINT                 | (not set)                  | S3 endpoint URL for non-AWS S3-compatible storage (e.g., `https://cos.ap-guangzhou.myqcloud.com` for Tencent COS). If not set, defaults to AWS S3.                                                                                          |
+| S3_ENDPOINT                  | (not set)                  | Alternative to `AWS_ENDPOINT`. If both are set, `AWS_ENDPOINT` takes precedence.                                                                                                                                                            |
 | ENABLE_TELEMETRY             | "false"                    | If set to "true", enables telemetry.                                                                                                                                                                                                         |
 | TELEMETRY_URL                | (not set)                  | URL to send telemetry data to.                                                                                                                                                                                                               |
 | TELEMETRY_INTERVAL_S         | "3600"                     | Interval in seconds between telemetry reports.                                                                                                                                                                                               |
@@ -900,7 +904,7 @@ If you are using the azure blob storage functionality, make sure to set all of t
 
 #### Kubernetes Deployment: Proxy Environment Variables
 
-To enable outbound requests (e.g., webhook delivery) to use a corporate proxy in Kubernetes, configure the standard proxy environment variables. The server uses undici's EnvHttpProxyAgent, which reads `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY` and routes requests accordingly.
+To enable outbound requests (e.g., webhook delivery, S3 uploads/downloads) to use a corporate proxy in Kubernetes, configure the standard proxy environment variables. The server uses these variables for both general HTTP requests (via undici's EnvHttpProxyAgent) and S3 operations (via https-proxy-agent/http-proxy-agent).
 
 - Recommended `NO_PROXY`: include localhost and common Kubernetes internal addresses so local and in-cluster services do not go through the proxy.
 - Set only one set of variables (prefer uppercase). If both lowercase and uppercase are set, the lowercase variables take precedence and the uppercase ones are ignored.
@@ -939,6 +943,7 @@ spec:
 ```
 
 Notes:
+
 - If your proxy requires authentication, include credentials in the proxy URL (e.g., `http://user:pass@proxy.company:3128`).
 - `NO_PROXY="*"` bypasses the proxy for all requests.
 - When only `HTTP_PROXY` is set, it is used for both HTTP and HTTPS.
