@@ -437,6 +437,7 @@ export const SystemWebhookEvents = [
   "message",
   "status",
   "progress",
+  "progress_state",
   "executing",
   "execution_start",
   "execution_cached",
