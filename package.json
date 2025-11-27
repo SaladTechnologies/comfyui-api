@@ -1,6 +1,6 @@
 {
   "name": "comfyui-api",
-  "version": "1.14.4",
+  "version": "1.14.5",
   "description": "Wraps comfyui to make it easier to use as a stateless web service",
   "main": "dist/src/index.js",
   "scripts": {

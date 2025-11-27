@@ -79,6 +79,12 @@ for (const provider of remoteStorageManager.storageProviders) {
   });
 }
 
+server.log.info(
+  `Loaded storage providers: ${remoteStorageManager.storageProviders
+    .map((p) => p.constructor.name)
+    .join(", ")}`
+);
+
 // type PromptRequest = z.infer<typeof PromptRequestSchema>;
 
 const WorkflowRequestSchema = PromptRequestSchema.omit({ prompt: true }).extend(
@@ -100,12 +106,7 @@ const WorkflowResponseSchema = PromptResponseSchema.extend({
   input: z.record(z.any()),
 });
 
-const modelSchema: any = {};
-for (const modelType in config.models) {
-  modelSchema[modelType] = z.string().array();
-}
-
-const ModelResponseSchema = z.object(modelSchema);
+const ModelResponseSchema = z.record(z.string(), z.array(z.string()));
 type ModelResponse = z.infer<typeof ModelResponseSchema>;
 
 let warm = false;

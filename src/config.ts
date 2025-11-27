@@ -391,7 +391,11 @@ const config = {
   /**
    * (optional) The AWS endpoint to use for S3 operations.
    */
-  awsEndpoint: process.env.AWS_ENDPOINT ?? process.env.S3_ENDPOINT ?? null,
+  awsEndpoint:
+    process.env.AWS_ENDPOINT ??
+    process.env.S3_ENDPOINT ??
+    process.env.AWS_ENDPOINT_URL ??
+    null,
 
   /**
    * (optional) The HTTP proxy to use for S3 operations.

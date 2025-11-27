@@ -3,9 +3,11 @@ import { randomUUID } from "crypto";
 import { RawData } from "ws";
 
 export const ComfyNodeSchema = z.object({
-  inputs: z.any(),
-  class_type: z.string(),
-  _meta: z.any().optional(),
+  inputs: z
+    .any()
+    .describe("Input parameters for the node. Structure depends on the node type."),
+  class_type: z.string().describe("The type of the node (e.g., 'KSampler')."),
+  _meta: z.any().optional().describe("Metadata for the node (e.g., title)."),
 });
 
 export type ComfyNode = z.infer<typeof ComfyNodeSchema>;
@@ -169,16 +171,45 @@ export function isExecutionStats(obj: any): obj is ExecutionStats {
 }
 
 export const PromptRequestSchema = z.object({
-  prompt: z.record(ComfyNodeSchema),
+  prompt: z
+    .record(ComfyNodeSchema)
+    .describe(
+      "The ComfyUI prompt workflow. This is a dictionary where keys are node IDs and values are node configurations."
+    ),
   id: z
     .string()
     .optional()
-    .default(() => randomUUID()),
-  webhook: z.string().optional(),
-  webhook_v2: z.string().optional(),
-  convert_output: OutputConversionOptionsSchema.optional(),
-  compress_outputs: z.boolean().optional(),
-  signed_url: z.boolean().optional(),
+    .default(() => randomUUID())
+    .describe(
+      "Unique ID for the prompt. If not provided, one will be generated."
+    ),
+  webhook: z
+    .string()
+    .optional()
+    .describe(
+      "URL to send a webhook to when the prompt execution is complete. (Legacy)"
+    ),
+  webhook_v2: z
+    .string()
+    .optional()
+    .describe(
+      "URL to send a webhook to when the prompt execution is complete. Supports signing."
+    ),
+  convert_output: OutputConversionOptionsSchema.optional().describe(
+    "Options to convert the output images/video to a different format."
+  ),
+  compress_outputs: z
+    .boolean()
+    .optional()
+    .describe(
+      "If true, the output images will be compressed into a single archive."
+    ),
+  signed_url: z
+    .boolean()
+    .optional()
+    .describe(
+      "If true, the webhook will contain signed URLs for the output files instead of the files themselves."
+    ),
 });
 
 export const PromptErrorResponseSchema = z.object({

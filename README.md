@@ -76,7 +76,7 @@ If you have your own ComfyUI dockerfile, you can add the comfyui-api server to i
 
 ```dockerfile
 # Change this to the version you want to use
-ARG api_version=1.14.4
+ARG api_version=1.14.5
 
 # Download the comfyui-api binary, and make it executable
 ADD https://github.com/SaladTechnologies/comfyui-api/releases/download/${api_version}/comfyui-api .
@@ -1150,6 +1150,76 @@ The server will publish the result to the output queue. The format depends on th
 
 - **Success**: JSON object containing `prompt_id`, `images` (base64 or URLs), `filenames`, and `stats`.
 - **Error**: JSON object containing `prompt_id`, `error`, `node_errors` (if available).
+
+## Prompt Endpoint Reference
+
+The `POST /prompt` endpoint is the main entry point for submitting ComfyUI workflows.
+
+### Request Body
+
+The request body should be a JSON object with the following fields:
+
+| Field | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `prompt` | Object | **Yes** | The ComfyUI workflow dictionary (node ID -> node config). |
+| `id` | String | No | Unique ID for the request. If omitted, a UUID is generated. |
+| `webhook_v2` | String | No | URL to receive a webhook when execution completes. Supports signing. |
+| `webhook` | String | No | **Legacy**. URL to receive webhooks (one per output). |
+| `convert_output` | Object | No | Options to convert output images/video. |
+| `compress_outputs` | Boolean | No | If `true`, compresses all outputs into a single archive. |
+| `signed_url` | Boolean | No | If `true`, webhook contains signed URLs instead of file content. |
+
+#### `prompt` Object
+
+This is the standard ComfyUI API format. It is a dictionary where keys are node IDs (strings) and values are objects with:
+
+- `inputs`: Input parameters for the node.
+- `class_type`: The type of the node (e.g., "KSampler").
+- `_meta`: Optional metadata.
+
+#### `convert_output` Object
+
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `format` | String | Output format: `jpeg`, `jpg`, `webp`, `mp4`, `gif`, `webm`, `mp3`, `wav`, `ogg`. |
+| `options` | Object | Format-specific options (e.g., `quality` for JPEG/WebP). |
+
+### Example Request
+
+```json
+{
+  "id": "5a8c7575-7aa8-4407-9e0b-4d23deb879ae",
+  "prompt": {
+    "3": {
+      "inputs": {
+        "seed": 156680208700286,
+        "steps": 20,
+        "cfg": 8,
+        "sampler_name": "euler",
+        "scheduler": "normal",
+        "denoise": 1,
+        "model": ["4", 0],
+        "positive": ["6", 0],
+        "negative": ["7", 0],
+        "latent_image": ["5", 0]
+      },
+      "class_type": "KSampler",
+      "_meta": {
+        "title": "KSampler"
+      }
+    }
+  },
+  "webhook_v2": "https://your-webhook-url.com/callback",
+  "convert_output": {
+    "format": "jpeg",
+    "options": {
+      "quality": 90
+    }
+  },
+  "compress_outputs": false,
+  "signed_url": true
+}
+```
 
 ## Streaming Responses
 
