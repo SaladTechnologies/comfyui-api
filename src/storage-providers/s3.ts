@@ -8,6 +8,8 @@ import {
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { NodeHttpHandler } from "@smithy/node-http-handler";
+import { HttpsProxyAgent } from "https-proxy-agent";
+import { HttpProxyAgent } from "http-proxy-agent";
 import config from "../config";
 import { FastifyBaseLogger } from "fastify";
 import { StorageProvider, Upload } from "../types";
@@ -30,12 +32,21 @@ export class S3StorageProvider implements StorageProvider {
     if (!config.awsRegion) {
       throw new Error("AWS_REGION is not configured");
     }
+    const requestHandler = new NodeHttpHandler({
+      connectionTimeout: 10000, // 10 seconds
+      requestTimeout: 0, // No timeout
+      httpAgent: config.httpProxy
+        ? new HttpProxyAgent(config.httpProxy)
+        : undefined,
+      httpsAgent: config.httpsProxy
+        ? new HttpsProxyAgent(config.httpsProxy)
+        : undefined,
+    });
+
     this.s3 = new S3Client({
       region: config.awsRegion,
-      requestHandler: new NodeHttpHandler({
-        connectionTimeout: 10000, // 10 seconds
-        requestTimeout: 0, // No timeout
-      }),
+      endpoint: config.awsEndpoint || undefined,
+      requestHandler,
       forcePathStyle: true, // Required for LocalStack or custom S3 endpoints
     });
   }
@@ -194,6 +205,15 @@ export class S3Upload implements Upload {
     } catch (error: any) {
       console.error(error);
       this.state = "failed";
+      if (
+        error.message &&
+        error.message.includes("char 'E' is not expected") &&
+        !this.s3.config.endpoint
+      ) {
+        this.log.error(
+          "Error uploading file to S3. It looks like you are using a custom S3 provider but haven't configured AWS_ENDPOINT. Please set AWS_ENDPOINT or S3_ENDPOINT in your environment variables."
+        );
+      }
       this.log.error("Error uploading file to S3:", error);
     }
   }

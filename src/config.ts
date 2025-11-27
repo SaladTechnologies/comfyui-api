@@ -387,6 +387,21 @@ const config = {
   awsRegion: AWS_REGION ?? AWS_DEFAULT_REGION ?? null,
 
   /**
+   * (optional) The AWS endpoint to use for S3 operations.
+   */
+  awsEndpoint: process.env.AWS_ENDPOINT ?? process.env.S3_ENDPOINT ?? null,
+
+  /**
+   * (optional) The HTTP proxy to use for S3 operations.
+   */
+  httpProxy: process.env.HTTP_PROXY ?? null,
+
+  /**
+   * (optional) The HTTPS proxy to use for S3 operations.
+   */
+  httpsProxy: process.env.HTTPS_PROXY ?? null,
+
+  /**
    * (optional) The Azure Storage account name to use for Azure Blob operations.
    */
   azureStorageAccount: AZURE_STORAGE_ACCOUNT ?? null,
