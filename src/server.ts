@@ -95,11 +95,12 @@ const WorkflowRequestSchema = PromptRequestSchema.omit({ prompt: true }).extend(
 
 export type WorkflowRequest = z.infer<typeof WorkflowRequestSchema>;
 
-const PromptResponseSchema = PromptRequestSchema.extend({
+const PromptResponseSchema = PromptRequestSchema.partial().extend({
   images: z.array(z.string()).optional(),
   filenames: z.array(z.string()).optional(),
-  status: z.enum(["ok"]).optional(),
+  status: z.enum(["ok", "processing"]).optional(),
   stats: ExecutionStatsSchema.optional(),
+  message: z.string().optional(),
 });
 
 const WorkflowResponseSchema = PromptResponseSchema.extend({
