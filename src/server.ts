@@ -217,7 +217,20 @@ server.after(() => {
       const modelResponse: ModelResponse = {};
       const modelsByType = await getModels();
       for (const modelType in modelsByType) {
-        modelResponse[modelType] = modelsByType[modelType].all;
+        if (modelType === "custom_nodes") {
+          // For custom_nodes, only return unique directory names (plugin names)
+          const pluginNames = new Set<string>();
+          for (const filePath of modelsByType[modelType].all) {
+            // Extract the first directory name from the path
+            const parts = filePath.split("/");
+            if (parts.length > 0 && parts[0]) {
+              pluginNames.add(parts[0]);
+            }
+          }
+          modelResponse[modelType] = Array.from(pluginNames).sort();
+        } else {
+          modelResponse[modelType] = modelsByType[modelType].all;
+        }
       }
       return modelResponse;
     }
