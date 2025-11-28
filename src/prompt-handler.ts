@@ -17,13 +17,7 @@ import archiver from "archiver";
 import getStorageManager from "./remote-storage-manager";
 import { sendWebhook } from "./event-emitters";
 
-const remoteStorageManager = getStorageManager({
-    info: () => { },
-    error: () => { },
-    warn: () => { },
-    debug: () => { },
-    child: () => ({ info: () => { }, error: () => { }, warn: () => { }, debug: () => { } }),
-} as unknown as FastifyBaseLogger);
+import { ComfyWSMessage } from "./types";
 
 export type PromptRequest = z.infer<typeof PromptRequestSchema>;
 
@@ -33,13 +27,12 @@ export type ProcessedOutput = {
     stats: any;
 };
 
-import { ComfyWSMessage } from "./types";
-
 export async function processPrompt(
     requestBody: PromptRequest,
     log: FastifyBaseLogger,
     onProgress?: (message: ComfyWSMessage) => void
 ): Promise<ProcessedOutput> {
+    const remoteStorageManager = getStorageManager(log);
     let {
         prompt,
         id,

@@ -72,7 +72,7 @@ class RemoteStorageManager {
       .map((Provider) => {
         try {
           return new Provider(this.log);
-        } catch (error) {
+        } catch (error: any) {
           this.log.warn(
             { error },
             `Error initializing storage provider ${Provider.name}`
