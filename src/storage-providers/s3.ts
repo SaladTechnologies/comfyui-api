@@ -32,14 +32,22 @@ export class S3StorageProvider implements StorageProvider {
     if (!config.awsRegion) {
       throw new Error("AWS_REGION is not configured");
     }
+    // Determine the target endpoint for proxy check
+    const endpoint = config.awsEndpoint || `https://s3.${config.awsRegion}.amazonaws.com`;
+    const endpointUrl = new URL(endpoint);
+
+    // Check if we should use proxy for this endpoint
+    const { getProxyForUrl } = require("proxy-from-env");
+    const proxyUrl = getProxyForUrl(endpointUrl.href);
+
     const requestHandler = new NodeHttpHandler({
       connectionTimeout: 10000, // 10 seconds
       requestTimeout: 0, // No timeout
-      httpAgent: config.httpProxy
-        ? new HttpProxyAgent(config.httpProxy)
+      httpAgent: proxyUrl
+        ? new HttpProxyAgent(proxyUrl)
         : undefined,
-      httpsAgent: config.httpsProxy
-        ? new HttpsProxyAgent(config.httpsProxy)
+      httpsAgent: proxyUrl
+        ? new HttpsProxyAgent(proxyUrl)
         : undefined,
     });
 
