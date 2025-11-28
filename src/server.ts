@@ -344,6 +344,35 @@ server.after(() => {
         return;
       }
 
+      // Check if any storage provider has async: true
+      let isAsync = false;
+      for (const provider of remoteStorageManager.storageProviders) {
+        if (provider.requestBodyUploadKey) {
+          const providerParams = (request.body as any)[provider.requestBodyUploadKey];
+          if (providerParams?.async === true) {
+            isAsync = true;
+            break;
+          }
+        }
+      }
+
+      // If async mode, start processing in background and return immediately
+      if (isAsync) {
+        // Start processing in background (don't await)
+        processPrompt(request.body as PromptRequest, app.log).catch((e: any) => {
+          app.log.error({ error: e, id: request.body.id }, "Background prompt processing failed");
+        });
+
+        return reply
+          .code(202)
+          .send({
+            status: "processing",
+            id: request.body.id,
+            message: "Prompt submitted for async processing"
+          });
+      }
+
+      // Synchronous mode - wait for completion
       try {
         const result = await processPrompt(request.body as PromptRequest, app.log);
         if (

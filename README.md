@@ -76,7 +76,7 @@ If you have your own ComfyUI dockerfile, you can add the comfyui-api server to i
 
 ```dockerfile
 # Change this to the version you want to use
-ARG api_version=1.14.8
+ARG api_version=1.14.9
 
 # Download the comfyui-api binary, and make it executable
 ADD https://github.com/SaladTechnologies/comfyui-api/releases/download/${api_version}/comfyui-api .
@@ -162,9 +162,9 @@ Prompts are submitted to the server via the `POST /prompt` endpoint, which accep
 
 ### Response Format
 
-For async requests (i.e. when a webhook or S3 upload is used), the server will return a `202 Accepted` response immediately, and the outputs will be sent to the webhook or uploaded to S3 in the background.
+For async requests (i.e. when a webhook is used, or when any storage provider has `async: true`), the server will return a `202 Accepted` response immediately, and the outputs will be sent to the webhook or uploaded to storage in the background.
 
-For synchronous requests (i.e. no webhook or s3.async is false), the server will return a `200 OK` response once the prompt has completed, with a body containing the outputs. The response body will have the following format:
+For synchronous requests (i.e. no webhook and all storage providers have `async: false` or omitted), the server will return a `200 OK` response once the prompt has completed, with a body containing the outputs. The response body will have the following format:
 
 ```json
 {
@@ -618,8 +618,8 @@ All uploads take a prefix of some kind, not a full path or URL.
 
 All uploads can be handled synchronously or asynchronously, depending on the `async` field in the upload block of the request body.
 
-- If `async` is `true` or omitted, the server will return a `202 Accepted` response immediately, and the upload will be handled in the background.
-- If `async` is `false`, the server will wait for the upload to complete before returning a `200 OK` response with the uploaded urls in the response body.
+- If `async` is `true`, the server will return a `202 Accepted` response immediately, and the upload will be handled in the background.
+- If `async` is `false` or omitted (default), the server will wait for the upload to complete before returning a `200 OK` response with the uploaded urls in the response body.
 
 If an upload for a particular url is in progress, a subsequent upload to the same url will abort the first request and take over the upload.
 This is rooted in the assumption that you want the latest version of any particular output.
