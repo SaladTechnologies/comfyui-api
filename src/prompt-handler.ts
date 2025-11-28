@@ -54,6 +54,32 @@ export async function processPrompt(
     } catch (e: NodeProcessError | any) {
         telemetry.trackFailure(Date.now() - start);
         log.error(`Failed to preprocess nodes: ${e.message}`);
+
+        // Send webhook for preprocessing failures
+        if (webhook_v2) {
+            const webhookBody = {
+                type: "prompt.failed",
+                timestamp: new Date().toISOString(),
+                id,
+                prompt,
+                error: e.message,
+                location: e.location, // NodeProcessError might have location
+            };
+            // Use fire-and-forget (awaiting it might delay the throw, but we want to ensure it's sent)
+            // Since we are throwing, we should probably await it or ensure it's floating but logged.
+            // Given the context, floating is safer to avoid blocking the throw if webhook hangs,
+            // but we want reliability. Let's use the same pattern as execution failure: just call it.
+            sendWebhook(webhook_v2, webhookBody, log, 2);
+        } else if (webhook) {
+            const webhookBody = {
+                event: "prompt.failed",
+                id,
+                prompt,
+                error: e.message,
+            };
+            sendWebhook(webhook, webhookBody, log, 1);
+        }
+
         throw e;
     }
 
