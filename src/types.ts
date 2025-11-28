@@ -175,7 +175,10 @@ export const PromptRequestSchema = z.object({
     .record(ComfyNodeSchema)
     .describe(
       "The ComfyUI prompt workflow. This is a dictionary where keys are node IDs and values are node configurations."
-    ),
+    )
+    .refine((data) => Object.keys(data).length > 0, {
+      message: "Prompt cannot be empty",
+    }),
   id: z
     .string()
     .optional()
