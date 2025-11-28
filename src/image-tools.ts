@@ -42,10 +42,16 @@ export async function processInputMedia(
   } else {
     // Assume it's base64 encoded data
     try {
-      const base64Data = Buffer.from(fileInput, "base64");
+      // Remove data URL prefix if present (e.g., "data:video/mp4;base64,")
+      const cleanBase64 = fileInput.replace(/^data:[^;]+;base64,/, "");
+      const base64Data = Buffer.from(cleanBase64, "base64");
+
       const extension = guessFileExtensionFromBase64(fileInput);
       if (!extension) {
-        throw new Error("Could not determine file type from base64 data");
+        // Log the first 20 bytes to help debug what kind of data we received
+        const header = base64Data.subarray(0, 20).toString('hex');
+        log.error(`Could not determine file type from base64 data. Header (hex): ${header}`);
+        throw new Error(`Could not determine file type from base64 data. Header: ${header}`);
       }
       localFilePath = `${localFilePath}.${extension}`;
       log.debug(`Saving decoded file to ${localFilePath}`);
