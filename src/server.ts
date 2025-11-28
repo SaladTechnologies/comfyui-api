@@ -219,12 +219,29 @@ server.after(() => {
       for (const modelType in modelsByType) {
         if (modelType === "custom_nodes") {
           // For custom_nodes, only return unique directory names (plugin names)
+          // and single .py files that are plugins. Filter out garbage.
           const pluginNames = new Set<string>();
           for (const filePath of modelsByType[modelType].all) {
-            // Extract the first directory name from the path
             const parts = filePath.split("/");
-            if (parts.length > 0 && parts[0]) {
-              pluginNames.add(parts[0]);
+            if (parts.length > 1) {
+              // It's a directory
+              const dirName = parts[0];
+              if (
+                !dirName.startsWith(".") &&
+                dirName !== "__pycache__"
+              ) {
+                pluginNames.add(dirName);
+              }
+            } else if (parts.length === 1) {
+              // It's a file in the root
+              const fileName = parts[0];
+              if (
+                fileName.endsWith(".py") &&
+                fileName !== "__init__.py" &&
+                !fileName.startsWith(".")
+              ) {
+                pluginNames.add(fileName);
+              }
             }
           }
           modelResponse[modelType] = Array.from(pluginNames).sort();
