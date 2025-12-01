@@ -255,7 +255,8 @@ export interface ComfyWSMessage {
   | "execution_interrupted"
   | "execution_error"
   | "logs"
-  | "feature_flags";
+  | "feature_flags"
+  | "b_preview";
   data: any;
   sid: string | null;
 }
@@ -464,6 +465,21 @@ export function isFeatureFlagsMessage(
   return msg.type === "feature_flags";
 }
 
+export interface ComfyWSBinaryPreviewMessage extends ComfyWSMessage {
+  type: "b_preview";
+  data: {
+    prompt_id: string;
+    image_type: string;
+    image_data: string; // Base64 encoded
+  };
+}
+
+export function isBinaryPreviewMessage(
+  msg: ComfyWSMessage
+): msg is ComfyWSBinaryPreviewMessage {
+  return msg.type === "b_preview";
+}
+
 export type WebhookHandlers = {
   onMessage?: (msg: RawData) => Promise<void> | void;
   onStatus?: (data: ComfyWSStatusMessage) => Promise<void> | void;
@@ -486,6 +502,7 @@ export type WebhookHandlers = {
   ) => Promise<void> | void;
   onLogs?: (data: ComfyWSLogsMessage) => Promise<void> | void;
   onFeatureFlags?: (data: ComfyWSFeatureFlagsMessage) => Promise<void> | void;
+  onBinaryPreview?: (data: ComfyWSBinaryPreviewMessage) => Promise<void> | void;
   onFileDownloaded?: (data: {
     url: string;
     local_path: string;
@@ -519,6 +536,7 @@ export const SystemWebhookEvents = [
   "execution_error",
   "logs",
   "feature_flags",
+  "b_preview",
   "file_downloaded",
   "file_uploaded",
   "file_deleted",

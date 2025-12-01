@@ -124,6 +124,7 @@ const allEvents = new Set([
   "execution_error",
   "logs",
   "feature_flags",
+  "b_preview",
   "file_downloaded",
   "file_uploaded",
   "file_deleted",

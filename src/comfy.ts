@@ -421,6 +421,8 @@ export function connectToComfyUIWebsocketStream(
 ): Promise<WebSocket> {
   return new Promise((resolve, reject) => {
     wsClient = new WebSocket(config.comfyWSURL);
+    let currentExecutingPromptId: string | null = null;
+
     wsClient.on("message", (data, isBinary) => {
       if (hooks.onMessage) {
         hooks.onMessage(data);
@@ -456,6 +458,7 @@ export function connectToComfyUIWebsocketStream(
         ) {
           hooks.onExecutionCached(message);
         } else if (isExecutingMessage(message) && hooks.onExecuting) {
+          currentExecutingPromptId = message.data.prompt_id;
           hooks.onExecuting(message);
         } else if (isExecutedMessage(message) && hooks.onExecuted) {
           hooks.onExecuted(message);
@@ -478,6 +481,27 @@ export function connectToComfyUIWebsocketStream(
         }
       } else {
         log.info(`Received binary message`);
+        if (hooks.onBinaryPreview) {
+          const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data as ArrayBuffer);
+          const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+          const type = view.getUint32(0, false); // Big-endian
+          if (type === 1) { // Preview Image
+            const imageType = "image/jpeg"; // Default to jpeg for previews
+            const imageData = buffer.slice(8).toString("base64");
+
+            const prompt_id = currentExecutingPromptId || "unknown";
+
+            hooks.onBinaryPreview({
+              type: "b_preview",
+              data: {
+                prompt_id,
+                image_type: imageType,
+                image_data: imageData,
+              },
+              sid: null,
+            });
+          }
+        }
       }
     });
 
