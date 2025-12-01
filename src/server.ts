@@ -30,6 +30,7 @@ import {
   connectToComfyUIWebsocketStream,
   PromptOutputsWithStats,
   getModels,
+  interruptPrompt,
 } from "./comfy";
 import {
   PromptRequestSchema as BasePromptRequestSchema,
@@ -512,6 +513,49 @@ server.after(() => {
 
       if (!asyncUpload) {
         return reply.send(outputPayload);
+      }
+    }
+  );
+
+  app.post(
+    "/interrupt",
+    {
+      schema: {
+        summary: "Interrupt Prompt",
+        description: "Interrupt a running prompt by ID.",
+        body: z.object({
+          id: z.string(),
+        }),
+        response: {
+          200: z.object({
+            id: z.string(),
+            interrupted: z.literal("success"),
+          }),
+          404: z.object({
+            id: z.string(),
+            interrupted: z.literal("failed"),
+          }),
+        },
+      },
+    },
+    async (request, reply) => {
+      const { id } = request.body as { id: string };
+
+      const log = app.log.child({ id });
+
+      try {
+        await interruptPrompt(id);
+        log.info(`Successfully interrupted prompt: ${id}`);
+        return reply.code(200).send({
+          id,
+          interrupted: "success",
+        });
+      } catch (e: any) {
+        log.error(`Failed to interrupt prompt: ${e.message}`);
+        return reply.code(404).send({
+          id,
+          interrupted: "failed",
+        });
       }
     }
   );

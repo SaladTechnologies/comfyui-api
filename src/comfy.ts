@@ -524,3 +524,25 @@ export async function getModels(): Promise<
   config.models = modelsByType;
   return modelsByType;
 }
+
+export async function interruptPrompt(id: string): Promise<void> {
+  const comfyPromptId = Object.keys(comfyIDToApiID).find(
+    (key) => comfyIDToApiID[key] === id
+  );
+
+  if (!comfyPromptId) {
+    throw new Error(`Prompt ${id} not found`);
+  }
+
+  const resp = await fetch(`${config.comfyURL}/interrupt`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ prompt_id: comfyPromptId }),
+    dispatcher: getProxyDispatcher(),
+  });
+  if (!resp.ok) {
+    throw new Error(`Failed to interrupt prompt: ${await resp.text()}`);
+  }
+}
