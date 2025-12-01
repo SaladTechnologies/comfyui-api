@@ -75,7 +75,7 @@ If you have your own ComfyUI dockerfile, you can add the comfyui-api server to i
 
 ```dockerfile
 # Change this to the version you want to use
-ARG api_version=1.13.5
+ARG api_version=1.14.0
 
 # Download the comfyui-api binary, and make it executable
 ADD https://github.com/SaladTechnologies/comfyui-api/releases/download/${api_version}/comfyui-api .
@@ -1057,7 +1057,7 @@ The webhook event name for a failed request is `prompt.failed`. The webhook will
 
 ## System Events
 
-> Note: From version 1.13.5, the frontend aggregate progress event `progress_state` is included in the supported system event set and can be forwarded like other events. Use `SYSTEM_WEBHOOK_EVENTS=progress_state` or `SYSTEM_WEBHOOK_EVENTS=all` to subscribe.
+> Note: From version 1.14.0, the frontend aggregate progress event `progress_state` is included in the supported system event set and can be forwarded like other events. Use `SYSTEM_WEBHOOK_EVENTS=progress_state` or `SYSTEM_WEBHOOK_EVENTS=all` to subscribe.
 
 ComfyUI emits a number of events over websocket during the course of a workflow. These can be configured to be sent to a webhook using the `SYSTEM_WEBHOOK_URL` and `SYSTEM_WEBHOOK_EVENTS` environment variables. Additionally, any environment variable starting with `SYSTEM_META_` will be sent as metadata with the event. From version 1.13.0, these are signed, and can be validated using the `WEBHOOK_SECRET` environment variable and any standard webhook validation library such as `svix`. See [above](#validating-webhooks) for examples.
 
