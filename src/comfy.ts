@@ -492,7 +492,7 @@ export function connectToComfyUIWebsocketStream(
             const prompt_id = currentExecutingPromptId || "unknown";
 
             hooks.onBinaryPreview({
-              type: "b_preview",
+              type: "binary_preview",
               data: {
                 prompt_id,
                 image_type: imageType,

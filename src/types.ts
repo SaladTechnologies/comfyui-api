@@ -256,7 +256,7 @@ export interface ComfyWSMessage {
   | "execution_error"
   | "logs"
   | "feature_flags"
-  | "b_preview";
+  | "binary_preview";
   data: any;
   sid: string | null;
 }
@@ -466,7 +466,7 @@ export function isFeatureFlagsMessage(
 }
 
 export interface ComfyWSBinaryPreviewMessage extends ComfyWSMessage {
-  type: "b_preview";
+  type: "binary_preview";
   data: {
     prompt_id: string;
     image_type: string;
@@ -477,7 +477,7 @@ export interface ComfyWSBinaryPreviewMessage extends ComfyWSMessage {
 export function isBinaryPreviewMessage(
   msg: ComfyWSMessage
 ): msg is ComfyWSBinaryPreviewMessage {
-  return msg.type === "b_preview";
+  return msg.type === "binary_preview";
 }
 
 export type WebhookHandlers = {
@@ -536,7 +536,7 @@ export const SystemWebhookEvents = [
   "execution_error",
   "logs",
   "feature_flags",
-  "b_preview",
+  "binary_preview",
   "file_downloaded",
   "file_uploaded",
   "file_deleted",
