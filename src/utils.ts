@@ -38,9 +38,8 @@ export function zodToMarkdownTable(schema: ZodObject<ZodRawShape>): string {
     const fieldDescription = getZodDescription(value);
     const defaultValue = getZodDefault(value);
 
-    markdownTable += `| ${fieldName} | ${fieldType}${
-      isOptional ? "" : ""
-    } | ${fieldDescription} | ${defaultValue || "**Required**"} |\n`;
+    markdownTable += `| ${fieldName} | ${fieldType}${isOptional ? "" : ""
+      } | ${fieldDescription} | ${defaultValue || "**Required**"} |\n`;
   }
 
   return markdownTable;
@@ -302,7 +301,13 @@ export function hashUrlBase64(url: string, length = 32): string {
 }
 
 export function getContentTypeFromUrl(url: string): string {
-  const ext = path.extname(new URL(url).pathname).toLowerCase();
+  let pathname = url;
+  try {
+    pathname = new URL(url).pathname;
+  } catch (_) {
+    // If url is not a valid URL (e.g. it's a filename), use it as is
+  }
+  const ext = path.extname(pathname).toLowerCase();
   const mimeTypes: Record<string, string> = {
     ".jpg": "image/jpeg",
     ".jpeg": "image/jpeg",
