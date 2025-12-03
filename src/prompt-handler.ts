@@ -280,6 +280,8 @@ export async function processPrompt(
         for (let i = 0; i < buffers.length; i++) {
             const fileBuffer = buffers[i];
             const filename = filenames[i];
+            // Extract the base filename from the path (remove subfolder if present)
+            const baseFilename = path.basename(filename);
             for (const provider of remoteStorageManager.storageProviders) {
                 if (
                     provider.requestBodyUploadKey &&
@@ -288,21 +290,23 @@ export async function processPrompt(
                     images.push(
                         provider.createUrl({
                             ...(requestBody as any)[provider.requestBodyUploadKey],
-                            filename,
+                            filename: baseFilename,  // Use base filename for URL
                         })
                     );
                     break;
                 }
             }
             // Get MIME type from filename to ensure correct Content-Type for audio/video files
-            const mimeType = getContentTypeFromUrl(filename);
+            const mimeType = getContentTypeFromUrl(baseFilename);
             uploadPromises.push(
                 remoteStorageManager.uploadFile(images[i], fileBuffer, mimeType)
             );
         }
 
         await Promise.all(uploadPromises);
-        return { images, filenames, stats };
+        // Return base filenames (without subfolder) for webhook
+        const baseFilenames = filenames.map(f => path.basename(f));
+        return { images, filenames: baseFilenames, stats };
     };
 
     const storageProvider = remoteStorageManager.storageProviders.find(
