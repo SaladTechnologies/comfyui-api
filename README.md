@@ -87,7 +87,7 @@ If you have your own ComfyUI dockerfile, you can add the comfyui-api server to i
 
 ```dockerfile
 # Change this to the version you want to use
-ARG api_version=1.14.16
+ARG api_version=1.14.17
 
 # Download the comfyui-api binary, and make it executable
 ADD https://github.com/SaladTechnologies/comfyui-api/releases/download/${api_version}/comfyui-api .
@@ -1258,6 +1258,8 @@ curl -N -H "Accept: text/event-stream" -H "Content-Type: application/json" -d @p
 #### System Events
 
 Note: From version 1.13.5, the frontend aggregate progress event `progress_state` is included in the supported system event set and can be forwarded like other events. Use `SYSTEM_WEBHOOK_EVENTS=progress_state` or `SYSTEM_WEBHOOK_EVENTS=all` to subscribe.
+
+**New in v1.14.17**: Fixed audio/video S3 upload failure by adding explicit MIME type handling in `uploadHandler`.
 
 **New in v1.14.4**: Added support for `logs` and `feature_flags` events.
 

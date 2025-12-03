@@ -13,6 +13,7 @@ import { convertImageBuffer } from "./image-tools";
 import fsPromises from "fs/promises";
 import path from "path";
 import config from "./config";
+import { getContentTypeFromUrl } from "./utils";
 import archiver from "archiver";
 import getStorageManager from "./remote-storage-manager";
 import { sendWebhook } from "./event-emitters";
@@ -293,8 +294,10 @@ export async function processPrompt(
                     break;
                 }
             }
+            // Get MIME type from filename to ensure correct Content-Type for audio/video files
+            const mimeType = getContentTypeFromUrl(filename);
             uploadPromises.push(
-                remoteStorageManager.uploadFile(images[i], fileBuffer)
+                remoteStorageManager.uploadFile(images[i], fileBuffer, mimeType)
             );
         }
 
