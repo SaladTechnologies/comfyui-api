@@ -282,24 +282,29 @@ export async function processPrompt(
             const filename = filenames[i];
             // Extract the base filename from the path (remove subfolder if present)
             const baseFilename = path.basename(filename);
+
+            // Generate the S3 URL for this file
+            let imageUrl = '';
             for (const provider of remoteStorageManager.storageProviders) {
                 if (
                     provider.requestBodyUploadKey &&
                     (requestBody as any)[provider.requestBodyUploadKey]
                 ) {
-                    images.push(
-                        provider.createUrl({
-                            ...(requestBody as any)[provider.requestBodyUploadKey],
-                            filename: baseFilename,  // Use base filename for URL
-                        })
-                    );
+                    imageUrl = provider.createUrl({
+                        ...(requestBody as any)[provider.requestBodyUploadKey],
+                        filename: baseFilename,  // Use base filename for URL
+                    });
                     break;
                 }
             }
+
+            // Add to images array (must be done before using images[i])
+            images.push(imageUrl);
+
             // Get MIME type from filename to ensure correct Content-Type for audio/video files
             const mimeType = getContentTypeFromUrl(baseFilename);
             uploadPromises.push(
-                remoteStorageManager.uploadFile(images[i], fileBuffer, mimeType)
+                remoteStorageManager.uploadFile(imageUrl, fileBuffer, mimeType)
             );
         }
 
