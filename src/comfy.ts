@@ -156,7 +156,11 @@ export async function getPromptOutputs(
              */
             continue;
           }
-          const filepath = path.join(config.outputDir, filename);
+          // Handle subfolder if present (e.g., for audio files saved in subdirectories)
+          const subfolder = outputFile.subfolder || "";
+          const filepath = subfolder
+            ? path.join(config.outputDir, subfolder, filename)
+            : path.join(config.outputDir, filename);
           fileLoadPromises.push(
             fsPromises
               .readFile(filepath)

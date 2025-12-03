@@ -558,6 +558,8 @@ export type ComfyHistoryResponse = Record<
         string,
         {
           filename: string;
+          subfolder?: string;  // ← 添加 subfolder 字段
+          type?: string;       // ← 添加 type 字段
         }[]
       >
     >;
