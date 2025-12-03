@@ -161,11 +161,15 @@ export async function getPromptOutputs(
           const filepath = subfolder
             ? path.join(config.outputDir, subfolder, filename)
             : path.join(config.outputDir, filename);
+          // Use the relative path (including subfolder) as the key for consistent file operations
+          const relativeFilePath = subfolder
+            ? path.join(subfolder, filename)
+            : filename;
           fileLoadPromises.push(
             fsPromises
               .readFile(filepath)
               .then((data) => {
-                allOutputs[filename] = data;
+                allOutputs[relativeFilePath] = data;
               })
               .catch((e: any) => {
                 /**
