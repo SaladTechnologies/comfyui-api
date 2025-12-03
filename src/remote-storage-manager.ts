@@ -14,6 +14,7 @@ import {
   hashUrlBase64,
   getContentTypeFromUrl,
   getDirectorySizeInBytes,
+  safeGetUrlPathname,
 } from "./utils";
 
 const execFilePromise = promisify(execFile);
@@ -228,7 +229,7 @@ class RemoteStorageManager {
       }
 
       const start = Date.now();
-      const ext = path.extname(new URL(url).pathname);
+      const ext = path.extname(safeGetUrlPathname(url));
       const tempFilename = `${hashedUrl}${ext}`;
 
       for (const provider of this.storageProviders) {

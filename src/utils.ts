@@ -300,13 +300,16 @@ export function hashUrlBase64(url: string, length = 32): string {
     .substring(0, length);
 }
 
-export function getContentTypeFromUrl(url: string): string {
-  let pathname = url;
+export function safeGetUrlPathname(url: string): string {
   try {
-    pathname = new URL(url).pathname;
-  } catch (_) {
-    // If url is not a valid URL (e.g. it's a filename), use it as is
+    return new URL(url).pathname;
+  } catch {
+    return url;
   }
+}
+
+export function getContentTypeFromUrl(url: string): string {
+  const pathname = safeGetUrlPathname(url);
   const ext = path.extname(pathname).toLowerCase();
   const mimeTypes: Record<string, string> = {
     ".jpg": "image/jpeg",
