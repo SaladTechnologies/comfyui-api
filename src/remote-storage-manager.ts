@@ -350,23 +350,36 @@ class RemoteStorageManager {
           break; // Use only the first matching provider
         }
       }
+
       if (!this.activeUploads[url]) {
         throw new Error(`No storage provider found for URL: ${url}`);
       }
+
       const start = Date.now();
       const size =
         fileOrPath instanceof Buffer
           ? fileOrPath.length
           : (await fsPromises.stat(fileOrPath)).size;
 
-      await this.activeUploads[url].upload();
-      delete this.activeUploads[url];
-      const duration = (Date.now() - start) / 1000;
-      sendSystemWebhook(
-        "file_uploaded",
-        { url, local_path: fileOrPath, size, duration },
-        this.log
-      );
+      try {
+        await this.activeUploads[url].upload();
+        this.log.info(`File uploaded to ${url}`);
+        sendSystemWebhook(
+          "file_uploaded",
+          { url, mime_type: mimeType },
+          this.log
+        );
+      } catch (error: any) {
+        this.log.error({ url, error }, "Upload failed after retries");
+        sendSystemWebhook(
+          "file_upload_failed",
+          { url, error: error.message || String(error) },
+          this.log
+        );
+        throw error;
+      } finally {
+        delete this.activeUploads[url];
+      }
     });
   }
 

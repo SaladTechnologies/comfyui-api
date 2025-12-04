@@ -94,19 +94,27 @@ export async function warmupComfyUI(): Promise<void> {
 }
 
 export async function queuePrompt(prompt: ComfyPrompt): Promise<string> {
-  const resp = await fetch(`${config.comfyURL}/prompt`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ prompt, client_id: config.wsClientId }),
-    dispatcher: getProxyDispatcher(),
-  });
-  if (!resp.ok) {
-    throw new Error(`Failed to queue prompt: ${await resp.text()}`);
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+
+  try {
+    const resp = await fetch(`${config.comfyURL}/prompt`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ prompt, client_id: config.wsClientId }),
+      dispatcher: getProxyDispatcher(),
+      signal: controller.signal,
+    });
+    if (!resp.ok) {
+      throw new Error(`Failed to queue prompt: ${await resp.text()}`);
+    }
+    const { prompt_id } = (await resp.json()) as ComfyPromptResponse;
+    return prompt_id;
+  } finally {
+    clearTimeout(timeoutId);
   }
-  const { prompt_id } = (await resp.json()) as ComfyPromptResponse;
-  return prompt_id;
 }
 
 export async function subscribeToLogs(enabled: boolean = true): Promise<void> {

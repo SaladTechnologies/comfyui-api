@@ -155,18 +155,50 @@ export class S3Upload implements Upload {
   }
 
   async upload(): Promise<void> {
-    try {
-      await this._uploadFileToS3Url(
-        this.url,
-        this.fileOrPath,
-        this.contentType,
-        this.abortController.signal
-      );
-    } catch (error: any) {
-      console.error(error);
-      this.state = "failed";
-      this.log.error("Error uploading file to S3:", error);
+    const maxRetries = 3;
+    let attempt = 0;
+    let lastError: any;
+
+    while (attempt < maxRetries) {
+      try {
+        if (attempt > 0) {
+          this.log.info(
+            `Retrying upload to ${this.url} (attempt ${attempt + 1}/${maxRetries})`
+          );
+        }
+        await this._uploadFileToS3Url(
+          this.url,
+          this.fileOrPath,
+          this.contentType,
+          this.abortController.signal
+        );
+        return; // Success
+      } catch (error: any) {
+        lastError = error;
+        attempt++;
+        console.error(error);
+        this.log.error(
+          { error, attempt, maxRetries },
+          "Error uploading file to S3"
+        );
+
+        // If aborted, do not retry
+        if (this.abortController.signal.aborted) {
+          this.state = "aborted";
+          return;
+        }
+
+        // Wait before retrying (exponential backoff: 1s, 2s, 4s)
+        if (attempt < maxRetries) {
+          const delay = Math.pow(2, attempt - 1) * 1000;
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        }
+      }
     }
+
+    // If we get here, all retries failed
+    this.state = "failed";
+    throw lastError;
   }
 
   async abort(): Promise<void> {
