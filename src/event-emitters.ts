@@ -89,18 +89,33 @@ export async function sendSystemWebhook(
   await sendWebhook(config.systemWebhook, payload, log, 2);
 }
 
+import { AmqpClient } from "./amqp-client";
+
 export function getConfiguredWebhookHandlers(
-  log: FastifyBaseLogger
+  log: FastifyBaseLogger,
+  amqpClient?: AmqpClient
 ): WebhookHandlers {
   const handlers: Record<string, (d: any) => void> = {};
-  if (config.systemWebhook) {
+
+  // We register handlers if either systemWebhook is configured OR amqpClient is provided
+  if (config.systemWebhook || amqpClient) {
     const systemWebhookEvents = config.systemWebhookEvents;
     for (const eventName of systemWebhookEvents) {
       const handlerName = `on${snakeCaseToUpperCamelCase(eventName)}`;
       handlers[handlerName] = (data: any) => {
-        log.debug(`Sending system webhook for event: ${eventName}`);
+        log.debug(`Processing system event: ${eventName}`);
 
-        sendSystemWebhook(eventName, data, log);
+        // 1. Send via Webhook if configured
+        if (config.systemWebhook) {
+          sendSystemWebhook(eventName, data, log);
+        }
+
+        // 2. Send via AMQP if available
+        if (amqpClient) {
+          // For system events, we use "system" as taskId, or extract it if available in data
+          const taskId = data?.prompt_id || data?.id || "system";
+          amqpClient.publishEvent(taskId, eventName, data);
+        }
       };
     }
   }

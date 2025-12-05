@@ -249,6 +249,33 @@ async function collectExecutionStats(
           wsClient?.removeEventListener("message", handleMessage);
           return reject(new Error("Prompt execution interrupted"));
         }
+      } else {
+        // Handle binary message (Preview Image)
+        if (onProgress) {
+          const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data as ArrayBuffer);
+          const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+          const type = view.getUint32(0, false); // Big-endian
+          if (type === 1) { // Preview Image
+            const imageType = "image/jpeg"; // Default to jpeg for previews
+            const imageData = buffer.slice(8).toString("base64");
+
+            // We don't have prompt_id in binary message easily without tracking executing state,
+            // but collectExecutionStats is scoped to a specific promptId.
+            // However, binary messages don't carry prompt_id. 
+            // We can assume if we are collecting stats for this prompt, and we receive a binary preview,
+            // it *might* be for this prompt if it's the one executing.
+            // But multiple prompts shouldn't be executing in parallel on one ComfyUI instance usually.
+
+            onProgress({
+              type: "binary_preview",
+              data: {
+                prompt_id: promptId, // Assume it belongs to the current prompt being tracked
+                image_type: imageType,
+                image_data: imageData
+              }
+            } as any);
+          }
+        }
       }
     };
 

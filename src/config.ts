@@ -51,6 +51,14 @@ const {
   WEBHOOK_SECRET,
   WORKFLOW_DIR = "/workflows",
   ENABLE_TELEMETRY = "false",
+  AMQP_EXCHANGE_TOPIC = "runnode.comfyui.topic",
+  AMQP_QUEUE_EVENT_STREAM = "q.event.stream",
+  AMQP_QUEUE_EVENT_RESULT = "q.event.result",
+  // Instance Identity
+  INSTANCE_GPU_VRAM = "20G", // 20G, 40G, 70G
+  INSTANCE_IS_FREE = "false",
+  INSTANCE_DEDICATED_ID,
+  INSTANCE_WORKFLOW_ID,
 } = process.env;
 
 fs.mkdirSync(WORKFLOW_DIR, { recursive: true });
@@ -711,9 +719,18 @@ const config = {
   telemetryInterval: parseInt(TELEMETRY_INTERVAL_S, 10) * 1000,
 
   // AMQP Configuration
-  amqpUrl: process.env.AMQP_URL,
-  amqpQueueInput: process.env.AMQP_QUEUE_INPUT || "comfyui_input",
-  amqpQueueOutput: process.env.AMQP_QUEUE_OUTPUT || "comfyui_output",
+  // AMQP Configuration
+  amqpUrl: process.env.AMQP_URL ?? (process.env.AMQP_HOST ? `amqp://${process.env.AMQP_USER}:${process.env.AMQP_PASS}@${process.env.AMQP_HOST}:${process.env.AMQP_PORT}/${process.env.AMQP_VHOST}` : undefined),
+  amqpExchangeTopic: AMQP_EXCHANGE_TOPIC,
+  amqpQueueEventStream: AMQP_QUEUE_EVENT_STREAM,
+  amqpQueueEventResult: AMQP_QUEUE_EVENT_RESULT,
+
+  // Instance Identity
+  instanceGpuVram: INSTANCE_GPU_VRAM,
+  instanceIsFree: INSTANCE_IS_FREE.toLowerCase() === "true",
+  instanceDedicatedId: INSTANCE_DEDICATED_ID,
+  instanceWorkflowId: INSTANCE_WORKFLOW_ID,
+
   maxConcurrentDownloads,
   maxConcurrentUploads,
 };

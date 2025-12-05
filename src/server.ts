@@ -521,6 +521,8 @@ process.on("SIGINT", async () => {
   process.exit(0);
 });
 
+let amqpClient: AmqpClient | undefined;
+
 async function launchComfyUIAndAPIServerAndWaitForWarmup() {
   warm = false;
   server.log.info(
@@ -542,7 +544,7 @@ async function launchComfyUIAndAPIServerAndWaitForWarmup() {
     await server.ready();
     server.swagger();
     // Initialize AMQP Client
-    const amqpClient = new AmqpClient(server.log);
+    amqpClient = new AmqpClient(server.log);
     amqpClient.connect();
 
     const start = async () => {
@@ -556,7 +558,7 @@ async function launchComfyUIAndAPIServerAndWaitForWarmup() {
     start();
     server.log.info(`ComfyUI API ${config.apiVersion} started.`);
   }
-  const handlers = getConfiguredWebhookHandlers(server.log);
+  const handlers = getConfiguredWebhookHandlers(server.log, amqpClient);
   if (handlers.onStatus) {
     const originalHandler = handlers.onStatus;
     handlers.onStatus = (msg) => {
