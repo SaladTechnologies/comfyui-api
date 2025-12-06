@@ -2,6 +2,7 @@ import * as amqp from "amqplib";
 import { Connection, Channel, ConsumeMessage } from "amqplib";
 import { FastifyBaseLogger } from "fastify";
 import { processPrompt, PromptRequest } from "./prompt-handler";
+import { camelCaseToSnakeCase } from "./utils";
 import config from "./config";
 
 interface EventEnvelope {
@@ -10,6 +11,7 @@ interface EventEnvelope {
     event_type: string;
     timestamp: number;
     data: any;
+    metadata?: Record<string, string>;
 }
 
 export class AmqpClient {
@@ -83,7 +85,7 @@ export class AmqpClient {
         }
     }
 
-    public async publishEvent(taskId: string, eventType: string, data: any) {
+    public async publishEvent(taskId: string, eventType: string, data: any, metadata?: Record<string, string>) {
         if (!this.channel || !config.amqpExchangeTopic) return;
 
         const envelope: EventEnvelope = {
@@ -93,6 +95,11 @@ export class AmqpClient {
             timestamp: Date.now(),
             data: data
         };
+
+        // Add metadata if provided
+        if (metadata && Object.keys(metadata).length > 0) {
+            envelope.metadata = metadata;
+        }
 
         // Determine Routing Key
         // Stream events: progress, executing, status, etc.
@@ -117,10 +124,53 @@ export class AmqpClient {
         }
     }
 
+    /**
+     * Start consuming messages from the input queue
+     * 
+     * Processing Strategy:
+     * - Sequential processing: One message at a time, fully completed before next
+     * - Prefetch limit: Only fetch 1 message from queue at a time
+     * - This ensures messages stay in queue until consumer is ready
+     * - Enables load balancing across multiple comfyui-api instances
+     * 
+     * Message Flow:
+     * 1. Fetch one message from RabbitMQ
+     * 2. Parse and validate message
+     * 3. Execute prompt (blocking, 30-60 seconds)
+     * 4. Upload to S3
+     * 5. Send execution_success event
+     * 6. Ack message (remove from queue)
+     * 7. Fetch next message (repeat)
+     */
     async consume() {
-        if (!this.channel || !this.inputQueueName) return;
+        if (!this.channel || !this.inputQueueName) {
+            this.log.warn("Cannot consume: channel or queue not initialized");
+            return;
+        }
+
+        /**
+         * Set prefetch to 1 (Quality of Service)
+         * 
+         * Why prefetch=1?
+         * - Without prefetch limit (default=0), RabbitMQ pushes ALL messages to consumer
+         * - With prefetch=1, only 1 message is delivered at a time
+         * - Next message only delivered after current one is acked
+         * 
+         * Benefits:
+         * 1. Load Balancing: Other instances can process queued messages
+         * 2. Fair Distribution: Messages distributed evenly across instances
+         * 3. Memory Efficient: Only 1 message in memory at a time
+         * 4. Fault Tolerance: If instance crashes, unacked message returns to queue
+         * 
+         * Example with 3 messages and 2 instances:
+         * - Without prefetch: Instance1 gets all 3, Instance2 gets 0
+         * - With prefetch=1: Instance1 gets 1, Instance2 gets 1, remaining 1 in queue
+         */
+        await this.channel.prefetch(1);
+        this.log.info(`Set prefetch=1 for fair message distribution`);
 
         this.log.info(`Waiting for messages in ${this.inputQueueName}`);
+
         this.channel.consume(this.inputQueueName, async (msg: ConsumeMessage | null) => {
             if (msg !== null) {
                 const content = msg.content.toString();
@@ -151,28 +201,57 @@ export class AmqpClient {
                 this.log.info(`Received AMQP task: ${taskId}`);
 
                 try {
-                    // Define progress callback
-                    const onProgress = (message: any) => {
-                        // Map ComfyUI message types to our event types
-                        // ComfyUI messages usually have { type, data }
-                        // We use the type as event_type, or map it if needed.
-                        // Common types: status, progress, executing, executed
-                        const eventType = message.type || 'unknown';
-                        this.log.debug(`Publishing progress event ${eventType} for task ${taskId}`);
-                        this.publishEvent(taskId, eventType, message.data);
-                    };
+                    /**
+                     * Process the prompt (blocking operation)
+                     * 
+                     * This is a synchronous operation that:
+                     * 1. Calls ComfyUI to execute the workflow (30-60 seconds)
+                     * 2. Waits for completion
+                     * 3. Uploads results to S3
+                     * 4. Returns complete results
+                     * 
+                     * During this time:
+                     * - No other messages are processed by this instance
+                     * - Other instances can process messages from the queue
+                     * - WebSocket events are sent via system event handlers
+                     */
+
+                    // No onProgress callback - all events handled by system event handlers
+                    // This prevents duplicate event sending
 
                     // Execute Prompt
                     this.log.debug(`Starting processPrompt for task ${taskId}`);
-                    const result = await processPrompt(requestBody, this.log, onProgress);
+                    const result = await processPrompt(requestBody, this.log);
                     this.log.debug(`processPrompt completed for task ${taskId}`);
 
-                    // Publish Success Event
-                    // The result from processPrompt typically contains the output images/stats
-                    // We wrap this in execution_success
-                    await this.publishEvent(taskId, "execution_success", result);
+                    /**
+                     * Send execution_success event with complete results
+                     * 
+                     * This is the final event containing:
+                     * - S3 URLs of generated images/audio
+                     * - Filenames
+                     * - Execution statistics
+                     * - Metadata (host, instance info)
+                     */
+                    const metadata: Record<string, string> = { ...config.systemMetaData };
+                    if (config.saladMetadata) {
+                        for (const [key, value] of Object.entries(config.saladMetadata)) {
+                            if (value) {
+                                metadata[`salad_${camelCaseToSnakeCase(key)}`] = value;
+                            }
+                        }
+                    }
 
-                    // Ack the task
+                    await this.publishEvent(taskId, "execution_success", result, metadata);
+
+                    /**
+                     * Acknowledge the message
+                     * 
+                     * This tells RabbitMQ:
+                     * - Message was successfully processed
+                     * - Remove it from the queue
+                     * - Deliver the next message (if prefetch allows)
+                     */
                     if (this.channel) {
                         this.log.debug(`Acking task ${taskId}`);
                         this.channel.ack(msg);
@@ -180,16 +259,62 @@ export class AmqpClient {
                 } catch (error: any) {
                     this.log.error(`Error processing task ${taskId}: ${error.message}`);
 
-                    // Publish Error Event
-                    this.log.debug(`Publishing execution_error for task ${taskId}`);
-                    await this.publishEvent(taskId, "execution_error", {
+                    // Publish Error Event with metadata
+                    const metadata: Record<string, string> = { ...config.systemMetaData };
+                    if (config.saladMetadata) {
+                        for (const [key, value] of Object.entries(config.saladMetadata)) {
+                            if (value) {
+                                metadata[`salad_${camelCaseToSnakeCase(key)}`] = value;
+                            }
+                        }
+                    }
+
+                    /**
+                     * Send execution_error with complete error information
+                     * 
+                     * Backend expects:
+                     * - id: Task ID (required for handlePromptFailed)
+                     * - type: Error type
+                     * - message: Error message
+                     * - details: Detailed error information (if available)
+                     * - node_errors: Node-specific errors (if available from ComfyUI)
+                     */
+                    const errorData: any = {
+                        id: taskId,  // Required by backend
+                        type: error.name || 'execution_error',
                         message: error.message,
                         stack: error.stack
-                    });
+                    };
 
-                    // Ack the task (it failed, but we processed it)
-                    // Alternatively, we could nack(requeue) if it was a transient system error,
-                    // but for application errors (bad prompt), we should ack.
+                    // If error contains ComfyUI validation errors, include them
+                    if (error.message && error.message.includes('Failed to queue prompt:')) {
+                        try {
+                            // Extract JSON error details from message
+                            const jsonMatch = error.message.match(/\{.*\}/s);
+                            if (jsonMatch) {
+                                const errorDetails = JSON.parse(jsonMatch[0]);
+                                errorData.details = errorDetails.error;
+                                errorData.node_errors = errorDetails.node_errors;
+                            }
+                        } catch (e) {
+                            // If parsing fails, just use the original message
+                            this.log.debug('Could not parse error details from message');
+                        }
+                    }
+
+                    await this.publishEvent(taskId, "execution_error", errorData, metadata);
+
+                    /**
+                     * Acknowledge failed tasks
+                     * 
+                     * We ack even on failure because:
+                     * - Application errors (bad prompt) won't be fixed by retry
+                     * - Prevents infinite retry loops
+                     * - Backend is notified via execution_error event
+                     * 
+                     * Alternative: Could nack with requeue for transient errors
+                     * (network issues, temporary ComfyUI unavailability)
+                     */
                     if (this.channel) {
                         this.log.debug(`Acking failed task ${taskId}`);
                         this.channel.ack(msg);

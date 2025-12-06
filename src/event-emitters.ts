@@ -97,24 +97,63 @@ export function getConfiguredWebhookHandlers(
 ): WebhookHandlers {
   const handlers: Record<string, (d: any) => void> = {};
 
+  // Determine which event delivery method to use
+  // Priority: AMQP > Webhook
+  const useAMQP = amqpClient !== null;
+  const useWebhook = config.systemWebhook && !useAMQP;
+
+  if (!useAMQP && !useWebhook) {
+    log.info("No system event handlers configured (neither AMQP nor Webhook)");
+    return handlers;
+  }
+
+  log.info(`System events will be sent via: ${useAMQP ? 'AMQP' : 'Webhook'}`);
+
   // We register handlers if either systemWebhook is configured OR amqpClient is provided
-  if (config.systemWebhook || amqpClient) {
+  if (useWebhook || useAMQP) {
     const systemWebhookEvents = config.systemWebhookEvents;
     for (const eventName of systemWebhookEvents) {
       const handlerName = `on${snakeCaseToUpperCamelCase(eventName)}`;
       handlers[handlerName] = (data: any) => {
         log.debug(`Processing system event: ${eventName}`);
 
+        // Special handling: Filter WebSocket execution_success events
+        // We only want the execution_success from processPrompt completion (with full results)
+        if (eventName === 'execution_success') {
+          // Check if this is a WebSocket event (only has prompt_id and timestamp, no images)
+          const isWebSocketEvent = data?.data?.prompt_id &&
+            data?.data?.timestamp &&
+            !data?.images;
+
+          if (isWebSocketEvent) {
+            log.debug(`Skipping WebSocket execution_success, waiting for processPrompt result`);
+            return;
+          }
+        }
+
         // 1. Send via Webhook if configured
-        if (config.systemWebhook) {
+        if (useWebhook) {
           sendSystemWebhook(eventName, data, log);
         }
 
-        // 2. Send via AMQP if available
-        if (amqpClient) {
-          // For system events, we use "system" as taskId, or extract it if available in data
-          const taskId = data?.prompt_id || data?.id || "system";
-          amqpClient.publishEvent(taskId, eventName, data);
+        // 2. Send via AMQP if configured
+        if (useAMQP && amqpClient) {
+          // Since we now pass task ID directly to ComfyUI as prompt_id,
+          // the prompt_id in the event data IS the task ID
+          const promptId = data?.data?.prompt_id || data?.prompt_id;
+          const taskId = promptId || data?.id || "system";
+
+          // Construct metadata (same as webhook)
+          const metadata: Record<string, string> = { ...config.systemMetaData };
+          if (config.saladMetadata) {
+            for (const [key, value] of Object.entries(config.saladMetadata)) {
+              if (value) {
+                metadata[`salad_${camelCaseToSnakeCase(key)}`] = value;
+              }
+            }
+          }
+
+          amqpClient.publishEvent(taskId, eventName, data, metadata);
         }
       };
     }

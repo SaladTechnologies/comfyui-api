@@ -93,17 +93,24 @@ export async function warmupComfyUI(): Promise<void> {
   }
 }
 
-export async function queuePrompt(prompt: ComfyPrompt): Promise<string> {
+export async function queuePrompt(prompt: ComfyPrompt, promptId?: string): Promise<string> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
 
   try {
+    const body: any = { prompt, client_id: config.wsClientId };
+
+    // If promptId is provided, use it as prompt_id for ComfyUI
+    if (promptId) {
+      body.prompt_id = promptId;
+    }
+
     const resp = await fetch(`${config.comfyURL}/prompt`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ prompt, client_id: config.wsClientId }),
+      body: JSON.stringify(body),
       dispatcher: getProxyDispatcher(),
       signal: controller.signal,
     });
@@ -377,9 +384,12 @@ export async function runPromptAndGetOutputs(
   log: FastifyBaseLogger,
   onProgress?: (message: ComfyWSMessage) => void
 ): Promise<PromptOutputsWithStats> {
-  const promptId = await queuePrompt(prompt);
-  comfyIDToApiID[promptId] = id;
-  log.debug(`Prompt ${id} queued as comfy prompt id: ${promptId}`);
+  // Pass the id directly to ComfyUI as prompt_id
+  const promptId = await queuePrompt(prompt, id);
+
+  // Since we're using our id as prompt_id, they should match
+  // No need for comfyIDToApiID mapping anymore
+  log.debug(`Prompt ${id} queued with prompt_id: ${promptId}`);
   /**
    * We start with a slow poll to the history endpoint, both as a safety measure around websocket
    * failures, and to avoid hammering the history endpoint with requests in the case of many queued
