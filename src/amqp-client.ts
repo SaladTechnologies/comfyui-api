@@ -85,6 +85,25 @@ export class AmqpClient {
         }
     }
 
+    /**
+     * 发布通用消息到 Exchange（服务注册/心跳/注销等）
+     */
+    public async publishToExchange(routingKey: string, message: any): Promise<void> {
+        if (!this.channel || !config.amqpExchangeTopic) return;
+        try {
+            const persistent = routingKey.includes('register') || routingKey.includes('unregister');
+            this.channel.publish(
+                config.amqpExchangeTopic,
+                routingKey,
+                Buffer.from(JSON.stringify(message)),
+                { persistent }
+            );
+            this.log.debug(`Published to exchange: ${routingKey}`);
+        } catch (e: any) {
+            this.log.error(`Failed to publish to exchange: ${e.message}`);
+        }
+    }
+
     public async publishEvent(taskId: string, eventType: string, data: any, metadata?: Record<string, string>) {
         if (!this.channel || !config.amqpExchangeTopic) return;
 

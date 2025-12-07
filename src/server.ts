@@ -48,6 +48,7 @@ import { getProxyDispatcher } from "./proxy-dispatcher";
 import archiver from "archiver";
 import { processPrompt, PromptRequest } from "./prompt-handler";
 import { AmqpClient } from "./amqp-client";
+import { ServiceRegistry } from "./service-registry";
 
 const { apiVersion: version } = config;
 
@@ -522,6 +523,7 @@ process.on("SIGINT", async () => {
 });
 
 let amqpClient: AmqpClient | undefined;
+let serviceRegistry: ServiceRegistry | undefined;
 
 async function launchComfyUIAndAPIServerAndWaitForWarmup() {
   warm = false;
@@ -546,6 +548,11 @@ async function launchComfyUIAndAPIServerAndWaitForWarmup() {
     // Initialize AMQP Client
     amqpClient = new AmqpClient(server.log);
     amqpClient.connect();
+
+    // Service Registry
+    serviceRegistry = new ServiceRegistry(amqpClient, server.log);
+    await serviceRegistry.register();
+    serviceRegistry.startHeartbeat();
 
     const start = async () => {
       try {
@@ -654,3 +661,31 @@ export async function start() {
     process.exit(1);
   }
 }
+
+process.on('SIGTERM', async () => {
+  server.log.info('SIGTERM received, shutting down');
+  try {
+    if (serviceRegistry) await serviceRegistry.unregister('SIGTERM');
+  } catch {}
+  try {
+    if (amqpClient) await amqpClient.close();
+  } catch {}
+  try {
+    shutdownComfyUI();
+  } catch {}
+  process.exit(0);
+});
+
+process.on('SIGINT', async () => {
+  server.log.info('SIGINT received, shutting down');
+  try {
+    if (serviceRegistry) await serviceRegistry.unregister('SIGINT');
+  } catch {}
+  try {
+    if (amqpClient) await amqpClient.close();
+  } catch {}
+  try {
+    shutdownComfyUI();
+  } catch {}
+  process.exit(0);
+});

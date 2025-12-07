@@ -1,27 +1,25 @@
 # ComfyUI API - A Stateless and Extendable API for ComfyUI
 
-![Version](https://img.shields.io/badge/version-1.15.0-blue)
+![Version](https://img.shields.io/badge/version-1.15.1-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-A simple wrapper that facilitates using [ComfyUI](https://github.com/comfyanonymous/ComfyUI/) as a stateless API, either by receiving images in the response, or by sending completed images to a webhook
+A thin wrapper to run [ComfyUI](https://github.com/comfyanonymous/ComfyUI/) as a stateless API: return outputs directly, or deliver them asynchronously via webhooks or AMQP events.
 
-## 🎉 What's New in v1.15.0
+## 🎉 What's New in v1.15.1
 
-**Major AMQP Improvements** - This release focuses on enhancing the AMQP integration with significant performance and reliability improvements:
+AMQP Service Registration & Heartbeat — building on v1.15.0’s unified AMQP event architecture, this release adds service registration/heartbeat/unregistration publishing and integrates them into the default server lifecycle:
 
-- ✅ **Unified Event Architecture**: AMQP and Webhook are now mutually exclusive (AMQP takes priority)
-- ✅ **Load Balancing**: Added `prefetch(1)` for fair distribution across multiple instances
-- ✅ **Event Deduplication**: Eliminated duplicate `execution_success` events (50% message reduction)
-- ✅ **Bug Fix**: Fixed `execution_error` missing `id` field - failed tasks now properly update status
-- ✅ **Task ID Optimization**: Direct pass-through of task ID as ComfyUI `prompt_id` (no mapping needed)
+- ✅ Service Registration: publishes `service.instance.register` on startup
+- ✅ Periodic Heartbeat: publishes `service.instance.heartbeat` every 5s by default, configurable via `HEARTBEAT_INTERVAL`
+- ✅ Graceful Unregistration: publishes `service.instance.unregister` on shutdown
+- ✅ Fair Distribution: keeps `prefetch(1)` for task consumers to ensure multi-instance load balancing
 
-**Performance Impact**:
+Impact:
 
-- 50% reduction in AMQP message volume
-- 40% faster processing with multi-instance deployments
-- 80% reduction in memory usage per instance
+- Result events remain persistent; heartbeats are transient; registration/unregistration are persistent
+- Improves stability in horizontal scaling and timeliness in offline detection
 
-See [PR-007](docs/PR-007-AMQP-Improvements-v1.15.0.md) for detailed technical documentation.
+See [PR-007](docs/PR-007-AMQP-Improvements-v1.15.0.md) and `src/service-registry.ts` for implementation details.
 
 ---
 
