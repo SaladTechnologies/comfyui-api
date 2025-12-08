@@ -13,13 +13,11 @@ export class ServiceRegistry {
   constructor(amqpClient: AmqpClient, log: FastifyBaseLogger) {
     this.amqpClient = amqpClient;
     this.log = log;
-    this.instanceId = this.generateInstanceId();
+    this.instanceId = config.instanceId;
   }
 
   private generateInstanceId(): string {
-    const hostname = os.hostname();
-    const timestamp = Date.now();
-    return `comfyui-api-${hostname}-${timestamp}`;
+    return config.instanceId;
   }
 
   async register(): Promise<void> {
@@ -28,16 +26,16 @@ export class ServiceRegistry {
     const monopolizeType = config.instanceDedicatedId ? 1 : 2;
     const registerData = {
       instance_id: this.instanceId,
-      server_url: config.comfyURL,
-      ws_url: config.comfyWSURL,
+      server_url: config.comfyPublicURL,
+      ws_url: config.comfyPublicWSURL,
       api_url: config.selfURL,
       type,
       monopolize_type: monopolizeType,
       version: config.apiVersion,
       capabilities: {
         max_concurrent_tasks: 1,
-        supported_models: [],
-        gpu_memory: config.instanceGpuVram || 'unknown'
+        supported_models: config.supportedModels ? config.supportedModels.split(',') : [],
+        gpu_memory: config.gpuMemory || config.instanceGpuVram || 'unknown'
       }
     };
     const metadata: Record<string, string> = { ...config.systemMetaData, container_id: os.hostname() };

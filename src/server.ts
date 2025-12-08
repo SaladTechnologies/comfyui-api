@@ -352,6 +352,7 @@ server.after(() => {
         };
 
         try {
+          if (serviceRegistry) serviceRegistry.setCurrentTask((request.body as PromptRequest).id);
           const result = await processPrompt(
             request.body as PromptRequest,
             app.log,
@@ -372,6 +373,7 @@ server.after(() => {
           });
         } finally {
           reply.raw.end();
+          if (serviceRegistry) serviceRegistry.setCurrentTask(null);
         }
         return;
       }
@@ -391,9 +393,14 @@ server.after(() => {
       // If async mode, start processing in background and return immediately
       if (isAsync) {
         // Start processing in background (don't await)
-        processPrompt(request.body as PromptRequest, app.log).catch((e: any) => {
-          app.log.error({ error: e, id: request.body.id }, "Background prompt processing failed");
-        });
+        if (serviceRegistry) serviceRegistry.setCurrentTask((request.body as PromptRequest).id);
+        processPrompt(request.body as PromptRequest, app.log)
+          .catch((e: any) => {
+            app.log.error({ error: e, id: request.body.id }, "Background prompt processing failed");
+          })
+          .finally(() => {
+            if (serviceRegistry) serviceRegistry.setCurrentTask(null);
+          });
 
         return reply
           .code(202)
@@ -406,6 +413,7 @@ server.after(() => {
 
       // Synchronous mode - wait for completion
       try {
+        if (serviceRegistry) serviceRegistry.setCurrentTask((request.body as PromptRequest).id);
         const result = await processPrompt(request.body as PromptRequest, app.log);
         if (
           request.body.webhook ||
@@ -426,6 +434,8 @@ server.after(() => {
           error: e.message || "Failed to process prompt",
           location: e.location || "prompt",
         });
+      } finally {
+        if (serviceRegistry) serviceRegistry.setCurrentTask(null);
       }
     }
   );
@@ -547,12 +557,15 @@ async function launchComfyUIAndAPIServerAndWaitForWarmup() {
     server.swagger();
     // Initialize AMQP Client
     amqpClient = new AmqpClient(server.log);
-    amqpClient.connect();
+    await amqpClient.connect();
 
     // Service Registry
     serviceRegistry = new ServiceRegistry(amqpClient, server.log);
     await serviceRegistry.register();
     serviceRegistry.startHeartbeat();
+    if (amqpClient && serviceRegistry) {
+      amqpClient.setServiceRegistry(serviceRegistry);
+    }
 
     const start = async () => {
       try {

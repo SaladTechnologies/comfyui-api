@@ -1,15 +1,15 @@
 # ComfyUI API - ComfyUI 的无状态可扩展 API 封装（中文全文）
 
-![Version](https://img.shields.io/badge/version-1.15.1-blue)
+![Version](https://img.shields.io/badge/version-1.15.2-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 一个轻量封装，使 [ComfyUI](https://github.com/comfyanonymous/ComfyUI/) 以无状态 API 运行：可直接返回输出，或通过 Webhook/AMQP 事件进行异步交付。
 
-## 🎉 v1.15.1 更新内容
+## 🎉 v1.15.2 更新内容
 
-AMQP 服务注册与心跳 —— 基于 v1.15.0 的统一 AMQP 事件架构，本版本增加服务注册/心跳/注销发布，并集成到默认服务生命周期：
+AMQP 服务注册与心跳 —— 在 v1.15.0 的统一 AMQP 事件架构之上，增强“就绪判断”与“注册重试”，并完善通道状态日志：
 
-- ✅ 服务注册：启动发布 `service.instance.register`
+- ✅ 服务注册：启动发布 `service.instance.register`（支持指数退避重试）
 - ✅ 周期心跳：默认每 5 秒发布 `service.instance.heartbeat`（`HEARTBEAT_INTERVAL` 可配置）
 - ✅ 优雅注销：进程退出发布 `service.instance.unregister`
 - ✅ 公平分发：任务消费者保留 `prefetch(1)`，确保多实例负载均衡
@@ -17,9 +17,9 @@ AMQP 服务注册与心跳 —— 基于 v1.15.0 的统一 AMQP 事件架构，�
 影响：
 
 - 结果事件为持久化；心跳为瞬态；注册/注销持久化
-- 提升横向扩展稳定性与离线检测及时性
+- 提升注册可靠性与线上排障可观测性
 
-详见 [PR-007](docs/PR-007-AMQP-Improvements-v1.15.0.md) 与 `src/service-registry.ts`。
+详见 `src/service-registry.ts` 与 `src/amqp-client.ts`。
 
 ## 主要特性（摘要）
 - 完整 ComfyUI 支持：兼容 `/prompt` API，支持自定义节点与工作流

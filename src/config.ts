@@ -59,14 +59,22 @@ const {
   INSTANCE_IS_FREE = "false",
   INSTANCE_DEDICATED_ID,
   INSTANCE_WORKFLOW_ID,
+  API_URL = "",
+  COMFY_PUBLIC_URL = "",
+  COMFY_PUBLIC_WS_URL = "",
+  GPU_MEMORY,
+  SUPPORTED_MODELS,
 } = process.env;
 
 fs.mkdirSync(WORKFLOW_DIR, { recursive: true });
 
+
+const comfyPublicURL = COMFY_PUBLIC_URL || "";
+const comfyPublicWSURL = COMFY_PUBLIC_WS_URL || "";
 const comfyURL = `http://${DIRECT_ADDRESS}:${COMFYUI_PORT_HOST}`;
 const wsClientId = randomUUID();
 const comfyWSURL = `ws://${DIRECT_ADDRESS}:${COMFYUI_PORT_HOST}/ws?clientId=${wsClientId}`;
-const selfURL = `http://localhost:${PORT}`;
+const selfURL = API_URL || process.env.SYSTEM_META_host || `http://localhost:${PORT}`;
 const port = parseInt(PORT, 10);
 const promptWebhookRetries = parseInt(PROMPT_WEBHOOK_RETRIES, 10);
 
@@ -484,6 +492,9 @@ const config = {
    */
   comfyWSURL,
 
+  comfyPublicURL,
+  
+  comfyPublicWSURL,
   /**
    * The version of the HuggingFace CLI, if installed. If not installed, null.
    */
@@ -726,10 +737,13 @@ const config = {
   amqpQueueEventResult: AMQP_QUEUE_EVENT_RESULT,
 
   // Instance Identity
-  instanceGpuVram: INSTANCE_GPU_VRAM,
-  instanceIsFree: INSTANCE_IS_FREE.toLowerCase() === "true",
-  instanceDedicatedId: INSTANCE_DEDICATED_ID,
-  instanceWorkflowId: INSTANCE_WORKFLOW_ID,
+  instanceGpuVram: process.env.INSTANCE_GPU_VRAM || INSTANCE_GPU_VRAM,
+  gpuMemory: GPU_MEMORY,
+  supportedModels: SUPPORTED_MODELS || (process.env.INSTANCE_GPU_VRAM || INSTANCE_GPU_VRAM ? (process.env.INSTANCE_GPU_VRAM || INSTANCE_GPU_VRAM) === '20g' ? "SDXL,SD1.5,FLUX" : "" : ""),
+  instanceIsFree: (process.env.INSTANCE_IS_FREE || INSTANCE_IS_FREE).toLowerCase() === "true",
+  instanceDedicatedId: process.env.INSTANCE_DEDICATED_ID || INSTANCE_DEDICATED_ID,
+  instanceWorkflowId: process.env.INSTANCE_WORKFLOW_ID || INSTANCE_WORKFLOW_ID,
+  instanceId: process.env.INSTANCE_ID || `comfyui-api-${require('os').hostname()}-${Date.now()}`,
 
   maxConcurrentDownloads,
   maxConcurrentUploads,

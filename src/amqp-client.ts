@@ -20,10 +20,15 @@ export class AmqpClient {
     private log: FastifyBaseLogger;
     private connectFn: (url: string) => Promise<any>;
     private inputQueueName: string = "";
+    private serviceRegistry: any = null;
 
     constructor(log: FastifyBaseLogger, connectFn: (url: string) => Promise<any> = amqp.connect as any) {
         this.log = log;
         this.connectFn = connectFn;
+    }
+
+    public setServiceRegistry(registry: any) {
+        this.serviceRegistry = registry;
     }
 
     private determineInputQueue(): string {
@@ -89,7 +94,10 @@ export class AmqpClient {
      * 发布通用消息到 Exchange（服务注册/心跳/注销等）
      */
     public async publishToExchange(routingKey: string, message: any): Promise<void> {
-        if (!this.channel || !config.amqpExchangeTopic) return;
+        if (!this.channel || !config.amqpExchangeTopic) {
+            this.log.warn(`Cannot publish to exchange ${routingKey}: channel not initialized`);
+            return;
+        }
         try {
             const persistent = routingKey.includes('register') || routingKey.includes('unregister');
             this.channel.publish(
@@ -216,8 +224,11 @@ export class AmqpClient {
                     return;
                 }
 
-                const taskId = requestBody.id || "unknown";
+                const taskId = requestBody.id || (requestBody as any).task_id || "unknown";
                 this.log.info(`Received AMQP task: ${taskId}`);
+                if (this.serviceRegistry) {
+                    this.serviceRegistry.setCurrentTask(taskId);
+                }
 
                 try {
                     /**
@@ -337,6 +348,10 @@ export class AmqpClient {
                     if (this.channel) {
                         this.log.debug(`Acking failed task ${taskId}`);
                         this.channel.ack(msg);
+                    }
+                } finally {
+                    if (this.serviceRegistry) {
+                        this.serviceRegistry.setCurrentTask(null);
                     }
                 }
             }
