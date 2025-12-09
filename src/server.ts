@@ -54,7 +54,23 @@ const { apiVersion: version } = config;
 
 export const server = Fastify({
   bodyLimit: config.maxBodySize,
-  logger: { level: config.logLevel },
+  logger: { level: config.logLevel, timestamp: () => {
+    const d = new Date();
+    const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+    const year = d.getFullYear();
+    const month = pad(d.getMonth() + 1);
+    const day = pad(d.getDate());
+    const hour = pad(d.getHours());
+    const minute = pad(d.getMinutes());
+    const second = pad(d.getSeconds());
+    const ms = d.getMilliseconds().toString().padStart(3, '0');
+    const tzOffsetMin = -d.getTimezoneOffset();
+    const sign = tzOffsetMin >= 0 ? '+' : '-';
+    const tzH = pad(Math.floor(Math.abs(tzOffsetMin) / 60));
+    const tzM = pad(Math.abs(tzOffsetMin) % 60);
+    const local = `${year}-${month}-${day} ${hour}:${minute}:${second}.${ms}${sign}${tzH}:${tzM}`;
+    return `,"time":"${local}"`;
+  } },
   connectionTimeout: 0,
   keepAliveTimeout: 0,
   requestTimeout: 0,
