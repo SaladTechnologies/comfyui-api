@@ -26,6 +26,7 @@ A simple wrapper that facilitates using [ComfyUI](https://github.com/comfyanonym
     - [HTTP](#http)
   - [Image To Image Workflows](#image-to-image-workflows)
   - [Dynamic Model Loading](#dynamic-model-loading)
+  - [On-Demand Model Download Endpoint](#on-demand-model-download-endpoint)
   - [Server-side image processing](#server-side-image-processing)
   - [Probes](#probes)
   - [API Configuration Guide](#api-configuration-guide)
@@ -104,6 +105,7 @@ The server hosts swagger docs at `/docs`, which can be used to interact with the
 - **Dynamic Workflow Endpoints**: Automatically mount new workflow endpoints by adding conforming `.js` or `.ts` files to the `/workflows` directory in your docker image. See [the guide](./DEVELOPING.md#generating-new-workflow-endpoints) for more information. A [Claude 4 Sonnet](https://claude.ai) [prompt](./claude-endpoint-creation-prompt.md) is included to assist in automating this process.
 - **Bring Your Own Models And Extensions**: Use any model or extension you want by adding them to the normal ComfyUI directories `/opt/ComfyUI/`. You can configure a [manifest file](#model-manifest) to download models and install extensions automatically on startup.
 - **Dynamic Model Loading**: If you provide a URL in a model-loading node, the server will locally cache the model automatically before executing the workflow.
+- **On-Demand Model Download**: Trigger model downloads via a dedicated API endpoint, with support for both synchronous and asynchronous operations.
 - **Execution Stats**: The server will return [execution stats in the response](#response-format).
 - **Works Great with SaladCloud**: The server is designed to work well with SaladCloud, and can be used to host ComfyUI on the SaladCloud platform. It is likely to work well with other platforms as well.
   - **Manages Deletion Cost**: _ONLY ON SALAD_. The server will automatically set the instance deletion cost to the queue length, so that busier nodes are less likely to be scaled in while they are processing requests.
@@ -732,6 +734,89 @@ The LoRA may be generated on-the-fly by another service, and provided to the Com
   }
 },
 ```
+
+## On-Demand Model Download Endpoint
+
+The server provides a `POST /download` endpoint that allows you to trigger model downloads on-demand. This is useful for pre-loading models before they are needed in a workflow, or for managing model availability across your infrastructure.
+
+### Request Format
+
+```json
+{
+  "url": "https://example.com/model.safetensors",
+  "model_type": "checkpoints",
+  "filename": "my-model.safetensors",
+  "wait": false
+}
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `url` | Yes | The URL to download the model from. Supports all [storage backends](#modular-storage-backends). |
+| `model_type` | Yes | The type of model (e.g., `checkpoints`, `loras`, `vae`, `controlnet`, etc.). Must match a subdirectory in your models folder. |
+| `filename` | No | Override the filename. Defaults to the basename from the URL. |
+| `wait` | No | If `false` (default), returns immediately with `202 Accepted`. If `true`, waits for the download to complete and returns `200 OK` with file stats. |
+
+### Response Format
+
+**Asynchronous (default, `wait: false`):**
+
+Returns `202 Accepted` immediately:
+
+```json
+{
+  "url": "https://example.com/model.safetensors",
+  "model_type": "checkpoints",
+  "filename": "my-model.safetensors",
+  "status": "started"
+}
+```
+
+**Synchronous (`wait: true`):**
+
+Returns `200 OK` when the download completes:
+
+```json
+{
+  "url": "https://example.com/model.safetensors",
+  "model_type": "checkpoints",
+  "filename": "my-model.safetensors",
+  "status": "completed",
+  "size": 6938281472,
+  "duration": 45.23
+}
+```
+
+- `size`: File size in bytes
+- `duration`: Download time in seconds
+
+### Example Usage
+
+**Async download (fire-and-forget):**
+
+```bash
+curl -X POST http://localhost:3000/download \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_base_1.0.safetensors",
+    "model_type": "checkpoints"
+  }'
+```
+
+**Sync download (wait for completion):**
+
+```bash
+curl -X POST http://localhost:3000/download \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "s3://my-bucket/models/custom-lora.safetensors",
+    "model_type": "loras",
+    "filename": "my-custom-lora.safetensors",
+    "wait": true
+  }'
+```
+
+The download uses the same caching and storage provider infrastructure as [dynamic model loading](#dynamic-model-loading), so downloaded files are cached and deduplicated automatically.
 
 ## Server-side image processing
 
