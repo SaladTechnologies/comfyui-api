@@ -508,3 +508,27 @@ export interface StorageProvider {
     filenameOverride?: string
   ): Promise<string>;
 }
+
+export const DownloadRequestSchema = z.object({
+  url: z.string().url(),
+  model_type: z.string(),
+  filename: z.string().optional(),
+  wait: z.boolean().optional().default(false),
+});
+
+export type DownloadRequest = z.infer<typeof DownloadRequestSchema>;
+
+export const DownloadResponseSchema = z.object({
+  url: z.string(),
+  model_type: z.string(),
+  filename: z.string(),
+  status: z.enum(["started", "completed"]),
+  size: z.number().optional(),
+  duration: z.number().optional(),
+});
+
+export type DownloadResponse = z.infer<typeof DownloadResponseSchema>;
+
+export const DownloadErrorResponseSchema = z.object({
+  error: z.string(),
+});
