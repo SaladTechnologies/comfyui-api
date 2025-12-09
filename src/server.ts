@@ -602,8 +602,15 @@ server.after(() => {
       }
 
       const outputDir = modelConfig.dir;
-      const filename =
-        filenameOverride || path.basename(new URL(url).pathname);
+      let filename: string;
+      try {
+        filename = filenameOverride || path.basename(new URL(url).pathname);
+      } catch (err: any) {
+        log.error(`Invalid URL: ${err.message}`);
+        return reply.code(400).send({
+          error: `Invalid URL: ${err.message}`,
+        });
+      }
 
       if (!wait) {
         log.info(`Starting async download of ${url} to ${outputDir}`);
