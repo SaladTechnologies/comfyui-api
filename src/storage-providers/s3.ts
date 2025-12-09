@@ -41,7 +41,7 @@ export class S3StorageProvider implements StorageProvider {
     const proxyUrl = getProxyForUrl(endpointUrl.href);
 
     const requestHandler = new NodeHttpHandler({
-      connectionTimeout: 10000, // 10 seconds
+      connectionTimeout: 100000, // 100 seconds
       requestTimeout: 0, // No timeout
       httpAgent: proxyUrl
         ? new HttpProxyAgent(proxyUrl)
