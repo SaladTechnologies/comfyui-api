@@ -18,11 +18,11 @@ export class AmqpClient {
     private connection: any = null;
     private channel: any = null;
     private log: FastifyBaseLogger;
-    private connectFn: (url: string) => Promise<any>;
+    private connectFn: (url: string, options?: any) => Promise<any>;
     private inputQueueName: string = "";
     private serviceRegistry: any = null;
 
-    constructor(log: FastifyBaseLogger, connectFn: (url: string) => Promise<any> = amqp.connect as any) {
+    constructor(log: FastifyBaseLogger, connectFn: (url: string, options?: any) => Promise<any> = amqp.connect as any) {
         this.log = log;
         this.connectFn = connectFn;
     }
@@ -55,7 +55,13 @@ export class AmqpClient {
         }
 
         try {
-            this.connection = await this.connectFn(config.amqpUrl);
+            const tlsOpts = config.amqpTlsOptions;
+            if (config.amqpProtocol === 'amqps') {
+                this.log.info(`Connecting to AMQP broker using AMQPS (port ${config.amqpPort})`);
+                this.connection = await this.connectFn(config.amqpUrl, tlsOpts);
+            } else {
+                this.connection = await this.connectFn(config.amqpUrl);
+            }
             this.channel = await this.connection.createChannel();
 
             // Assert Topic Exchange

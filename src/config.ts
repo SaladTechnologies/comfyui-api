@@ -387,6 +387,16 @@ const uvInstalled = (() => {
   }
 })();
 
+const amqpProtocol = process.env.AMQP_PROTOCOL ?? ((process.env.AMQP_PORT === "5671") ? "amqps" : "amqp");
+const amqpPort = process.env.AMQP_PORT ?? (amqpProtocol === "amqps" ? "5671" : "5672");
+const amqpTlsOptions = amqpProtocol === "amqps" ? {
+  ca: process.env.AMQP_TLS_CA_FILE ? [fs.readFileSync(process.env.AMQP_TLS_CA_FILE)] : undefined,
+  cert: process.env.AMQP_TLS_CERT_FILE ? fs.readFileSync(process.env.AMQP_TLS_CERT_FILE) : undefined,
+  key: process.env.AMQP_TLS_KEY_FILE ? fs.readFileSync(process.env.AMQP_TLS_KEY_FILE) : undefined,
+  rejectUnauthorized: process.env.AMQP_TLS_REJECT_UNAUTHORIZED ? process.env.AMQP_TLS_REJECT_UNAUTHORIZED.toLowerCase() !== "false" : true,
+  servername: process.env.AMQP_SERVERNAME ?? process.env.AMQP_SNI ?? undefined,
+} : undefined;
+
 const config = {
   /**
    * If true, the wrapper will always try to restart ComfyUI when it crashes.
@@ -729,12 +739,15 @@ const config = {
    */
   telemetryInterval: parseInt(TELEMETRY_INTERVAL_S, 10) * 1000,
 
-  // AMQP Configuration
-  // AMQP Configuration
-  amqpUrl: process.env.AMQP_URL ?? (process.env.AMQP_HOST ? `amqp://${process.env.AMQP_USER}:${process.env.AMQP_PASS}@${process.env.AMQP_HOST}:${process.env.AMQP_PORT}/${process.env.AMQP_VHOST}` : undefined),
+  amqpUrl: process.env.AMQP_URL ?? (process.env.AMQP_HOST ? `${amqpProtocol}://${process.env.AMQP_USER}:${process.env.AMQP_PASS}@${process.env.AMQP_HOST}:${amqpPort}/${process.env.AMQP_VHOST ?? '%2F'}` : undefined),
+  amqpProtocol,
+  amqpPort,
+  amqpTlsOptions,
   amqpExchangeTopic: AMQP_EXCHANGE_TOPIC,
   amqpQueueEventStream: AMQP_QUEUE_EVENT_STREAM,
   amqpQueueEventResult: AMQP_QUEUE_EVENT_RESULT,
+  amqpQueueInput: process.env.AMQP_QUEUE_INPUT ?? "comfyui_input",
+  amqpQueueOutput: process.env.AMQP_QUEUE_OUTPUT ?? "comfyui_output",
 
   // Instance Identity
   instanceGpuVram: process.env.INSTANCE_GPU_VRAM || INSTANCE_GPU_VRAM,
