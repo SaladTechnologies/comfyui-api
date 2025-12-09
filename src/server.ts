@@ -38,6 +38,9 @@ import {
   WorkflowTree,
   isWorkflow,
   ExecutionStatsSchema,
+  DownloadRequestSchema as BaseDownloadRequestSchema,
+  DownloadResponseSchema,
+  DownloadErrorResponseSchema,
 } from "./types";
 import workflows from "./workflows";
 import { z } from "zod";
@@ -555,6 +558,102 @@ server.after(() => {
         return reply.code(404).send({
           id,
           interrupted: "failed",
+        });
+      }
+    }
+  );
+
+  const modelTypes = Object.keys(config.models);
+  const ModelTypeSchema =
+    modelTypes.length > 0
+      ? z.enum(modelTypes as [string, ...string[]])
+      : z.string();
+
+  const DownloadRequestSchema = BaseDownloadRequestSchema.extend({
+    model_type: ModelTypeSchema,
+  });
+
+  app.post(
+    "/download",
+    {
+      schema: {
+        summary: "Download Model",
+        description:
+          "Download a model from a URL to the appropriate model directory. By default, the download runs asynchronously and returns immediately with a 202 status. Set `wait: true` to hold the request open until the download completes.",
+        body: DownloadRequestSchema,
+        response: {
+          200: DownloadResponseSchema,
+          202: DownloadResponseSchema,
+          400: DownloadErrorResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const { url, model_type, filename: filenameOverride, wait } =
+        request.body as z.infer<typeof DownloadRequestSchema>;
+
+      const log = app.log.child({ url, model_type });
+
+      const modelConfig = config.models[model_type];
+      if (!modelConfig) {
+        return reply.code(400).send({
+          error: `Unknown model type: ${model_type}. Available types: ${Object.keys(config.models).join(", ")}`,
+        });
+      }
+
+      const outputDir = modelConfig.dir;
+      const filename =
+        filenameOverride || path.basename(new URL(url).pathname);
+
+      if (!wait) {
+        log.info(`Starting async download of ${url} to ${outputDir}`);
+        remoteStorageManager
+          .downloadFile(url, outputDir, filename)
+          .then((finalPath) => {
+            log.info(`Download completed: ${finalPath}`);
+          })
+          .catch((err) => {
+            log.error(`Download failed: ${err.message}`);
+          });
+
+        return reply.code(202).send({
+          url,
+          model_type,
+          filename,
+          status: "started",
+        });
+      }
+
+      log.info(`Starting sync download of ${url} to ${outputDir}`);
+      const start = Date.now();
+
+      try {
+        const finalPath = await remoteStorageManager.downloadFile(
+          url,
+          outputDir,
+          filename
+        );
+        const duration = (Date.now() - start) / 1000;
+        const stats = await fsPromises.stat(
+          await fsPromises.realpath(finalPath)
+        );
+
+        log.info(
+          `Download completed: ${finalPath} (${stats.size} bytes in ${duration}s)`
+        );
+
+        return reply.code(200).send({
+          url,
+          model_type,
+          filename: path.basename(finalPath),
+          status: "completed",
+          size: stats.size,
+          duration,
+        });
+      } catch (err: any) {
+        log.error(`Download failed: ${err.message}`);
+        return reply.code(400).send({
+          error: err.message,
         });
       }
     }
