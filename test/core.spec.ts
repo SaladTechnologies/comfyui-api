@@ -1707,6 +1707,158 @@ describe("Stable Diffusion 1.5", () => {
   });
 });
 
+describe("Download Endpoint", () => {
+  const testModelFilename = "test-model.safetensors";
+  const testModelUrl = `http://file-server:8080/${testModelFilename}`;
+
+  before(async () => {
+    await waitForServerToBeReady();
+    // Seed the HTTP file server with a test "model" file
+    const testModelContent = Buffer.from("fake model content for testing");
+    await fetch(`http://localhost:8080/${testModelFilename}`, {
+      method: "PUT",
+      body: testModelContent,
+      headers: {
+        "Content-Type": "application/octet-stream",
+      },
+    });
+  });
+
+  async function submitDownload(body: {
+    url: string;
+    model_type: string;
+    filename?: string;
+    wait?: boolean;
+  }): Promise<{ status: number; body: any }> {
+    const resp = await fetch(`http://localhost:3000/download`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+      dispatcher: new Agent({
+        headersTimeout: 0,
+        bodyTimeout: 0,
+        connectTimeout: 0,
+      }),
+    });
+    return {
+      status: resp.status,
+      body: await resp.json(),
+    };
+  }
+
+  describe("Async download (wait: false)", () => {
+    it("returns 202 immediately with status 'started'", async () => {
+      const { status, body } = await submitDownload({
+        url: testModelUrl,
+        model_type: "checkpoints",
+        filename: `async-test-${Date.now()}.safetensors`,
+        wait: false,
+      });
+
+      expect(status).toEqual(202);
+      expect(body.status).toEqual("started");
+      expect(body.url).toEqual(testModelUrl);
+      expect(body.model_type).toEqual("checkpoints");
+      expect(typeof body.filename).toEqual("string");
+      // Async response should not include size or duration
+      expect(body.size).toEqual(undefined);
+      expect(body.duration).toEqual(undefined);
+    });
+
+    it("defaults to async when wait is not specified", async () => {
+      const { status, body } = await submitDownload({
+        url: testModelUrl,
+        model_type: "checkpoints",
+        filename: `async-default-${Date.now()}.safetensors`,
+      });
+
+      expect(status).toEqual(202);
+      expect(body.status).toEqual("started");
+    });
+  });
+
+  describe("Sync download (wait: true)", () => {
+    it("returns 200 with status 'completed', size, and duration", async () => {
+      const { status, body } = await submitDownload({
+        url: testModelUrl,
+        model_type: "checkpoints",
+        filename: `sync-test-${Date.now()}.safetensors`,
+        wait: true,
+      });
+
+      expect(status).toEqual(200);
+      expect(body.status).toEqual("completed");
+      expect(body.url).toEqual(testModelUrl);
+      expect(body.model_type).toEqual("checkpoints");
+      expect(typeof body.filename).toEqual("string");
+      expect(body.size).toBeGreaterThan(0);
+      expect(body.duration).toBeGreaterThanOrEqual(0);
+    });
+
+    it("extracts filename from URL when not provided", async () => {
+      const { status, body } = await submitDownload({
+        url: testModelUrl,
+        model_type: "checkpoints",
+        wait: true,
+      });
+
+      expect(status).toEqual(200);
+      expect(body.filename).toEqual(testModelFilename);
+    });
+  });
+
+  describe("Error handling", () => {
+    it("returns 400 for invalid model_type", async () => {
+      const { status } = await submitDownload({
+        url: testModelUrl,
+        model_type: "invalid_model_type_that_does_not_exist",
+        wait: true,
+      });
+
+      expect(status).toEqual(400);
+    });
+
+    it("returns 400 for invalid URL", async () => {
+      const { status, body } = await submitDownload({
+        url: "not-a-valid-url",
+        model_type: "checkpoints",
+        wait: true,
+      });
+
+      expect(status).toEqual(400);
+      expect(typeof body.error).toEqual("string");
+    });
+
+    it("returns 400 for download failure (non-existent file)", async () => {
+      const { status, body } = await submitDownload({
+        url: "http://file-server:8080/non-existent-file.safetensors",
+        model_type: "checkpoints",
+        wait: true,
+      });
+
+      expect(status).toEqual(400);
+      expect(typeof body.error).toEqual("string");
+    });
+  });
+
+  describe("Different model types", () => {
+    it("works with loras model type", async () => {
+      const { status, body } = await submitDownload({
+        url: testModelUrl,
+        model_type: "loras",
+        filename: `lora-test-${Date.now()}.safetensors`,
+        wait: true,
+      });
+
+      expect(status).toEqual(200);
+      expect(body.status).toEqual("completed");
+      expect(body.model_type).toEqual("loras");
+    });
+  });
+});
+
 describe("System Events", () => {
   before(async () => {
     await waitForServerToBeReady();
