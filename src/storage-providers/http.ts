@@ -1,5 +1,5 @@
 import path from "path";
-import { StorageProvider, Upload } from "../types";
+import { StorageProvider, Upload, DownloadOptions, DownloadAuth } from "../types";
 import { FastifyBaseLogger } from "fastify";
 import fs from "fs";
 import { Readable } from "stream";
@@ -46,12 +46,14 @@ export class HTTPStorageProvider implements StorageProvider {
   async downloadFile(
     url: string,
     outputDir: string,
-    filenameOverride?: string
+    filenameOverride?: string,
+    options?: DownloadOptions
   ): Promise<string> {
     try {
-      // Fetch the image
-      const headers = getAuthHeadersFromUrl(url);
-      const response = await fetch(url, { headers, dispatcher: getProxyDispatcher() });
+      // Build headers with auth - per-request auth takes priority over URL-based auth
+      const requestUrl = applyQueryAuth(url, options?.auth);
+      const headers = getAuthHeaders(requestUrl, options?.auth);
+      const response = await fetch(requestUrl, { headers, dispatcher: getProxyDispatcher() });
 
       if (!response.ok) {
         throw new Error(`Error downloading file: ${response.statusText}`);
@@ -294,21 +296,67 @@ function getIntendedFileExtensionFromResponse(
   return null;
 }
 
-function getAuthHeadersFromUrl(url: string): HeadersInit {
+/**
+ * Apply query parameter authentication to a URL (e.g., Azure SAS tokens).
+ * Returns the URL with auth query param appended if applicable.
+ */
+function applyQueryAuth(url: string, auth?: DownloadAuth): string {
+  if (!auth || auth.type !== "query") {
+    return url;
+  }
   const parsedUrl = new URL(url);
+  parsedUrl.searchParams.set(auth.query_param, auth.query_value);
+  return parsedUrl.toString();
+}
+
+/**
+ * Build authentication headers for HTTP requests.
+ * Priority: per-request auth > URL-embedded auth > env config auth
+ */
+function getAuthHeaders(url: string, auth?: DownloadAuth): HeadersInit {
   const headers: HeadersInit = {};
+
+  // If per-request auth is provided, use it (except query type which is handled separately)
+  if (auth) {
+    switch (auth.type) {
+      case "bearer":
+        headers["Authorization"] = `Bearer ${auth.token}`;
+        return headers;
+      case "basic":
+        const credentials = `${auth.username}:${auth.password}`;
+        headers["Authorization"] = `Basic ${Buffer.from(credentials).toString("base64")}`;
+        return headers;
+      case "header":
+        headers[auth.header_name] = auth.header_value;
+        return headers;
+      case "query":
+        // Query auth is applied to URL, not headers
+        break;
+      case "s3":
+        // S3 auth is handled by S3StorageProvider, not HTTP
+        break;
+    }
+  }
+
+  // Fall back to URL-embedded credentials
+  const parsedUrl = new URL(url);
   if (parsedUrl.username || parsedUrl.password) {
     const credentials = `${parsedUrl.username}:${parsedUrl.password}`;
-    headers["Authorization"] = `Basic ${Buffer.from(credentials).toString(
-      "base64"
-    )}`;
+    headers["Authorization"] = `Basic ${Buffer.from(credentials).toString("base64")}`;
+    return headers;
+  }
 
-    // Remove credentials from URL for the actual request
-    parsedUrl.username = "";
-    parsedUrl.password = "";
-  } else if (Object.keys(config.httpAuthHeader).length > 0) {
-    // Add any configured auth headers from config
+  // Fall back to env-configured auth headers
+  if (Object.keys(config.httpAuthHeader).length > 0) {
     Object.assign(headers, config.httpAuthHeader);
   }
+
   return headers;
+}
+
+/**
+ * @deprecated Use getAuthHeaders instead
+ */
+function getAuthHeadersFromUrl(url: string): HeadersInit {
+  return getAuthHeaders(url);
 }

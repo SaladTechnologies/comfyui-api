@@ -5,11 +5,12 @@ import {
   S3Client,
   GetObjectCommand,
   PutObjectCommand,
+  S3ClientConfig,
 } from "@aws-sdk/client-s3";
 import { NodeHttpHandler } from "@smithy/node-http-handler";
 import config from "../config";
 import { FastifyBaseLogger } from "fastify";
-import { StorageProvider, Upload } from "../types";
+import { StorageProvider, Upload, DownloadOptions, DownloadAuth } from "../types";
 import { z } from "zod";
 
 export class S3StorageProvider implements StorageProvider {
@@ -62,7 +63,8 @@ export class S3StorageProvider implements StorageProvider {
   async downloadFile(
     s3Url: string,
     outputDir: string,
-    filenameOverride?: string
+    filenameOverride?: string,
+    options?: DownloadOptions
   ): Promise<string> {
     try {
       const { bucket, key } = parseS3Url(s3Url);
@@ -70,8 +72,12 @@ export class S3StorageProvider implements StorageProvider {
         outputDir,
         filenameOverride || path.basename(key)
       );
+
+      // Use per-request credentials if provided, otherwise use default client
+      const s3Client = this.getS3Client(options?.auth);
+
       const command = new GetObjectCommand({ Bucket: bucket, Key: key });
-      const response = await this.s3.send(command);
+      const response = await s3Client.send(command);
 
       if (!response.Body) {
         throw new Error("Response body is null");
@@ -92,6 +98,39 @@ export class S3StorageProvider implements StorageProvider {
       this.log.error("Error downloading file from S3:", error);
       throw error;
     }
+  }
+
+  /**
+   * Get an S3 client - uses per-request credentials if provided, otherwise default client.
+   * Per-request clients are not cached to ensure credential isolation.
+   */
+  private getS3Client(auth?: DownloadAuth): S3Client {
+    // If no S3 auth provided, use the default client
+    if (!auth || auth.type !== "s3") {
+      return this.s3;
+    }
+
+    // Create a new client with per-request credentials
+    const clientConfig: S3ClientConfig = {
+      region: auth.region || config.awsRegion,
+      credentials: {
+        accessKeyId: auth.access_key_id,
+        secretAccessKey: auth.secret_access_key,
+      },
+      requestHandler: new NodeHttpHandler({
+        connectionTimeout: 10000,
+        requestTimeout: 0,
+      }),
+      forcePathStyle: true,
+    };
+
+    // Add custom endpoint if provided
+    if (auth.endpoint) {
+      clientConfig.endpoint = auth.endpoint;
+    }
+
+    this.log.debug("Creating S3 client with per-request credentials");
+    return new S3Client(clientConfig);
   }
 }
 

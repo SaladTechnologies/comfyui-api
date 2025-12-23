@@ -6,7 +6,7 @@ import path from "path";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import storageProviders from "./storage-providers";
-import { StorageProvider, Upload } from "./types";
+import { StorageProvider, Upload, DownloadOptions } from "./types";
 import { sendSystemWebhook } from "./event-emitters";
 import {
   makeHumanReadableSize,
@@ -186,9 +186,14 @@ class RemoteStorageManager {
   async downloadFile(
     url: string,
     outputDir: string,
-    filenameOverride?: string
+    filenameOverride?: string,
+    options?: DownloadOptions
   ): Promise<string> {
-    if (this.cache[url]) {
+    // When auth is provided, skip cache to ensure fresh authenticated request
+    // This prevents serving cached files to requests with different credentials
+    const skipCache = !!options?.auth;
+
+    if (!skipCache && this.cache[url]) {
       const finalLocation = path.join(
         outputDir,
         filenameOverride || path.basename(this.cache[url])
@@ -197,7 +202,7 @@ class RemoteStorageManager {
       this.log.debug(`Using cached file for ${url}`);
       return finalLocation;
     }
-    if (url in this.activeDownloads) {
+    if (!skipCache && url in this.activeDownloads) {
       this.log.info(`Awaiting in-progress download for ${url}`);
       const cachedPath = await this.activeDownloads[url];
       const finalLocation = path.join(
@@ -209,16 +214,18 @@ class RemoteStorageManager {
     }
 
     const hashedUrl = hashUrlBase64(url);
-    const preDownloadedFile = await getFileByPrefix(this.cacheDir, hashedUrl);
-    if (preDownloadedFile) {
-      this.log.debug(`Found ${preDownloadedFile} for ${url} in cache dir`);
-      this.cache[url] = preDownloadedFile;
-      const finalLocation = path.join(
-        outputDir,
-        filenameOverride || path.basename(this.cache[url])
-      );
-      await linkIfDoesNotExist(this.cache[url], finalLocation, this.log);
-      return finalLocation;
+    if (!skipCache) {
+      const preDownloadedFile = await getFileByPrefix(this.cacheDir, hashedUrl);
+      if (preDownloadedFile) {
+        this.log.debug(`Found ${preDownloadedFile} for ${url} in cache dir`);
+        this.cache[url] = preDownloadedFile;
+        const finalLocation = path.join(
+          outputDir,
+          filenameOverride || path.basename(this.cache[url])
+        );
+        await linkIfDoesNotExist(this.cache[url], finalLocation, this.log);
+        return finalLocation;
+      }
     }
 
     const start = Date.now();
@@ -231,9 +238,12 @@ class RemoteStorageManager {
           `Downloading ${url} using provider ${provider.constructor.name}`
         );
         this.activeDownloads[url] = provider
-          .downloadFile(url, this.cacheDir, filenameOverride || tempFilename)
+          .downloadFile(url, this.cacheDir, filenameOverride || tempFilename, options)
           .then((outputLocation: string) => {
-            this.cache[url] = outputLocation;
+            // Only cache if no auth was used
+            if (!skipCache) {
+              this.cache[url] = outputLocation;
+            }
             return outputLocation;
           })
           .finally(() => {
@@ -248,7 +258,7 @@ class RemoteStorageManager {
     const outputPath = await this.activeDownloads[url];
     const finalLocation = path.join(
       outputDir,
-      filenameOverride || path.basename(this.cache[url])
+      filenameOverride || path.basename(skipCache ? outputPath : this.cache[url])
     );
     await linkIfDoesNotExist(outputPath, finalLocation, this.log);
 

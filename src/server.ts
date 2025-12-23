@@ -589,10 +589,16 @@ server.after(() => {
       },
     },
     async (request, reply) => {
-      const { url, model_type, filename: filenameOverride, wait } =
+      const { url, model_type, filename: filenameOverride, wait, auth } =
         request.body as z.infer<typeof DownloadRequestSchema>;
 
-      const log = app.log.child({ url, model_type });
+      // Log without auth details to prevent credential exposure
+      const log = app.log.child({
+        url,
+        model_type,
+        hasAuth: !!auth,
+        authType: auth?.type,
+      });
 
       const modelConfig = config.models[model_type];
       if (!modelConfig) {
@@ -612,10 +618,13 @@ server.after(() => {
         });
       }
 
+      // Build download options with auth if provided
+      const downloadOptions = auth ? { auth } : undefined;
+
       if (!wait) {
         log.info(`Starting async download of ${url} to ${outputDir}`);
         remoteStorageManager
-          .downloadFile(url, outputDir, filename)
+          .downloadFile(url, outputDir, filename, downloadOptions)
           .then((finalPath) => {
             log.info(`Download completed: ${finalPath}`);
           })
@@ -638,7 +647,8 @@ server.after(() => {
         const finalPath = await remoteStorageManager.downloadFile(
           url,
           outputDir,
-          filename
+          filename,
+          downloadOptions
         );
         const duration = (Date.now() - start) / 1000;
         const stats = await fsPromises.stat(

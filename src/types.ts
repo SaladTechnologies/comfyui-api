@@ -455,6 +455,50 @@ export interface Upload {
   abort(): Promise<void>;
 }
 
+/**
+ * Authentication configuration for download requests.
+ * Supports multiple auth types for different storage providers and services.
+ */
+export const DownloadAuthSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("bearer"),
+    token: z.string().describe("Bearer token for Authorization header"),
+  }),
+  z.object({
+    type: z.literal("basic"),
+    username: z.string().describe("Username for basic auth"),
+    password: z.string().describe("Password for basic auth"),
+  }),
+  z.object({
+    type: z.literal("header"),
+    header_name: z.string().describe("Custom header name"),
+    header_value: z.string().describe("Custom header value"),
+  }),
+  z.object({
+    type: z.literal("query"),
+    query_param: z.string().describe("Query parameter name (e.g., 'sig' for Azure SAS)"),
+    query_value: z.string().describe("Query parameter value"),
+  }),
+  z.object({
+    type: z.literal("s3"),
+    access_key_id: z.string().describe("AWS access key ID"),
+    secret_access_key: z.string().describe("AWS secret access key"),
+    endpoint: z.string().optional().describe("Custom S3 endpoint (for non-AWS S3-compatible services)"),
+    region: z.string().optional().describe("AWS region (defaults to env config)"),
+  }),
+]);
+
+export type DownloadAuth = z.infer<typeof DownloadAuthSchema>;
+
+/**
+ * Options for download operations, including optional authentication.
+ */
+export const DownloadOptionsSchema = z.object({
+  auth: DownloadAuthSchema.optional(),
+});
+
+export type DownloadOptions = z.infer<typeof DownloadOptionsSchema>;
+
 export interface StorageProvider {
   /**
    * The key in a request body that indicates this storage provider should be used for upload.
@@ -499,13 +543,15 @@ export interface StorageProvider {
    * @param url URL to download from
    * @param outputDir Directory to save the downloaded file
    * @param filenameOverride Optional filename to use instead of auto-generated one
+   * @param options Optional download options including authentication
    *
    * @resolves The path to the downloaded file
    */
   downloadFile?(
     url: string,
     outputDir: string,
-    filenameOverride?: string
+    filenameOverride?: string,
+    options?: DownloadOptions
   ): Promise<string>;
 }
 
@@ -514,6 +560,7 @@ export const DownloadRequestSchema = z.object({
   model_type: z.string(),
   filename: z.string().optional(),
   wait: z.boolean().optional().default(false),
+  auth: DownloadAuthSchema.optional().describe("Optional authentication for accessing protected resources"),
 });
 
 export type DownloadRequest = z.infer<typeof DownloadRequestSchema>;
