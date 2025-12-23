@@ -553,6 +553,17 @@ export interface StorageProvider {
     filenameOverride?: string,
     options?: DownloadOptions
   ): Promise<string>;
+
+  /**
+   * Validate authentication credentials without downloading the file.
+   * Used to verify credentials on cache hits for auth-required URLs.
+   * @param url URL to validate access to
+   * @param options Download options containing authentication
+   *
+   * @resolves void if auth is valid
+   * @throws Error if auth is invalid or access is denied
+   */
+  validateAuth?(url: string, options: DownloadOptions): Promise<void>;
 }
 
 export const DownloadRequestSchema = z.object({

@@ -15,6 +15,15 @@ import {
   getDirectorySizeInBytes,
 } from "./utils";
 
+/**
+ * Metadata for cached files, stored in sidecar .meta files.
+ */
+interface CacheMetadata {
+  authRequired: boolean;
+  url: string;
+  cachedAt: string;
+}
+
 const execFilePromise = promisify(execFile);
 
 async function linkIfDoesNotExist(
@@ -46,8 +55,37 @@ async function getFileByPrefix(
   prefix: string
 ): Promise<string | null> {
   const files = await fsPromises.readdir(dir);
-  const matchingFile = files.find((file) => file.startsWith(prefix));
+  // Exclude .meta files from the search
+  const matchingFile = files.find((file) => file.startsWith(prefix) && !file.endsWith(".meta"));
   return matchingFile ? path.join(dir, matchingFile) : null;
+}
+
+/**
+ * Get the metadata file path for a cached file.
+ */
+function getMetaFilePath(cachedFilePath: string): string {
+  return `${cachedFilePath}.meta`;
+}
+
+/**
+ * Read metadata for a cached file if it exists.
+ */
+async function readCacheMetadata(cachedFilePath: string): Promise<CacheMetadata | null> {
+  const metaPath = getMetaFilePath(cachedFilePath);
+  try {
+    const content = await fsPromises.readFile(metaPath, "utf-8");
+    return JSON.parse(content) as CacheMetadata;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Write metadata for a cached file.
+ */
+async function writeCacheMetadata(cachedFilePath: string, metadata: CacheMetadata): Promise<void> {
+  const metaPath = getMetaFilePath(cachedFilePath);
+  await fsPromises.writeFile(metaPath, JSON.stringify(metadata, null, 2));
 }
 
 class RemoteStorageManager {
@@ -167,6 +205,11 @@ class RemoteStorageManager {
           delete this.cache[urlInCache];
         }
         await fsPromises.unlink(file.path);
+        // Also delete the metadata file if it exists
+        const metaPath = getMetaFilePath(file.path);
+        await fsPromises.unlink(metaPath).catch(() => {
+          // Metadata file may not exist, ignore
+        });
         freedSpace += file.size;
         this.log.info(
           `Evicted ${file.path} (${makeHumanReadableSize(
@@ -189,22 +232,26 @@ class RemoteStorageManager {
     filenameOverride?: string,
     options?: DownloadOptions
   ): Promise<string> {
-    // When auth is provided, skip cache to ensure fresh authenticated request
-    // This prevents serving cached files to requests with different credentials
-    const skipCache = !!options?.auth;
+    const hasAuth = !!options?.auth;
 
-    if (!skipCache && this.cache[url]) {
+    // Check in-memory cache first
+    if (this.cache[url]) {
+      const cachedPath = this.cache[url];
+      await this.validateCacheAccess(url, cachedPath, options);
       const finalLocation = path.join(
         outputDir,
-        filenameOverride || path.basename(this.cache[url])
+        filenameOverride || path.basename(cachedPath)
       );
-      await linkIfDoesNotExist(this.cache[url], finalLocation, this.log);
+      await linkIfDoesNotExist(cachedPath, finalLocation, this.log);
       this.log.debug(`Using cached file for ${url}`);
       return finalLocation;
     }
-    if (!skipCache && url in this.activeDownloads) {
+
+    // Check if there's an in-progress download we can wait for
+    if (url in this.activeDownloads) {
       this.log.info(`Awaiting in-progress download for ${url}`);
       const cachedPath = await this.activeDownloads[url];
+      await this.validateCacheAccess(url, cachedPath, options);
       const finalLocation = path.join(
         outputDir,
         filenameOverride || path.basename(cachedPath)
@@ -213,25 +260,27 @@ class RemoteStorageManager {
       return finalLocation;
     }
 
+    // Check disk cache
     const hashedUrl = hashUrlBase64(url);
-    if (!skipCache) {
-      const preDownloadedFile = await getFileByPrefix(this.cacheDir, hashedUrl);
-      if (preDownloadedFile) {
-        this.log.debug(`Found ${preDownloadedFile} for ${url} in cache dir`);
-        this.cache[url] = preDownloadedFile;
-        const finalLocation = path.join(
-          outputDir,
-          filenameOverride || path.basename(this.cache[url])
-        );
-        await linkIfDoesNotExist(this.cache[url], finalLocation, this.log);
-        return finalLocation;
-      }
+    const preDownloadedFile = await getFileByPrefix(this.cacheDir, hashedUrl);
+    if (preDownloadedFile) {
+      this.log.debug(`Found ${preDownloadedFile} for ${url} in cache dir`);
+      await this.validateCacheAccess(url, preDownloadedFile, options);
+      this.cache[url] = preDownloadedFile;
+      const finalLocation = path.join(
+        outputDir,
+        filenameOverride || path.basename(preDownloadedFile)
+      );
+      await linkIfDoesNotExist(preDownloadedFile, finalLocation, this.log);
+      return finalLocation;
     }
 
+    // No cache hit - need to download
     const start = Date.now();
     const ext = path.extname(new URL(url).pathname);
     const tempFilename = `${hashedUrl}${ext}`;
 
+    // Find appropriate provider and start download
     for (const provider of this.storageProviders) {
       if (provider.downloadFile && provider.testUrl(url)) {
         this.log.info(
@@ -239,11 +288,15 @@ class RemoteStorageManager {
         );
         this.activeDownloads[url] = provider
           .downloadFile(url, this.cacheDir, filenameOverride || tempFilename, options)
-          .then((outputLocation: string) => {
-            // Only cache if no auth was used
-            if (!skipCache) {
-              this.cache[url] = outputLocation;
-            }
+          .then(async (outputLocation: string) => {
+            this.cache[url] = outputLocation;
+            // Write metadata to track if auth was required
+            const metadata: CacheMetadata = {
+              authRequired: hasAuth,
+              url,
+              cachedAt: new Date().toISOString(),
+            };
+            await writeCacheMetadata(outputLocation, metadata);
             return outputLocation;
           })
           .finally(() => {
@@ -258,7 +311,7 @@ class RemoteStorageManager {
     const outputPath = await this.activeDownloads[url];
     const finalLocation = path.join(
       outputDir,
-      filenameOverride || path.basename(skipCache ? outputPath : this.cache[url])
+      filenameOverride || path.basename(this.cache[url])
     );
     await linkIfDoesNotExist(outputPath, finalLocation, this.log);
 
@@ -285,6 +338,48 @@ class RemoteStorageManager {
     });
 
     return finalLocation;
+  }
+
+  /**
+   * Validate that the request is allowed to access a cached file.
+   * For auth-required URLs, this validates credentials before serving from cache.
+   */
+  private async validateCacheAccess(
+    url: string,
+    cachedPath: string,
+    options?: DownloadOptions
+  ): Promise<void> {
+    const metadata = await readCacheMetadata(cachedPath);
+
+    // If no metadata or auth not required, allow access
+    if (!metadata || !metadata.authRequired) {
+      return;
+    }
+
+    // Auth is required - check if credentials were provided
+    if (!options?.auth) {
+      throw new Error(
+        `Authentication required to access cached file for URL: ${url}`
+      );
+    }
+
+    // Validate the credentials with the storage provider
+    const provider = this.storageProviders.find((p) => p.testUrl(url));
+    if (!provider) {
+      throw new Error(`No storage provider found for URL: ${url}`);
+    }
+
+    if (provider.validateAuth) {
+      this.log.debug({ url }, "Validating auth for cached file access");
+      await provider.validateAuth(url, options);
+      this.log.debug({ url }, "Auth validated, serving from cache");
+    } else {
+      // Provider doesn't support auth validation, allow access if auth was provided
+      this.log.warn(
+        { url },
+        "Provider does not support auth validation, allowing access"
+      );
+    }
   }
 
   async downloadRepo(repoUrl: string, targetDir: string): Promise<string> {

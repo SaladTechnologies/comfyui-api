@@ -5,6 +5,7 @@ import {
   S3Client,
   GetObjectCommand,
   PutObjectCommand,
+  HeadObjectCommand,
   S3ClientConfig,
 } from "@aws-sdk/client-s3";
 import { NodeHttpHandler } from "@smithy/node-http-handler";
@@ -60,6 +61,31 @@ export class S3StorageProvider implements StorageProvider {
     return new S3Upload(url, fileOrPath, contentType, this.s3, this.log);
   }
 
+  /**
+   * Validate authentication credentials using a HeadObject request.
+   * This allows verifying access without downloading the full object.
+   */
+  async validateAuth(url: string, options: DownloadOptions): Promise<void> {
+    const { bucket, key } = parseS3Url(url);
+    const s3Client = this.getS3Client(options.auth);
+
+    this.log.debug({ url, bucket, key }, "Validating S3 auth with HeadObject");
+
+    try {
+      const command = new HeadObjectCommand({ Bucket: bucket, Key: key });
+      await s3Client.send(command);
+      this.log.debug({ url }, "S3 auth validation successful");
+    } catch (error: any) {
+      if (error.name === "NotFound" || error.$metadata?.httpStatusCode === 404) {
+        throw new Error(`S3 object not found: ${url}`);
+      }
+      if (error.name === "AccessDenied" || error.$metadata?.httpStatusCode === 403) {
+        throw new Error(`S3 access denied: ${url}`);
+      }
+      throw new Error(`S3 auth validation failed: ${error.message}`);
+    }
+  }
+
   async downloadFile(
     s3Url: string,
     outputDir: string,
@@ -112,7 +138,7 @@ export class S3StorageProvider implements StorageProvider {
 
     // Create a new client with per-request credentials
     const clientConfig: S3ClientConfig = {
-      region: auth.region || config.awsRegion,
+      region: auth.region || config.awsRegion || undefined,
       credentials: {
         accessKeyId: auth.access_key_id,
         secretAccessKey: auth.secret_access_key,

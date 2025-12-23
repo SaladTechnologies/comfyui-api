@@ -43,6 +43,32 @@ export class HTTPStorageProvider implements StorageProvider {
     return new HTTPUpload(url, fileOrPath, contentType, this.log);
   }
 
+  /**
+   * Validate authentication credentials using a HEAD request.
+   * This allows verifying access without downloading the full file.
+   */
+  async validateAuth(url: string, options: DownloadOptions): Promise<void> {
+    const requestUrl = applyQueryAuth(url, options.auth);
+    const headers = getAuthHeaders(requestUrl, options.auth);
+
+    this.log.debug({ url }, "Validating auth with HEAD request");
+
+    const response = await fetch(requestUrl, {
+      method: "HEAD",
+      headers,
+      dispatcher: getProxyDispatcher(),
+    });
+
+    if (!response.ok) {
+      if (response.status === 401 || response.status === 403) {
+        throw new Error(`Authentication failed: ${response.status} ${response.statusText}`);
+      }
+      throw new Error(`Auth validation failed: ${response.status} ${response.statusText}`);
+    }
+
+    this.log.debug({ url }, "Auth validation successful");
+  }
+
   async downloadFile(
     url: string,
     outputDir: string,
