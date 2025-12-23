@@ -8,6 +8,7 @@ A simple wrapper that facilitates using [ComfyUI](https://github.com/comfyanonym
   - [Full ComfyUI Support](#full-comfyui-support)
   - [Stateless API](#stateless-api)
     - [Request Format](#request-format)
+    - [Per-Request Credentials](#per-request-credentials)
     - [Response Format](#response-format)
     - [Example Usage](#example-usage)
       - [Base64 Response](#base64-response)
@@ -27,6 +28,7 @@ A simple wrapper that facilitates using [ComfyUI](https://github.com/comfyanonym
   - [Image To Image Workflows](#image-to-image-workflows)
   - [Dynamic Model Loading](#dynamic-model-loading)
   - [On-Demand Model Download Endpoint](#on-demand-model-download-endpoint)
+    - [Authentication Types](#authentication-types)
   - [Server-side image processing](#server-side-image-processing)
   - [Probes](#probes)
   - [API Configuration Guide](#api-configuration-guide)
@@ -151,6 +153,48 @@ Prompts are submitted to the server via the `POST /prompt` endpoint, which accep
 - Only the `prompt` field is required. The other fields are optional, and can be omitted if not needed.
 - Your prompt must be a valid ComfyUI prompt graph, which is a JSON object where each key is a node ID, and the value is an object containing the node's inputs, class type, and optional metadata.
 - Your prompt must include a node that saves an output, such as a `SaveImage` node.
+
+### Per-Request Credentials
+
+You can provide authentication credentials for protected model URLs directly in the prompt request using the `credentials` field. This allows downloading gated models (like Hugging Face gated models) or private models from S3/Azure without configuring environment variables.
+
+```json
+{
+  "prompt": { ... },
+  "credentials": [
+    {
+      "url_pattern": "https://huggingface.co/**",
+      "auth": {
+        "type": "bearer",
+        "token": "hf_xxxxxxxxxxxxx"
+      }
+    },
+    {
+      "url_pattern": "s3://my-private-bucket/**",
+      "auth": {
+        "type": "s3",
+        "access_key_id": "AKIAIOSFODNN7EXAMPLE",
+        "secret_access_key": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+      }
+    }
+  ]
+}
+```
+
+Each credential entry has:
+- `url_pattern`: A glob-style pattern to match URLs. Supports:
+  - `*` matches any characters except `/`
+  - `**` matches any characters including `/`
+  - `?` matches a single character
+- `auth`: Authentication configuration (see [Authentication Types](#authentication-types) for all supported types)
+
+**Pattern Examples:**
+- `https://huggingface.co/**` - matches all Hugging Face URLs
+- `https://*.s3.amazonaws.com/**` - matches any S3 bucket URL
+- `s3://my-bucket/*` - matches files in the root of `my-bucket`
+- `s3://my-bucket/**` - matches all files in `my-bucket` including subdirectories
+
+Credentials are matched in order - the first matching pattern wins. This allows you to provide different credentials for different sources in a single request.
 
 ### Response Format
 
@@ -746,7 +790,11 @@ The server provides a `POST /download` endpoint that allows you to trigger model
   "url": "https://example.com/model.safetensors",
   "model_type": "checkpoints",
   "filename": "my-model.safetensors",
-  "wait": false
+  "wait": false,
+  "auth": {
+    "type": "bearer",
+    "token": "hf_xxxxxxxxxxxxx"
+  }
 }
 ```
 
@@ -756,6 +804,60 @@ The server provides a `POST /download` endpoint that allows you to trigger model
 | `model_type` | Yes | The type of model (e.g., `checkpoints`, `loras`, `vae`, `controlnet`, etc.). Must match a subdirectory in your models folder. |
 | `filename` | No | Override the filename. Defaults to the basename from the URL. |
 | `wait` | No | If `false` (default), returns immediately with `202 Accepted`. If `true`, waits for the download to complete and returns `200 OK` with file stats. |
+| `auth` | No | Authentication credentials for accessing protected resources. See [Authentication Types](#authentication-types) below. |
+
+### Authentication Types
+
+The `auth` field supports multiple authentication methods for different storage providers:
+
+**Bearer Token** (e.g., Hugging Face gated models):
+```json
+{
+  "type": "bearer",
+  "token": "hf_xxxxxxxxxxxxx"
+}
+```
+
+**Basic Auth**:
+```json
+{
+  "type": "basic",
+  "username": "user",
+  "password": "pass"
+}
+```
+
+**Custom Header** (e.g., API keys):
+```json
+{
+  "type": "header",
+  "header_name": "X-API-Key",
+  "header_value": "your-api-key"
+}
+```
+
+**Query Parameter** (e.g., Azure SAS tokens):
+```json
+{
+  "type": "query",
+  "query_param": "sig",
+  "query_value": "your-sas-token"
+}
+```
+
+**S3 Credentials** (for private S3 buckets):
+```json
+{
+  "type": "s3",
+  "access_key_id": "AKIAIOSFODNN7EXAMPLE",
+  "secret_access_key": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+  "session_token": "optional-sts-token",
+  "region": "us-east-1",
+  "endpoint": "https://s3.custom-endpoint.com"
+}
+```
+
+The `session_token`, `region`, and `endpoint` fields are optional for S3 auth.
 
 ### Response Format
 
