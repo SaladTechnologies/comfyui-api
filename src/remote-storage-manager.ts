@@ -88,6 +88,22 @@ async function writeCacheMetadata(cachedFilePath: string, metadata: CacheMetadat
   await fsPromises.writeFile(metaPath, JSON.stringify(metadata, null, 2));
 }
 
+/**
+ * Sanitize a URL by removing embedded credentials (username/password).
+ * This prevents credentials from being written to disk in cache metadata.
+ */
+function sanitizeUrlForMetadata(url: string): string {
+  try {
+    const parsed = new URL(url);
+    parsed.username = "";
+    parsed.password = "";
+    return parsed.toString();
+  } catch {
+    // If URL parsing fails, return as-is (shouldn't happen for valid URLs)
+    return url;
+  }
+}
+
 class RemoteStorageManager {
   private cache: Record<string, string> = {};
   private activeDownloads: Record<string, Promise<string>> = {};
@@ -291,9 +307,10 @@ class RemoteStorageManager {
           .then(async (outputLocation: string) => {
             this.cache[url] = outputLocation;
             // Write metadata to track if auth was required
+            // Sanitize URL to prevent credentials from being written to disk
             const metadata: CacheMetadata = {
               authRequired: hasAuth,
-              url,
+              url: sanitizeUrlForMetadata(url),
               cachedAt: new Date().toISOString(),
             };
             await writeCacheMetadata(outputLocation, metadata);
@@ -343,6 +360,20 @@ class RemoteStorageManager {
   /**
    * Validate that the request is allowed to access a cached file.
    * For auth-required URLs, this validates credentials before serving from cache.
+   *
+   * SECURITY NOTE: There is a TOCTOU (time-of-check-to-time-of-use) race condition
+   * between validating auth and serving the file. An attacker could theoretically:
+   * 1. Time a request without credentials after auth validation succeeds
+   * 2. Get the symlink created before the legitimate request completes
+   *
+   * This risk is accepted because:
+   * - The file content is identical (same cached data)
+   * - The attacker would need precise timing
+   * - The worst case is serving cached data the attacker could access with valid credentials
+   * - Fixing this would require exclusive locks, adding complexity and latency
+   *
+   * If stricter isolation is needed in the future, consider per-request temp directories
+   * or exclusive file locking during the validation-to-symlink window.
    */
   private async validateCacheAccess(
     url: string,

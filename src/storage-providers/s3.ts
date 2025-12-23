@@ -67,7 +67,7 @@ export class S3StorageProvider implements StorageProvider {
    */
   async validateAuth(url: string, options: DownloadOptions): Promise<void> {
     const { bucket, key } = parseS3Url(url);
-    const s3Client = this.getS3Client(options.auth);
+    const { client: s3Client, isPerRequest } = this.getS3ClientWithInfo(options.auth);
 
     this.log.debug({ url, bucket, key }, "Validating S3 auth with HeadObject");
 
@@ -76,13 +76,24 @@ export class S3StorageProvider implements StorageProvider {
       await s3Client.send(command);
       this.log.debug({ url }, "S3 auth validation successful");
     } catch (error: any) {
-      if (error.name === "NotFound" || error.$metadata?.httpStatusCode === 404) {
-        throw new Error(`S3 object not found: ${url}`);
+      // Log full error for debugging but sanitize the thrown error message
+      // to avoid leaking sensitive info from AWS SDK errors
+      this.log.error({ error, url }, "S3 auth validation failed");
+
+      const statusCode = error.$metadata?.httpStatusCode;
+      if (error.name === "NotFound" || statusCode === 404) {
+        throw new Error("S3 object not found");
       }
-      if (error.name === "AccessDenied" || error.$metadata?.httpStatusCode === 403) {
-        throw new Error(`S3 access denied: ${url}`);
+      if (error.name === "AccessDenied" || statusCode === 403) {
+        throw new Error("S3 access denied");
       }
-      throw new Error(`S3 auth validation failed: ${error.message}`);
+      // Generic error without exposing SDK internals
+      throw new Error("S3 auth validation failed");
+    } finally {
+      // Dispose per-request clients to free up resources
+      if (isPerRequest) {
+        s3Client.destroy();
+      }
     }
   }
 
@@ -92,15 +103,14 @@ export class S3StorageProvider implements StorageProvider {
     filenameOverride?: string,
     options?: DownloadOptions
   ): Promise<string> {
+    const { bucket, key } = parseS3Url(s3Url);
+    const { client: s3Client, isPerRequest } = this.getS3ClientWithInfo(options?.auth);
+
     try {
-      const { bucket, key } = parseS3Url(s3Url);
       const outputPath = path.join(
         outputDir,
         filenameOverride || path.basename(key)
       );
-
-      // Use per-request credentials if provided, otherwise use default client
-      const s3Client = this.getS3Client(options?.auth);
 
       const command = new GetObjectCommand({ Bucket: bucket, Key: key });
       const response = await s3Client.send(command);
@@ -123,17 +133,22 @@ export class S3StorageProvider implements StorageProvider {
       console.error(error);
       this.log.error("Error downloading file from S3:", error);
       throw error;
+    } finally {
+      // Dispose per-request clients to free up resources
+      if (isPerRequest) {
+        s3Client.destroy();
+      }
     }
   }
 
   /**
-   * Get an S3 client - uses per-request credentials if provided, otherwise default client.
-   * Per-request clients are not cached to ensure credential isolation.
+   * Get an S3 client with info about whether it was created per-request.
+   * Per-request clients should be destroyed after use to free resources.
    */
-  private getS3Client(auth?: DownloadAuth): S3Client {
+  private getS3ClientWithInfo(auth?: DownloadAuth): { client: S3Client; isPerRequest: boolean } {
     // If no S3 auth provided, use the default client
     if (!auth || auth.type !== "s3") {
-      return this.s3;
+      return { client: this.s3, isPerRequest: false };
     }
 
     // Create a new client with per-request credentials
@@ -142,6 +157,8 @@ export class S3StorageProvider implements StorageProvider {
       credentials: {
         accessKeyId: auth.access_key_id,
         secretAccessKey: auth.secret_access_key,
+        // Include session token for temporary credentials (STS)
+        ...(auth.session_token && { sessionToken: auth.session_token }),
       },
       requestHandler: new NodeHttpHandler({
         connectionTimeout: 10000,
@@ -156,7 +173,7 @@ export class S3StorageProvider implements StorageProvider {
     }
 
     this.log.debug("Creating S3 client with per-request credentials");
-    return new S3Client(clientConfig);
+    return { client: new S3Client(clientConfig), isPerRequest: true };
   }
 }
 

@@ -141,17 +141,6 @@ export function isExecutionStats(obj: any): obj is ExecutionStats {
   return ExecutionStatsSchema.safeParse(obj).success;
 }
 
-export const PromptRequestSchema = z.object({
-  prompt: z.record(ComfyNodeSchema),
-  id: z
-    .string()
-    .optional()
-    .default(() => randomUUID()),
-  webhook: z.string().optional(),
-  webhook_v2: z.string().optional(),
-  convert_output: OutputConversionOptionsSchema.optional(),
-});
-
 export const PromptErrorResponseSchema = z.object({
   error: z.string(),
   location: z.string().optional(),
@@ -483,6 +472,7 @@ export const DownloadAuthSchema = z.discriminatedUnion("type", [
     type: z.literal("s3"),
     access_key_id: z.string().describe("AWS access key ID"),
     secret_access_key: z.string().describe("AWS secret access key"),
+    session_token: z.string().optional().describe("AWS session token for temporary credentials (STS)"),
     endpoint: z.string().optional().describe("Custom S3 endpoint (for non-AWS S3-compatible services)"),
     region: z.string().optional().describe("AWS region (defaults to env config)"),
   }),
@@ -498,6 +488,32 @@ export const DownloadOptionsSchema = z.object({
 });
 
 export type DownloadOptions = z.infer<typeof DownloadOptionsSchema>;
+
+/**
+ * Credential entry for per-request authentication.
+ * Associates a URL pattern with authentication credentials.
+ */
+export const WorkflowCredentialSchema = z.object({
+  url_pattern: z.string().describe("URL pattern to match (supports glob-style wildcards like https://example.com/*)"),
+  auth: DownloadAuthSchema,
+});
+
+export type WorkflowCredential = z.infer<typeof WorkflowCredentialSchema>;
+
+export const PromptRequestSchema = z.object({
+  prompt: z.record(ComfyNodeSchema),
+  id: z
+    .string()
+    .optional()
+    .default(() => randomUUID()),
+  webhook: z.string().optional(),
+  webhook_v2: z.string().optional(),
+  convert_output: OutputConversionOptionsSchema.optional(),
+  credentials: z
+    .array(WorkflowCredentialSchema)
+    .optional()
+    .describe("Per-request credentials for protected URLs, matched by URL pattern"),
+});
 
 export interface StorageProvider {
   /**

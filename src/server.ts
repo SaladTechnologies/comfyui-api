@@ -247,7 +247,7 @@ server.after(() => {
       },
     },
     async (request, reply) => {
-      let { prompt, id, webhook, webhook_v2, convert_output } = request.body;
+      let { prompt, id, webhook, webhook_v2, convert_output, credentials } = request.body;
 
       /**
        * Here we go through all the nodes in the prompt to validate it,
@@ -260,7 +260,7 @@ server.after(() => {
       const start = Date.now();
       try {
         const { prompt: preprocessedPrompt, hasSaveImage: saveImageFound } =
-          await preprocessNodes(prompt, id, log);
+          await preprocessNodes(prompt, id, log, credentials);
         prompt = preprocessedPrompt;
         hasSaveImage = saveImageFound;
       } catch (e: NodeProcessError | any) {
