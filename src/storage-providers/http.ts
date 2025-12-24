@@ -1,5 +1,5 @@
 import path from "path";
-import { StorageProvider, Upload } from "../types";
+import { StorageProvider, Upload, DownloadOptions, DownloadAuth } from "../types";
 import { FastifyBaseLogger } from "fastify";
 import fs from "fs";
 import { Readable } from "stream";
@@ -43,15 +43,62 @@ export class HTTPStorageProvider implements StorageProvider {
     return new HTTPUpload(url, fileOrPath, contentType, this.log);
   }
 
+  /**
+   * Validate authentication credentials using a HEAD request.
+   * Falls back to GET with Range: bytes=0-0 if HEAD returns 405 Method Not Allowed,
+   * as some servers don't support HEAD requests.
+   */
+  async validateAuth(url: string, options: DownloadOptions): Promise<void> {
+    const requestUrl = applyQueryAuth(url, options.auth);
+    const headers = getAuthHeaders(requestUrl, options.auth);
+
+    this.log.debug({ url }, "Validating auth with HEAD request");
+
+    let response = await fetch(requestUrl, {
+      method: "HEAD",
+      headers,
+      dispatcher: getProxyDispatcher(),
+    });
+
+    // If HEAD is not supported, try GET with Range header to minimize data transfer
+    if (response.status === 405) {
+      this.log.debug({ url }, "HEAD not supported, falling back to GET with Range");
+      response = await fetch(requestUrl, {
+        method: "GET",
+        headers: {
+          ...headers,
+          "Range": "bytes=0-0",
+        },
+        dispatcher: getProxyDispatcher(),
+      });
+      // 206 Partial Content is success for range requests
+      if (response.status === 206) {
+        this.log.debug({ url }, "Auth validation successful (via Range request)");
+        return;
+      }
+    }
+
+    if (!response.ok) {
+      if (response.status === 401 || response.status === 403) {
+        throw new Error(`Authentication failed: ${response.status} ${response.statusText}`);
+      }
+      throw new Error(`Auth validation failed: ${response.status} ${response.statusText}`);
+    }
+
+    this.log.debug({ url }, "Auth validation successful");
+  }
+
   async downloadFile(
     url: string,
     outputDir: string,
-    filenameOverride?: string
+    filenameOverride?: string,
+    options?: DownloadOptions
   ): Promise<string> {
     try {
-      // Fetch the image
-      const headers = getAuthHeadersFromUrl(url);
-      const response = await fetch(url, { headers, dispatcher: getProxyDispatcher() });
+      // Build headers with auth - per-request auth takes priority over URL-based auth
+      const requestUrl = applyQueryAuth(url, options?.auth);
+      const headers = getAuthHeaders(requestUrl, options?.auth);
+      const response = await fetch(requestUrl, { headers, dispatcher: getProxyDispatcher() });
 
       if (!response.ok) {
         throw new Error(`Error downloading file: ${response.statusText}`);
@@ -136,11 +183,11 @@ class HTTPUpload implements Upload {
         body = fs.createReadStream(this.fileOrPath);
       }
 
-      // Parse URL to extract credentials if present
+      // Parse URL and build headers with auth from URL-embedded credentials
       const parsedUrl = new URL(this.url);
       const headers: HeadersInit = {
         "Content-Type": this.contentType,
-        ...getAuthHeadersFromUrl(this.url),
+        ...getAuthHeaders(this.url),
       };
 
       const response = await fetch(parsedUrl.toString(), {
@@ -294,21 +341,68 @@ function getIntendedFileExtensionFromResponse(
   return null;
 }
 
-function getAuthHeadersFromUrl(url: string): HeadersInit {
+/**
+ * Apply query parameter authentication to a URL (e.g., Azure SAS tokens).
+ * Returns the URL with auth query param appended if applicable.
+ */
+function applyQueryAuth(url: string, auth?: DownloadAuth): string {
+  if (!auth || auth.type !== "query") {
+    return url;
+  }
   const parsedUrl = new URL(url);
+  parsedUrl.searchParams.set(auth.query_param, auth.query_value);
+  return parsedUrl.toString();
+}
+
+/**
+ * Build authentication headers for HTTP requests.
+ * Priority: per-request auth > URL-embedded auth > env config auth
+ *
+ * When per-request auth is provided, URL-embedded credentials are NOT used,
+ * even if they exist. This prevents credential mixing and ensures explicit
+ * auth takes full precedence.
+ */
+function getAuthHeaders(url: string, auth?: DownloadAuth): HeadersInit {
   const headers: HeadersInit = {};
+
+  // If per-request auth is provided, use it exclusively (no fallback to URL credentials)
+  if (auth) {
+    switch (auth.type) {
+      case "bearer":
+        headers["Authorization"] = `Bearer ${auth.token}`;
+        return headers;
+      case "basic": {
+        const credentials = `${auth.username}:${auth.password}`;
+        headers["Authorization"] = `Basic ${Buffer.from(credentials).toString("base64")}`;
+        return headers;
+      }
+      case "header":
+        headers[auth.header_name] = auth.header_value;
+        return headers;
+      case "query":
+        // Query auth is applied to URL, not headers - but still return empty headers
+        // to avoid falling back to URL-embedded or env credentials
+        return headers;
+      case "s3":
+        // S3 auth is handled by S3StorageProvider, not HTTP
+        // Return empty headers - don't fall back to URL/env credentials
+        return headers;
+    }
+  }
+
+  // No per-request auth provided - fall back to URL-embedded credentials
+  const parsedUrl = new URL(url);
   if (parsedUrl.username || parsedUrl.password) {
     const credentials = `${parsedUrl.username}:${parsedUrl.password}`;
-    headers["Authorization"] = `Basic ${Buffer.from(credentials).toString(
-      "base64"
-    )}`;
+    headers["Authorization"] = `Basic ${Buffer.from(credentials).toString("base64")}`;
+    return headers;
+  }
 
-    // Remove credentials from URL for the actual request
-    parsedUrl.username = "";
-    parsedUrl.password = "";
-  } else if (Object.keys(config.httpAuthHeader).length > 0) {
-    // Add any configured auth headers from config
+  // Fall back to env-configured auth headers
+  if (Object.keys(config.httpAuthHeader).length > 0) {
     Object.assign(headers, config.httpAuthHeader);
   }
+
   return headers;
 }
+

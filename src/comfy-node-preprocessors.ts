@@ -1,11 +1,12 @@
 import path from "path";
 import { FastifyBaseLogger } from "fastify";
-import { ComfyNode, ComfyPrompt } from "./types";
+import { ComfyNode, ComfyPrompt, WorkflowCredential } from "./types";
 import config from "./config";
 import getStorageManager from "./remote-storage-manager";
 import { isValidUrl } from "./utils";
 import { processInputMedia } from "./image-tools";
 import { z } from "zod";
+import { CredentialProvider, createCredentialProvider } from "./credential-resolver";
 
 const configPath = path.join(config.comfyDir, "models", "configs");
 const checkpointPath = path.join(config.comfyDir, "models", "checkpoints");
@@ -32,7 +33,8 @@ function updateModelsInConfig(modelType: string, modelName: string) {
 }
 
 async function processCheckpointLoaderNode(
-  node: ComfyNode
+  node: ComfyNode,
+  getCredentials: CredentialProvider
 ): Promise<ComfyNode> {
   const storageManager = getStorageManager();
   const { config_name, ckpt_name } = node.inputs;
@@ -40,7 +42,9 @@ async function processCheckpointLoaderNode(
   if (isValidUrl(config_name)) {
     const localConfigPath = await storageManager.downloadFile(
       config_name,
-      configPath
+      configPath,
+      undefined,
+      getCredentials(config_name)
     );
     const filename = path.basename(localConfigPath);
     updateModelsInConfig("configs", filename);
@@ -50,7 +54,9 @@ async function processCheckpointLoaderNode(
   if (isValidUrl(ckpt_name)) {
     const localCkptPath = await storageManager.downloadFile(
       ckpt_name,
-      checkpointPath
+      checkpointPath,
+      undefined,
+      getCredentials(ckpt_name)
     );
     const filename = path.basename(localCkptPath);
     updateModelsInConfig("checkpoints", filename);
@@ -61,7 +67,8 @@ async function processCheckpointLoaderNode(
 }
 
 async function processCheckpointLoaderSimpleNode(
-  node: ComfyNode
+  node: ComfyNode,
+  getCredentials: CredentialProvider
 ): Promise<ComfyNode> {
   const storageManager = getStorageManager();
   const { ckpt_name } = node.inputs;
@@ -69,7 +76,9 @@ async function processCheckpointLoaderSimpleNode(
   if (isValidUrl(ckpt_name)) {
     const localCkptPath = await storageManager.downloadFile(
       ckpt_name,
-      checkpointPath
+      checkpointPath,
+      undefined,
+      getCredentials(ckpt_name)
     );
     const filename = path.basename(localCkptPath);
     updateModelsInConfig("checkpoints", filename);
@@ -79,10 +88,14 @@ async function processCheckpointLoaderSimpleNode(
   return node;
 }
 
-async function processDiffusersLoaderNode(node: ComfyNode): Promise<ComfyNode> {
+async function processDiffusersLoaderNode(
+  node: ComfyNode,
+  _getCredentials: CredentialProvider
+): Promise<ComfyNode> {
   const storageManager = getStorageManager();
   const { model_path } = node.inputs;
 
+  // Note: downloadRepo doesn't support credentials yet (git clone)
   if (isValidUrl(model_path)) {
     const downloadedPath = await storageManager.downloadRepo(
       model_path,
@@ -96,14 +109,19 @@ async function processDiffusersLoaderNode(node: ComfyNode): Promise<ComfyNode> {
   return node;
 }
 
-async function processLoraLoaderNode(node: ComfyNode): Promise<ComfyNode> {
+async function processLoraLoaderNode(
+  node: ComfyNode,
+  getCredentials: CredentialProvider
+): Promise<ComfyNode> {
   const storageManager = getStorageManager();
   const { lora_name } = node.inputs;
 
   if (isValidUrl(lora_name)) {
     const localLoraPath = await storageManager.downloadFile(
       lora_name,
-      loraPath
+      loraPath,
+      undefined,
+      getCredentials(lora_name)
     );
     const filename = path.basename(localLoraPath);
     updateModelsInConfig("loras", filename);
@@ -113,12 +131,20 @@ async function processLoraLoaderNode(node: ComfyNode): Promise<ComfyNode> {
   return node;
 }
 
-async function processVAELoaderNode(node: ComfyNode): Promise<ComfyNode> {
+async function processVAELoaderNode(
+  node: ComfyNode,
+  getCredentials: CredentialProvider
+): Promise<ComfyNode> {
   const storageManager = getStorageManager();
   const { vae_name } = node.inputs;
 
   if (isValidUrl(vae_name)) {
-    const localVaePath = await storageManager.downloadFile(vae_name, vaePath);
+    const localVaePath = await storageManager.downloadFile(
+      vae_name,
+      vaePath,
+      undefined,
+      getCredentials(vae_name)
+    );
     const filename = path.basename(localVaePath);
     updateModelsInConfig("vae", filename);
     node.inputs.vae_name = filename;
@@ -128,7 +154,8 @@ async function processVAELoaderNode(node: ComfyNode): Promise<ComfyNode> {
 }
 
 async function processControlNetLoaderNode(
-  node: ComfyNode
+  node: ComfyNode,
+  getCredentials: CredentialProvider
 ): Promise<ComfyNode> {
   const storageManager = getStorageManager();
   const { control_net_name } = node.inputs;
@@ -136,7 +163,9 @@ async function processControlNetLoaderNode(
   if (isValidUrl(control_net_name)) {
     const localControlNetPath = await storageManager.downloadFile(
       control_net_name,
-      controlNetPath
+      controlNetPath,
+      undefined,
+      getCredentials(control_net_name)
     );
     const filename = path.basename(localControlNetPath);
     updateModelsInConfig("controlnet", filename);
@@ -146,14 +175,19 @@ async function processControlNetLoaderNode(
   return node;
 }
 
-async function processUNETLoaderNode(node: ComfyNode): Promise<ComfyNode> {
+async function processUNETLoaderNode(
+  node: ComfyNode,
+  getCredentials: CredentialProvider
+): Promise<ComfyNode> {
   const storageManager = getStorageManager();
   const { unet_name } = node.inputs;
 
   if (isValidUrl(unet_name)) {
     const localUNETPath = await storageManager.downloadFile(
       unet_name,
-      diffusersPath
+      diffusersPath,
+      undefined,
+      getCredentials(unet_name)
     );
     const filename = path.basename(localUNETPath);
     updateModelsInConfig("diffusers", filename);
@@ -163,14 +197,19 @@ async function processUNETLoaderNode(node: ComfyNode): Promise<ComfyNode> {
   return node;
 }
 
-async function processCLIPLoaderNode(node: ComfyNode): Promise<ComfyNode> {
+async function processCLIPLoaderNode(
+  node: ComfyNode,
+  getCredentials: CredentialProvider
+): Promise<ComfyNode> {
   const storageManager = getStorageManager();
   const { clip_name } = node.inputs;
 
   if (isValidUrl(clip_name)) {
     const localCLIPPath = await storageManager.downloadFile(
       clip_name,
-      clipPath
+      clipPath,
+      undefined,
+      getCredentials(clip_name)
     );
     const filename = path.basename(localCLIPPath);
     updateModelsInConfig("text_encoders", filename);
@@ -180,13 +219,18 @@ async function processCLIPLoaderNode(node: ComfyNode): Promise<ComfyNode> {
   return node;
 }
 
-async function processDualCLIPLoaderNode(node: ComfyNode): Promise<ComfyNode> {
+async function processDualCLIPLoaderNode(
+  node: ComfyNode,
+  getCredentials: CredentialProvider
+): Promise<ComfyNode> {
   const storageManager = getStorageManager();
   const { clip_name1, clip_name2 } = node.inputs;
   if (isValidUrl(clip_name1)) {
     const localCLIPPath1 = await storageManager.downloadFile(
       clip_name1,
-      clipPath
+      clipPath,
+      undefined,
+      getCredentials(clip_name1)
     );
     const filename = path.basename(localCLIPPath1);
     updateModelsInConfig("text_encoders", filename);
@@ -195,7 +239,9 @@ async function processDualCLIPLoaderNode(node: ComfyNode): Promise<ComfyNode> {
   if (isValidUrl(clip_name2)) {
     const localCLIPPath2 = await storageManager.downloadFile(
       clip_name2,
-      clipPath
+      clipPath,
+      undefined,
+      getCredentials(clip_name2)
     );
     const filename = path.basename(localCLIPPath2);
     updateModelsInConfig("text_encoders", filename);
@@ -206,7 +252,8 @@ async function processDualCLIPLoaderNode(node: ComfyNode): Promise<ComfyNode> {
 }
 
 async function processStyleModelLoaderNode(
-  node: ComfyNode
+  node: ComfyNode,
+  getCredentials: CredentialProvider
 ): Promise<ComfyNode> {
   const storageManager = getStorageManager();
   const { style_model_name } = node.inputs;
@@ -214,7 +261,9 @@ async function processStyleModelLoaderNode(
   if (isValidUrl(style_model_name)) {
     const localStyleModelPath = await storageManager.downloadFile(
       style_model_name,
-      styleModelPath
+      styleModelPath,
+      undefined,
+      getCredentials(style_model_name)
     );
     const filename = path.basename(localStyleModelPath);
     updateModelsInConfig("style_models", filename);
@@ -224,14 +273,19 @@ async function processStyleModelLoaderNode(
   return node;
 }
 
-async function processGLIGENLoaderNode(node: ComfyNode): Promise<ComfyNode> {
+async function processGLIGENLoaderNode(
+  node: ComfyNode,
+  getCredentials: CredentialProvider
+): Promise<ComfyNode> {
   const storageManager = getStorageManager();
   const { gligen_name } = node.inputs;
 
   if (isValidUrl(gligen_name)) {
     const localGLIGENPath = await storageManager.downloadFile(
       gligen_name,
-      gligenPath
+      gligenPath,
+      undefined,
+      getCredentials(gligen_name)
     );
     const filename = path.basename(localGLIGENPath);
     updateModelsInConfig("gligen", filename);
@@ -242,7 +296,8 @@ async function processGLIGENLoaderNode(node: ComfyNode): Promise<ComfyNode> {
 }
 
 async function processUpscaleModelLoaderNode(
-  node: ComfyNode
+  node: ComfyNode,
+  getCredentials: CredentialProvider
 ): Promise<ComfyNode> {
   const storageManager = getStorageManager();
   const { model_name } = node.inputs;
@@ -250,7 +305,9 @@ async function processUpscaleModelLoaderNode(
   if (isValidUrl(model_name)) {
     const localModelPath = await storageManager.downloadFile(
       model_name,
-      upscaleModelPath
+      upscaleModelPath,
+      undefined,
+      getCredentials(model_name)
     );
     const filename = path.basename(localModelPath);
     updateModelsInConfig("upscale_models", filename);
@@ -262,37 +319,38 @@ async function processUpscaleModelLoaderNode(
 
 export async function processModelLoadingNode(
   node: ComfyNode,
-  log: FastifyBaseLogger
+  log: FastifyBaseLogger,
+  getCredentials: CredentialProvider = () => undefined
 ): Promise<ComfyNode> {
   switch (node.class_type) {
     case "CheckpointLoader":
-      return processCheckpointLoaderNode(node);
+      return processCheckpointLoaderNode(node, getCredentials);
     case "CheckpointLoaderSimple":
     case "unCLIPCheckpointLoader":
-      return processCheckpointLoaderSimpleNode(node);
+      return processCheckpointLoaderSimpleNode(node, getCredentials);
     case "DiffusersLoader":
-      return processDiffusersLoaderNode(node);
+      return processDiffusersLoaderNode(node, getCredentials);
     case "LoraLoader":
     case "LoraLoaderModelOnly":
-      return processLoraLoaderNode(node);
+      return processLoraLoaderNode(node, getCredentials);
     case "VAELoader":
-      return processVAELoaderNode(node);
+      return processVAELoaderNode(node, getCredentials);
     case "ControlNetLoader":
     case "DiffControlNetLoader":
-      return processControlNetLoaderNode(node);
+      return processControlNetLoaderNode(node, getCredentials);
     case "UNETLoader":
-      return processUNETLoaderNode(node);
+      return processUNETLoaderNode(node, getCredentials);
     case "CLIPLoader":
     case "CLIPVisionLoader":
-      return processCLIPLoaderNode(node);
+      return processCLIPLoaderNode(node, getCredentials);
     case "DualCLIPLoader":
-      return processDualCLIPLoaderNode(node);
+      return processDualCLIPLoaderNode(node, getCredentials);
     case "StyleModelLoader":
-      return processStyleModelLoaderNode(node);
+      return processStyleModelLoaderNode(node, getCredentials);
     case "GLIGENLoader":
-      return processGLIGENLoaderNode(node);
+      return processGLIGENLoaderNode(node, getCredentials);
     case "UpscaleModelLoader":
-      return processUpscaleModelLoaderNode(node);
+      return processUpscaleModelLoaderNode(node, getCredentials);
     default:
       return node;
   }
@@ -387,8 +445,12 @@ export type NodeProcessError = Error & {
 export async function preprocessNodes(
   prompt: ComfyPrompt,
   id: string,
-  log: FastifyBaseLogger
+  log: FastifyBaseLogger,
+  credentials?: WorkflowCredential[]
 ): Promise<{ prompt: ComfyPrompt; hasSaveImage: boolean }> {
+  // Create a credential provider for URL pattern matching
+  const getCredentials = createCredentialProvider(credentials);
+
   let hasSaveImage = false;
   for (const nodeId in prompt) {
     const node = prompt[nodeId];
@@ -485,7 +547,7 @@ export async function preprocessNodes(
       }
     } else if (modelLoadingNodeTypes.has(node.class_type)) {
       try {
-        Object.assign(node, await processModelLoadingNode(node, log));
+        Object.assign(node, await processModelLoadingNode(node, log, getCredentials));
       } catch (e: any) {
         const err = new Error(
           `Failed to process model for node ${nodeId}: ${e.message}`
