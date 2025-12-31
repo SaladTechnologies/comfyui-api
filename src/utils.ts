@@ -1,6 +1,7 @@
 import config from "./config";
 import { FastifyBaseLogger } from "fastify";
 import path from "path";
+import fs from "fs";
 import { ZodObject, ZodRawShape, ZodTypeAny, ZodDefault } from "zod";
 import { fetch, RequestInit, Response } from "undici";
 import { getProxyDispatcher } from "./proxy-dispatcher";
@@ -228,6 +229,11 @@ export async function installCustomNode(
       nodeNameOrUrl,
       customNodesDir
     );
+    const requirementsPath = path.join(customNodePath, "requirements.txt");
+    if (!fs.existsSync(requirementsPath)) {
+      log.info(`No requirements.txt found for ${nodeNameOrUrl}, skipping dependency installation`);
+      return;
+    }
     const activeVenv = isPythonVenvActive();
     const args = ["pip", "install", "--system", "-r", "requirements.txt"];
     if (activeVenv) {
