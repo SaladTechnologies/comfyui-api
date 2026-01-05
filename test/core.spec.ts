@@ -228,6 +228,36 @@ describe("Stable Diffusion 1.5", () => {
       });
     });
 
+    it("image2image works with hf url containing spaces in path (fixes #125)", async () => {
+      // First, upload an image to HF with a directory name containing spaces
+      // This tests that URL-encoded spaces (%20) are properly decoded when downloading
+      const timestamp = Date.now();
+      const uploadResp = await submitPrompt(sd15Txt2Img, false, undefined, {
+        hf_upload: {
+          repo: "SaladTechnologies/comfyui-api-integration-testing",
+          repo_type: "dataset",
+          directory: `test source images ${timestamp}`, // Directory with spaces
+        },
+      });
+
+      // Extract the URL - it should contain %20 for the spaces
+      const hfImageUrl = uploadResp.images[0];
+      expect(hfImageUrl.includes("%20")).toBeTruthy();
+
+      // Now use this HF URL as input for img2img - this will trigger the download
+      // which requires proper URL decoding to work
+      const sd15Img2ImgWithSpacesUrl = JSON.parse(JSON.stringify(sd15Img2Img));
+      sd15Img2ImgWithSpacesUrl["10"].inputs.image = hfImageUrl;
+
+      const respBody = await submitPrompt(sd15Img2ImgWithSpacesUrl);
+      expect(respBody.filenames.length).toEqual(1);
+      expect(respBody.images.length).toEqual(1);
+      await checkImage(respBody.filenames[0], respBody.images[0], {
+        width: 512,
+        height: 512,
+      });
+    });
+
     it("works if the workflow has multiple output nodes", async () => {
       const respBody = await submitPrompt(sd15MultiOutput);
       expect(respBody.filenames.length).toEqual(2);
@@ -457,6 +487,72 @@ describe("Stable Diffusion 1.5", () => {
       expect(
         respBody.images[0].startsWith("s3://") &&
           respBody.images[0].endsWith(".png")
+      ).toBeTruthy();
+      const s3Url = new URL(respBody.images[0]);
+      const bucket = s3Url.hostname;
+      const key = s3Url.pathname.slice(1);
+      const s3Resp = await s3.send(
+        new GetObjectCommand({
+          Bucket: bucket,
+          Key: key,
+        })
+      );
+      const imageBuffer = Buffer.from(
+        await s3Resp.Body!.transformToByteArray()
+      );
+      await checkImage(key, imageBuffer.toString("base64"));
+    });
+
+    it("works with convert_output to webp (fixes SharedArrayBuffer issue #121)", async () => {
+      const respBody = await submitPrompt(
+        sd15Txt2Img,
+        false,
+        { format: "webp" },
+        {
+          bucket: bucketName,
+          prefix: "sd15-txt2img-convert-webp/",
+          async: false,
+        }
+      );
+      expect(respBody.filenames.length).toEqual(1);
+      expect(respBody.images.length).toEqual(1);
+      expect(respBody.filenames[0].endsWith(".webp")).toBeTruthy();
+      expect(
+        respBody.images[0].startsWith("s3://") &&
+          respBody.images[0].endsWith(".webp")
+      ).toBeTruthy();
+      const s3Url = new URL(respBody.images[0]);
+      const bucket = s3Url.hostname;
+      const key = s3Url.pathname.slice(1);
+      const s3Resp = await s3.send(
+        new GetObjectCommand({
+          Bucket: bucket,
+          Key: key,
+        })
+      );
+      const imageBuffer = Buffer.from(
+        await s3Resp.Body!.transformToByteArray()
+      );
+      await checkImage(key, imageBuffer.toString("base64"));
+    });
+
+    it("works with convert_output to jpeg (fixes SharedArrayBuffer issue #121)", async () => {
+      const respBody = await submitPrompt(
+        sd15Txt2Img,
+        false,
+        { format: "jpeg" },
+        {
+          bucket: bucketName,
+          prefix: "sd15-txt2img-convert-jpeg/",
+          async: false,
+        }
+      );
+      expect(respBody.filenames.length).toEqual(1);
+      expect(respBody.images.length).toEqual(1);
+      expect(respBody.filenames[0].endsWith(".jpeg")).toBeTruthy();
+      expect(
+        respBody.images[0].startsWith("s3://") &&
+          respBody.images[0].endsWith(".jpeg")
       ).toBeTruthy();
       const s3Url = new URL(respBody.images[0]);
       const bucket = s3Url.hostname;
