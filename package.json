@@ -1,11 +1,12 @@
 {
   "name": "comfyui-api",
-  "version": "1.16.0",
+  "version": "1.16.1",
   "description": "Wraps comfyui to make it easier to use as a stateless web service",
   "main": "dist/src/index.js",
   "scripts": {
     "full-test": "mocha --require ts-node/register --timeout=0 test/*.spec.ts",
-    "test": "mocha --require ts-node/register --timeout=0 test/core.spec.ts",
+    "test": "mocha --require ts-node/register --timeout=0 test/core.spec.ts test/utils.spec.ts",
+    "unit-test": "mocha --require ts-node/register --timeout=0 test/utils.spec.ts",
     "build": "tsc",
     "build-binary": "./build-binary",
     "postinstall": "npm install --cpu=wasm32 sharp"

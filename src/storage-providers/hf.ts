@@ -47,7 +47,13 @@ export class HFStorageProvider implements StorageProvider {
     }
     // Add repo type prefix for datasets
     const repoPrefix = repo_type === "dataset" ? "datasets/" : "";
-    return `https://huggingface.co/${repoPrefix}${repo}/resolve/${revision}/${directory}/${filename}`;
+    // URL-encode directory and filename to handle spaces and special characters
+    const encodedDirectory = directory
+      .split("/")
+      .map((part) => encodeURIComponent(part))
+      .join("/");
+    const encodedFilename = encodeURIComponent(filename);
+    return `https://huggingface.co/${repoPrefix}${repo}/resolve/${revision}/${encodedDirectory}/${encodedFilename}`;
   }
 
   testUrl(url: string): boolean {

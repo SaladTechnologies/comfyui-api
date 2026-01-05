@@ -720,7 +720,35 @@ server.after(() => {
             },
           },
           async (request, reply) => {
-            const prompt = await node.generateWorkflow(request.body.input);
+            const log = app.log.child({ workflow: `${route}/${key}` });
+
+            log.debug({ input: request.body.input }, "Workflow input received");
+
+            let prompt;
+            try {
+              prompt = await node.generateWorkflow(request.body.input);
+              log.debug({ prompt }, "Generated ComfyUI prompt from workflow");
+            } catch (e: any) {
+              log.error(
+                { error: e.message, stack: e.stack },
+                "Failed to generate workflow prompt"
+              );
+              return reply.code(400).send({
+                error: `Failed to generate workflow prompt: ${e.message}`,
+                location: "input",
+              });
+            }
+
+            const promptRequestBody = {
+              ...request.body,
+              prompt,
+              input: undefined,
+            };
+
+            log.debug(
+              { promptRequestBody },
+              "Sending request to /prompt endpoint"
+            );
 
             const resp = await fetch(
               `http://localhost:${config.wrapperPort}/prompt`,
@@ -729,18 +757,25 @@ server.after(() => {
                 headers: {
                   "Content-Type": "application/json",
                 },
-                body: JSON.stringify({
-                  ...request.body,
-                  prompt,
-                  input: undefined,
-                }),
+                body: JSON.stringify(promptRequestBody),
                 dispatcher: getProxyDispatcher(),
               }
             );
             const body = (await resp.json()) as any;
             if (!resp.ok) {
+              log.error(
+                {
+                  status: resp.status,
+                  error: body.error,
+                  location: body.location,
+                  promptRequestBody,
+                },
+                "Workflow request to /prompt endpoint failed"
+              );
               return reply.code(resp.status).send(body);
             }
+
+            log.debug({ status: resp.status }, "Workflow completed successfully");
 
             body.input = request.body.input;
 
