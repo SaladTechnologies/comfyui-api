@@ -238,7 +238,7 @@ export class S3Upload implements Upload {
     if (typeof fileOrPath === "string") {
       return fs.createReadStream(fileOrPath);
     } else {
-      return fileOrPath;
+      return Buffer.from(fileOrPath);
     }
   }
 
