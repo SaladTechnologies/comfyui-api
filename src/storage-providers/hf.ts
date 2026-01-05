@@ -208,7 +208,7 @@ function parseHfUrl(url: string): {
   if (parts.length >= startIdx + 4) {
     const repo = parts[startIdx] + "/" + parts[startIdx + 1];
     const revision = parts[startIdx + 3];
-    const filePath = parts.slice(startIdx + 4).join("/");
+    const filePath = decodeURIComponent(parts.slice(startIdx + 4).join("/"));
     return { repo, repoType, revision, filePath };
   } else {
     throw new Error(`Invalid HuggingFace URL: ${url.toString()}`);
