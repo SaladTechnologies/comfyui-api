@@ -161,7 +161,12 @@ export interface Workflow {
 }
 
 export function isWorkflow(obj: any): obj is Workflow {
-  return "RequestSchema" in obj && "generateWorkflow" in obj;
+  return (
+    obj != null &&
+    typeof obj === "object" &&
+    "RequestSchema" in obj &&
+    "generateWorkflow" in obj
+  );
 }
 
 export interface WorkflowTree {
