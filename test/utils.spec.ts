@@ -166,7 +166,7 @@ describe("Workflow Loading", () => {
 });
 
 describe("Utils", () => {
-  describe("installCustomNode - requirements.txt check (fixes #123)", () => {
+  describe("installCustomNode - requirements.txt check", () => {
     /**
      * This test verifies the fix for issue #123:
      * Installation should not fail if a custom node repo is missing requirements.txt

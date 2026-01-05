@@ -228,7 +228,7 @@ describe("Stable Diffusion 1.5", () => {
       });
     });
 
-    it("image2image works with hf url containing spaces in path (fixes #125)", async () => {
+    it("image2image works with hf url containing spaces in path", async () => {
       // First, upload an image to HF with a directory name containing spaces
       // This tests that URL-encoded spaces (%20) are properly decoded when downloading
       const timestamp = Date.now();
