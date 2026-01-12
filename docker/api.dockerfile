@@ -8,7 +8,7 @@ FROM ghcr.io/saladtechnologies/comfyui-api:comfy${comfy_version}-torch${pytorch_
 ENV WORKFLOW_DIR=/workflows
 ENV STARTUP_CHECK_MAX_TRIES=30
 
-ARG api_version=1.16.1
+ARG api_version=1.17.0
 
 ADD https://github.com/SaladTechnologies/comfyui-api/releases/download/${api_version}/comfyui-api .
 
