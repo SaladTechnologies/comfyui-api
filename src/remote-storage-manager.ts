@@ -14,6 +14,7 @@ import {
   getContentTypeFromUrl,
   getDirectorySizeInBytes,
 } from "./utils";
+import { parseGitUrl } from "./git-url-parser";
 
 /**
  * Metadata for cached files, stored in sidecar .meta files.
@@ -501,22 +502,47 @@ class RemoteStorageManager {
     targetDir: string
   ): Promise<string> {
     await fsPromises.mkdir(targetDir, { recursive: true });
+
+    // Parse the URL to extract base URL and optional ref (branch/commit/tag)
+    const { baseUrl, ref } = parseGitUrl(repoUrl);
+
     // Check to see if the repo is already cloned
-    const repoName = repoUrl
-      .substring(repoUrl.lastIndexOf("/") + 1)
+    const repoName = baseUrl
+      .substring(baseUrl.lastIndexOf("/") + 1)
       .replace(/\.git$/, "");
     const existingDir = path.join(targetDir, repoName);
     if (fs.existsSync(existingDir)) {
       // Check if it's a git repo
       if (fs.existsSync(path.join(existingDir, ".git"))) {
-        this.log.info(`Repository ${repoUrl} already cloned, pulling latest`);
-        try {
-          await execFilePromise("git", ["pull"], { cwd: existingDir });
-        } catch (error) {
-          this.log.error(
-            { error },
-            `Error pulling latest changes for ${repoUrl}, using existing copy`
+        if (ref) {
+          // If a specific ref is requested, fetch and checkout that ref
+          this.log.info(
+            `Repository ${baseUrl} already cloned, checking out ref: ${ref}`
           );
+          try {
+            await execFilePromise("git", ["fetch", "--all"], {
+              cwd: existingDir,
+            });
+            await execFilePromise("git", ["checkout", ref], {
+              cwd: existingDir,
+            });
+          } catch (error) {
+            this.log.error(
+              { error },
+              `Error checking out ref ${ref} for ${baseUrl}, using existing copy`
+            );
+          }
+        } else {
+          // No specific ref, just pull latest
+          this.log.info(`Repository ${baseUrl} already cloned, pulling latest`);
+          try {
+            await execFilePromise("git", ["pull"], { cwd: existingDir });
+          } catch (error) {
+            this.log.error(
+              { error },
+              `Error pulling latest changes for ${baseUrl}, using existing copy`
+            );
+          }
         }
         return existingDir;
       } else {
@@ -526,9 +552,15 @@ class RemoteStorageManager {
       }
     }
 
-    // Clone the url to the custom nodes directory
-    this.log.info(`Cloning ${repoUrl} to ${targetDir}`);
-    await execFilePromise("git", ["clone", repoUrl], { cwd: targetDir });
+    // Clone the repo to the custom nodes directory
+    this.log.info(`Cloning ${baseUrl} to ${targetDir}`);
+    await execFilePromise("git", ["clone", baseUrl], { cwd: targetDir });
+
+    // If a specific ref was requested, checkout that ref
+    if (ref) {
+      this.log.info(`Checking out ref: ${ref}`);
+      await execFilePromise("git", ["checkout", ref], { cwd: existingDir });
+    }
 
     return path.join(targetDir, repoName);
   }

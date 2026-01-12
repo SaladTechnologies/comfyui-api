@@ -9,7 +9,7 @@ import {
 } from "fastify-type-provider-zod";
 import fsPromises from "fs/promises";
 import path from "path";
-import config from "./config";
+import config, { setWarmupPrompt } from "./config";
 import {
   zodToMarkdownTable,
   setDeletionCost,
@@ -863,6 +863,36 @@ async function downloadAllModels(
   }
 }
 
+async function downloadWarmupPrompt() {
+  // Skip if warmup prompt is already set (from WARMUP_PROMPT_FILE)
+  if (config.warmupPrompt) {
+    return;
+  }
+
+  // Download warmup prompt from URL if specified
+  if (config.warmupPromptUrl) {
+    server.log.info(
+      `Downloading warmup prompt from ${config.warmupPromptUrl}`
+    );
+    const start = Date.now();
+    const resp = await fetch(config.warmupPromptUrl, {
+      headers: config.httpAuthHeader,
+      dispatcher: getProxyDispatcher(),
+    });
+    if (!resp.ok) {
+      throw new Error(
+        `Failed to download warmup prompt from ${config.warmupPromptUrl}: ${resp.status} ${resp.statusText}`
+      );
+    }
+    const content = await resp.text();
+    setWarmupPrompt(content);
+    const duration = (Date.now() - start) / 1000;
+    server.log.info(
+      `Downloaded and parsed warmup prompt in ${duration.toFixed(2)}s`
+    );
+  }
+}
+
 async function processManifest() {
   if (config.manifest) {
     if (config.manifest.apt) {
@@ -906,6 +936,7 @@ export async function start() {
   try {
     const start = Date.now();
     await remoteStorageManager.enforceCacheSize();
+    await downloadWarmupPrompt();
     await processManifest();
     if (config.manifest) {
       server.log.info(

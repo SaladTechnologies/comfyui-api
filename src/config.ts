@@ -44,6 +44,7 @@ const {
   SYSTEM_WEBHOOK_EVENTS,
   SYSTEM_WEBHOOK_URL,
   WARMUP_PROMPT_FILE,
+  WARMUP_PROMPT_URL,
   WEBHOOK_SECRET,
   WORKFLOW_DIR = "/workflows",
 } = process.env;
@@ -607,6 +608,12 @@ const config = {
   warmupPrompt,
 
   /**
+   * (Optional) URL to download the warmup prompt from. Specified by WARMUP_PROMPT_URL env var.
+   * If both WARMUP_PROMPT_FILE and WARMUP_PROMPT_URL are set, WARMUP_PROMPT_FILE takes precedence.
+   */
+  warmupPromptUrl: WARMUP_PROMPT_URL,
+
+  /**
    * (Optional) The secret used to sign webhooks. Specified by WEBHOOK_SECRET env var.
    */
   webhookSecret: WEBHOOK_SECRET,
@@ -664,6 +671,28 @@ if (
   Object.entries(config.saladMetadata).every(([_, v]) => v === undefined)
 ) {
   config.saladMetadata = null;
+}
+
+/**
+ * Set the warmup prompt from downloaded content.
+ * This function is called when WARMUP_PROMPT_URL is used to download the warmup file.
+ */
+export function setWarmupPrompt(content: string): void {
+  try {
+    const parsed = JSON.parse(content);
+    config.warmupPrompt = parsed;
+
+    // Extract checkpoint from warmup prompt
+    for (const nodeId in parsed) {
+      const node = parsed[nodeId];
+      if (node.class_type === "CheckpointLoaderSimple") {
+        config.warmupCkpt = node.inputs.ckpt_name;
+        break;
+      }
+    }
+  } catch (e: any) {
+    throw new Error(`Failed to parse warmup prompt: ${e.message}`);
+  }
 }
 
 export default config;
