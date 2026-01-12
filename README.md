@@ -78,7 +78,7 @@ If you have your own ComfyUI dockerfile, you can add the comfyui-api server to i
 
 ```dockerfile
 # Change this to the version you want to use
-ARG api_version=1.16.1
+ARG api_version=1.17.0
 
 # Download the comfyui-api binary, and make it executable
 ADD https://github.com/SaladTechnologies/comfyui-api/releases/download/${api_version}/comfyui-api .
@@ -597,6 +597,8 @@ pip:
 custom_nodes:
   - node-name-from-comfy-registry
   - https://github.com/username/repo
+  - https://github.com/username/repo/tree/commit-hash-or-branch
+  - https://github.com/username/repo@v1.0.0
 models:
   before_start:
     - url: https://example.com/model.ckpt
@@ -612,7 +614,13 @@ If a manifest is provided, the server will perform the following in order:
 
 1. Install any apt packages listed in the `apt` field.
 2. Install any pip packages listed in the `pip` field. Uses `uv`, otherwise falls back to `pip`.
-3. Install any custom nodes listed in the `custom_nodes` field, using the `comfy` cli tool if available and a plain string is provided, or by cloning the provided git repository if a URL is provided. If cloned, `requirements.txt` will be installed if it exists, using `uv` if available, otherwise falling back to `pip`.
+3. Install any custom nodes listed in the `custom_nodes` field, using the `comfy` cli tool if available and a plain string is provided, or by cloning the provided git repository if a URL is provided. You can pin a specific commit, branch, or tag using various URL formats:
+   - **GitHub**: `/tree/{ref}`, `/commit/{sha}`, `/releases/tag/{tag}`
+   - **GitLab**: `/-/tree/{ref}`, `/-/commit/{sha}`
+   - **Bitbucket**: `/src/{ref}`, `/commits/{sha}`
+   - **Generic**: `repo@{ref}` (npm/pip style, e.g., `https://github.com/user/repo@v1.0.0`)
+
+   Example: `https://github.com/kijai/ComfyUI-KJNodes/tree/204f6d5aae73b10c0fe2fb26e61405fd6337bb77`. If cloned, `requirements.txt` will be installed if it exists, using `uv` if available, otherwise falling back to `pip`.
 4. Download any models listed in the `models.before_start` field, and save them to the specified `local_path`.
 5. Start background downloading any models listed in the `models.after_start` field, and save them to the specified `local_path`. These downloads will be started in the background and will not block the server from accepting requests. This is useful for preloading less frequently used models.
 
@@ -1007,7 +1015,8 @@ If you are using the azure blob storage functionality, make sure to set all of t
 | SYSTEM_META\_\*              | (not set)                  | Any environment variable starting with SYSTEM*META* will be sent to the system webhook as metadata. i.e. `SYSTEM_META_batch=abc` will add `{"batch": "abc"}` to the `.metadata` field on system webhooks.                                    |
 | SYSTEM_WEBHOOK_EVENTS        | (not set)                  | Comma separated list of events to send to the webhook. Only selected events will be sent. If not set, no events will be sent. See [System Events](#system-events). You may also use the special value `all` to subscribe to all event types. |
 | SYSTEM_WEBHOOK_URL           | (not set)                  | Optionally receive via webhook the events that ComfyUI emits on websocket. This includes progress events.                                                                                                                                    |
-| WARMUP_PROMPT_FILE           | (not set)                  | Path to warmup prompt file (optional)                                                                                                                                                                                                        |
+| WARMUP_PROMPT_FILE           | (not set)                  | Path to warmup prompt file (optional). If both `WARMUP_PROMPT_FILE` and `WARMUP_PROMPT_URL` are set, `WARMUP_PROMPT_FILE` takes precedence.                                                                                                  |
+| WARMUP_PROMPT_URL            | (not set)                  | URL to download warmup prompt from (optional). Allows using a remote warmup workflow without building a custom Docker image. Downloaded and parsed at startup before ComfyUI launches.                                                       |
 | WEBHOOK_SECRET               | (empty string)             | If set, the server will sign webhook_v2 requests with this secret.                                                                                                                                                                           |
 | WORKFLOW_DIR                 | "/workflows"               | Directory for workflow files                                                                                                                                                                                                                 |
 
@@ -1089,6 +1098,8 @@ Notes:
 5. **Warmup Prompt**:
 
    - If `WARMUP_PROMPT_FILE` is set, the application will load and parse a warmup prompt from this file.
+   - Alternatively, set `WARMUP_PROMPT_URL` to download the warmup prompt from a remote URL at startup. This allows using a custom warmup workflow without building a custom Docker image.
+   - If both are set, `WARMUP_PROMPT_FILE` takes precedence.
    - The checkpoint used in this prompt can be used as the default for workflow models.
 
 6. **Models**:
