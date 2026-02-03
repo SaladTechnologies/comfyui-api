@@ -61,13 +61,13 @@ const promptWebhookRetries = parseInt(PROMPT_WEBHOOK_RETRIES, 10);
 const startupCheckInterval = parseInt(STARTUP_CHECK_INTERVAL_S, 10) * 1000;
 assert(
   startupCheckInterval > 0,
-  "STARTUP_CHECK_INTERVAL_S must be a positive integer"
+  "STARTUP_CHECK_INTERVAL_S must be a positive integer",
 );
 
 const startupCheckMaxTries = parseInt(STARTUP_CHECK_MAX_TRIES, 10);
 assert(
   startupCheckMaxTries > 0,
-  "STARTUP_CHECK_MAX_TRIES must be a positive integer"
+  "STARTUP_CHECK_MAX_TRIES must be a positive integer",
 );
 
 const maxBodySize = parseInt(MAX_BODY_SIZE_MB, 10) * 1024 * 1024;
@@ -82,7 +82,7 @@ const prependFilenames = PREPEND_FILENAMES.toLowerCase() === "true";
 const lruCacheSizeBytes = parseFloat(LRU_CACHE_SIZE_GB) * 1024 * 1024 * 1024;
 assert(
   lruCacheSizeBytes >= 0,
-  "LRU_CACHE_SIZE_GB must be a non-negative number"
+  "LRU_CACHE_SIZE_GB must be a non-negative number",
 );
 
 const systemWebhook = SYSTEM_WEBHOOK_URL ?? "";
@@ -118,8 +118,8 @@ if (SYSTEM_WEBHOOK_EVENTS === "all") {
   assert(
     systemWebhookEvents.every((e) => allEvents.has(e)),
     `Invalid system webhook events. Supported options: ${Array.from(
-      allEvents
-    ).join(", ")}`
+      allEvents,
+    ).join(", ")}`,
   );
 }
 
@@ -139,7 +139,7 @@ if (WARMUP_PROMPT_FILE) {
   assert(fs.existsSync(WARMUP_PROMPT_FILE), "Warmup prompt file not found");
   try {
     warmupPrompt = JSON.parse(
-      fs.readFileSync(WARMUP_PROMPT_FILE, { encoding: "utf-8" })
+      fs.readFileSync(WARMUP_PROMPT_FILE, { encoding: "utf-8" }),
     );
     for (const nodeId in warmupPrompt) {
       const node = warmupPrompt[nodeId];
@@ -220,13 +220,13 @@ with open("${temptComfyFilePath}", "w") as f:
     return JSON.parse(output.trim()) as ComfyDescription;
   } catch (error: any) {
     console.warn(
-      `Failed to get ComfyUI description: ${error.message}. Using default values.`
+      `Failed to get ComfyUI description: ${error.message}. Using default values.`,
     );
     let ver = "unknown";
     try {
       const versionTxt = fs.readFileSync(
         path.join(comfyDir, "comfyui_version.py"),
-        { encoding: "utf-8" }
+        { encoding: "utf-8" },
       );
       const m = versionTxt.match(/__version__\s*=\s*["']([^"']+)["']/);
       if (m) ver = m[1];
@@ -311,8 +311,12 @@ if (MANIFEST_JSON) {
 const hfCLIVersion = (() => {
   try {
     const version = execSync("hf version", { encoding: "utf-8" }).trim();
-    const [_, ver] = version.split(":");
-    return ver.trim();
+    if (version.includes(":")) {
+      const [_, ver] = version.split(":");
+      return ver.trim();
+    } else {
+      return version.trim();
+    }
   } catch {
     return null;
   }

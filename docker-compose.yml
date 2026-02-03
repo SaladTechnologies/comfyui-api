@@ -1,6 +1,6 @@
 services:
   comfyui:
-    image: ghcr.io/saladtechnologies/comfyui-api:comfy0.8.2-torch2.8.0-cuda12.8-runtime
+    image: ghcr.io/saladtechnologies/comfyui-api:comfy0.12.0-torch2.8.0-cuda12.8-runtime
     volumes:
       - type: bind
         source: ./bin
@@ -48,7 +48,7 @@ services:
     image: mcr.microsoft.com/azure-storage/azurite
     ports:
       - "10000:10000"  # Blob service
-    command: "azurite-blob --blobHost 0.0.0.0 --blobPort 10000"
+    command: "azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --skipApiVersionCheck"
   file-server:
     build:
       context: .
