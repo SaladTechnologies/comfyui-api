@@ -4,9 +4,8 @@
   "description": "Wraps comfyui to make it easier to use as a stateless web service",
   "main": "dist/src/index.js",
   "scripts": {
-    "full-test": "mocha --require ts-node/register --timeout=0 test/*.spec.ts",
-    "test": "mocha --require ts-node/register --timeout=0 test/core.spec.ts test/utils.spec.ts",
-    "unit-test": "mocha --require ts-node/register --timeout=0 test/utils.spec.ts",
+    "test": "vitest run",
+    "unit-test": "vitest run test/utils.spec.ts",
     "build": "tsc",
     "build-binary": "./build-binary",
     "postinstall": "npm install --cpu=wasm32 sharp"
@@ -15,15 +14,12 @@
   "license": "MIT",
   "devDependencies": {
     "@anthropic-ai/sdk": "^0.26.1",
-    "@types/mocha": "^10.0.10",
     "@types/node": "^20.12.7",
     "@types/ws": "^8.5.13",
     "@yao-pkg/pkg": "^6.1.0",
-    "earl": "^1.3.0",
     "minimist": "^1.2.8",
-    "mocha": "^11.3.0",
     "svix": "^1.78.0",
-    "ts-node": "^10.9.2"
+    "vitest": "^3.0.0"
   },
   "bin": {
     "comfyui-api": "dist/src/index.js"

@@ -1,4 +1,4 @@
-import { expect } from "earl";
+import { expect, describe, it, beforeEach, afterEach } from "vitest";
 import path from "path";
 import fs from "fs";
 import os from "os";
