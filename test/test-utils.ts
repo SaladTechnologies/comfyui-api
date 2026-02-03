@@ -1,4 +1,4 @@
-import { expect } from "earl";
+import { expect } from "vitest";
 import sharp from "sharp";
 import fastify, { FastifyInstance } from "fastify";
 import { fetch, Agent } from "undici";

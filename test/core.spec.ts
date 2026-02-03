@@ -1,4 +1,4 @@
-import { expect } from "earl";
+import { expect, describe, it, beforeAll } from "vitest";
 import path from "path";
 import fs from "fs";
 import { fetch, Agent } from "undici";
@@ -71,7 +71,7 @@ const inputJpeg = fs
 sd15Img2ImgWithJpeg["10"].inputs.image = inputJpeg;
 
 describe("Stable Diffusion 1.5", () => {
-  before(async () => {
+  beforeAll(async () => {
     await waitForServerToBeReady();
     await s3.send(
       new CreateBucketCommand({
@@ -1807,7 +1807,7 @@ describe("Download Endpoint", () => {
   const testModelFilename = "test-model.safetensors";
   const testModelUrl = `http://file-server:8080/${testModelFilename}`;
 
-  before(async () => {
+  beforeAll(async () => {
     await waitForServerToBeReady();
     // Seed the HTTP file server with a test "model" file
     const testModelContent = Buffer.from("fake model content for testing");
@@ -1956,7 +1956,7 @@ describe("Download Endpoint", () => {
 });
 
 describe("System Events", () => {
-  before(async () => {
+  beforeAll(async () => {
     await waitForServerToBeReady();
   });
 
