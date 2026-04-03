@@ -5,21 +5,59 @@ usage="Usage: $0 <input-prompt-json> <output-typescript-file>"
 input_prompt_json=$1
 output_typescript_file=$2
 
-api_url=https://api.anthropic.com/v1/messages
-api_key=$ANTHROPIC_API_KEY
-if [ -z "$api_key" ]; then
-  echo "Please set the ANTHROPIC_API_KEY environment variable"
-  exit 1
-fi
-model_id=claude-sonnet-4-20250514
-anthropic_version=2023-06-01
-
 set -f # Disable globbing, there's a * in the input prompt
 system_prompt=$(jq -R -s '{"text": .}' claude-endpoint-creation-prompt.md | jq .text)
 input_prompt=$(jq @json $input_prompt_json)
 
-api_body=$(
-  cat <<EOF
+# Select LLM provider based on available API keys.
+# Anthropic (Claude) is preferred when both keys are set.
+# MiniMax is used as a fallback via its OpenAI-compatible API.
+if [ -n "$ANTHROPIC_API_KEY" ]; then
+  provider="anthropic"
+  api_key="$ANTHROPIC_API_KEY"
+  api_url="https://api.anthropic.com/v1/messages"
+  model_id="claude-sonnet-4-20250514"
+  anthropic_version="2023-06-01"
+elif [ -n "$MINIMAX_API_KEY" ]; then
+  provider="minimax"
+  api_key="$MINIMAX_API_KEY"
+  api_url="https://api.minimax.io/v1/chat/completions"
+  model_id="MiniMax-M2.7"
+else
+  echo "Please set the ANTHROPIC_API_KEY or MINIMAX_API_KEY environment variable" >&2
+  exit 1
+fi
+
+if [ "$provider" = "minimax" ]; then
+  # MiniMax uses the OpenAI-compatible API format.
+  # temperature must be in (0.0, 1.0] for MiniMax; 0.01 gives near-deterministic output.
+  api_body=$(
+    cat <<EOF
+{
+  "model": "$model_id",
+  "messages": [
+    {"role": "system", "content": $system_prompt},
+    {"role": "user", "content": $input_prompt}
+  ],
+  "max_tokens": 8192,
+  "temperature": 0.01
+}
+EOF
+  )
+
+  response=$(
+    curl -s -X POST \
+      -H "Authorization: Bearer $api_key" \
+      -H "Content-Type: application/json" \
+      -d "$api_body" \
+      "$api_url"
+  )
+
+  response_text=$(echo "$response" | jq -r '.choices[0].message.content // empty')
+else
+  # Anthropic API format
+  api_body=$(
+    cat <<EOF
 {
   "model": "$model_id",
   "system": $system_prompt,
@@ -33,26 +71,32 @@ api_body=$(
   ]
 }
 EOF
-)
+  )
 
-response=$(
-  curl -s -X POST \
-    -H "x-api-key: $api_key" \
-    -H "Content-Type: application/json" \
-    -H "anthropic-version: $anthropic_version" \
-    -d "$api_body" \
-    $api_url
-)
+  response=$(
+    curl -s -X POST \
+      -H "x-api-key: $api_key" \
+      -H "Content-Type: application/json" \
+      -H "anthropic-version: $anthropic_version" \
+      -d "$api_body" \
+      "$api_url"
+  )
 
-if [ -z "$(echo $response | jq -r .content[0].text)" ]; then
+  response_text=$(echo "$response" | jq -r '.content[0].text // empty')
+fi
+
+if [ -z "$response_text" ]; then
   echo "Error: API call failed" >&2
-  echo $response | jq . >&2
+  echo "$response" | jq . >&2
   exit 1
 fi
 
-response_text=$(echo $response | jq -r .content[0].text)
-
-# Drop the first and last lines, which are the ```typescript delimiters
-echo "$response_text" | tail -n +2 | head -n -1 > $output_typescript_file
+# Strip code-block delimiters if the model wrapped the output in ``` fences.
+first_line=$(echo "$response_text" | head -n 1)
+if [[ "$first_line" == '```'* ]]; then
+  echo "$response_text" | tail -n +2 | head -n -1 > "$output_typescript_file"
+else
+  echo "$response_text" > "$output_typescript_file"
+fi
 
 set +f
