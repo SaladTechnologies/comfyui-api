@@ -2,7 +2,7 @@
 
 comfy_version=${1:-0.19.3}
 torch_version=${2:-2.8.0}
-cuda_version=${3:-12.6}
+cuda_version=${3:-12.8}
 bases=("devel" "runtime")
 
 for base in "${bases[@]}"; do

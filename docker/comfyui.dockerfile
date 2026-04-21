@@ -1,6 +1,6 @@
 ARG base=runtime
 ARG pytorch_version=2.8.0
-ARG cuda_version=12.6
+ARG cuda_version=12.8
 
 FROM pytorch/pytorch:${pytorch_version}-cuda${cuda_version}-cudnn9-${base}
 
@@ -30,7 +30,7 @@ RUN git clone --depth 1 --branch v${comfy_version} https://github.com/comfyanony
 
 WORKDIR /opt/ComfyUI
 
-ARG cuda_version=12.6
+ARG cuda_version=12.8
 
 RUN uv pip install --no-cache-dir --system torchaudio --index-url https://download.pytorch.org/whl/cu${cuda_version//./}
 RUN uv pip install --no-cache-dir --system -r requirements.txt
