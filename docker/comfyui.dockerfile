@@ -20,7 +20,7 @@ SHELL ["/bin/bash", "-c"]
 
 RUN pip install --no-cache-dir --upgrade pip
 RUN pip install --no-cache-dir uv
-RUN uv pip install --no-cache-dir --system comfy-cli "huggingface_hub[cli]"
+RUN uv pip install --no-cache-dir --system "comfy-cli==1.5.1" "huggingface_hub[cli]"
 
 WORKDIR /opt
 
