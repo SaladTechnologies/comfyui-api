@@ -24,7 +24,7 @@ RUN uv pip install --no-cache-dir --system comfy-cli "huggingface_hub[cli]"
 
 WORKDIR /opt
 
-ARG comfy_version=0.12.0
+ARG comfy_version=0.19.3
 
 RUN git clone --depth 1 --branch v${comfy_version} https://github.com/comfyanonymous/ComfyUI.git
 
