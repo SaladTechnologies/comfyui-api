@@ -185,7 +185,7 @@ class HTTPUpload implements Upload {
 
       // Parse URL and build headers with auth from URL-embedded credentials
       const parsedUrl = new URL(this.url);
-      const headers: HeadersInit = {
+      const headers: Record<string, string> = {
         "Content-Type": this.contentType,
         ...getAuthHeaders(this.url),
       };
@@ -362,8 +362,8 @@ function applyQueryAuth(url: string, auth?: DownloadAuth): string {
  * even if they exist. This prevents credential mixing and ensures explicit
  * auth takes full precedence.
  */
-function getAuthHeaders(url: string, auth?: DownloadAuth): HeadersInit {
-  const headers: HeadersInit = {};
+function getAuthHeaders(url: string, auth?: DownloadAuth): Record<string, string> {
+  const headers: Record<string, string> = {};
 
   // If per-request auth is provided, use it exclusively (no fallback to URL credentials)
   if (auth) {
