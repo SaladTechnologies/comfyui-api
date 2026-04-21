@@ -100,9 +100,19 @@ export class HFStorageProvider implements StorageProvider {
       env: process.env,
     });
 
-    const downloadedPath = await fsPromises.realpath(
-      downloadResult.stdout.trim()
-    );
+    // Newer hf CLI (>=1.11.0) emits colored output like "✓ Downloaded\n  path: /cache/path"
+    // instead of a bare path. Strip ANSI codes and extract the absolute path.
+    const stdout = downloadResult.stdout.replace(/\x1b\[[0-9;]*m/g, "");
+    const resolvedOutput = (() => {
+      for (const line of stdout.split("\n").map((l) => l.trim())) {
+        if (line.startsWith("/")) return line;
+        const m = line.match(/^path:\s+(\/.*)/);
+        if (m) return m[1];
+      }
+      return stdout.trim();
+    })();
+
+    const downloadedPath = await fsPromises.realpath(resolvedOutput);
 
     await execFilePromise("mv", [downloadedPath, outputPath]);
 
