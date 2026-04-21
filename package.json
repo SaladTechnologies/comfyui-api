@@ -30,14 +30,15 @@
     "@azure/storage-blob": "^12.28.0",
     "@fastify/swagger": "^9.5.0",
     "@fastify/swagger-ui": "^5.2.2",
+    "@rollup/rollup-linux-x64-gnu": "^4.60.2",
     "@smithy/node-http-handler": "^4.0.5",
-    "fastify": "^5.3.3",
+    "fastify": "^5.8.5",
     "fastify-type-provider-zod": "^4.0.2",
     "sharp": "^0.34.5",
     "typescript": "^5.8.3",
-    "undici": "^7.10.0",
+    "undici": "^7.24.0",
     "ws": "^8.18.2",
-    "yaml": "^2.8.1",
+    "yaml": "^2.8.3",
     "zod": "^3.25.36"
   },
   "pkg": {
