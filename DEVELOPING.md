@@ -293,16 +293,24 @@ Would yield the following endpoints:
 These endpoints will be present in the swagger docs, and can be used to interact with the API.
 If you provide descriptions in your zod schemas, these will be used to create a markdown table of inputs in the swagger docs.
 
-### Automating with Claude 4 Sonnet
+### Automating with an LLM
 
-> **Note**: This requires having an account with Anthropic, and your anthropic API key in the environment variable `ANTHROPIC_API_KEY`.
-
-Creating these endpoints can be done mostly automatically by [Claude 4 Sonnet](https://console.anthropic.com/), given the JSON prompt graph.
+Creating these endpoints can be done mostly automatically by a large language model, given the JSON prompt graph.
 A [system prompt](./claude-endpoint-creation-prompt.md) to do this is included in this repository, as is [a script that uses this prompt](./generate-workflow) to create endpoints. It requires `jq` and `curl` to be installed.
 
 ```shell
 ./generate-workflow <inputFile> <outputFile>
 ```
+
+The script supports two LLM providers and picks one based on your environment:
+
+| Provider | Environment variable | Model used |
+|---|---|---|
+| Anthropic (default) | `ANTHROPIC_API_KEY` | `claude-sonnet-4-20250514` |
+| [MiniMax](https://www.minimax.io/) | `MINIMAX_API_KEY` | `MiniMax-M2.7` (204 K context) |
+
+When both variables are set, Anthropic is preferred.
+MiniMax uses the OpenAI-compatible endpoint (`https://api.minimax.io/v1`) so no extra dependencies are needed.
 
 Where `<inputFile>` is the JSON prompt graph, and `<outputFile>` is the output file to write the generated workflow to.
 
