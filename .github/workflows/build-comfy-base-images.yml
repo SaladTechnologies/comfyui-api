@@ -1,0 +1,38 @@
+name: Build Comfy Base Images
+
+on:
+  workflow_dispatch:
+    inputs:
+      comfy_version:
+        description: ComfyUI version
+        required: true
+        default: "0.19.3"
+      torch_version:
+        description: PyTorch version
+        required: true
+        default: "2.8.0"
+      cuda_version:
+        description: CUDA version
+        required: true
+        default: "12.8"
+
+jobs:
+  build-and-push:
+    permissions:
+      contents: read
+      packages: write
+    runs-on: ubuntu-24.04-2core-8gb-75gb
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to GitHub Container Registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Build base images
+        working-directory: ./docker
+        run: ./build-comfy-base-images ${{ inputs.comfy_version }} ${{ inputs.torch_version }} ${{ inputs.cuda_version }}
+
+      - name: Push base images
+        working-directory: ./docker
+        run: ./push-comfy-base-images ${{ inputs.comfy_version }} ${{ inputs.torch_version }} ${{ inputs.cuda_version }}
