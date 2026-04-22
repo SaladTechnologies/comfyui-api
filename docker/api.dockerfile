@@ -1,7 +1,7 @@
 ARG base=runtime
-ARG comfy_version=0.12.0
+ARG comfy_version=0.19.3
 ARG pytorch_version=2.8.0
-ARG cuda_version=12.6
+ARG cuda_version=12.8
 
 FROM ghcr.io/saladtechnologies/comfyui-api:comfy${comfy_version}-torch${pytorch_version}-cuda${cuda_version}-${base}
 

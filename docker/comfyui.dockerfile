@@ -1,6 +1,6 @@
 ARG base=runtime
 ARG pytorch_version=2.8.0
-ARG cuda_version=12.6
+ARG cuda_version=12.8
 
 FROM pytorch/pytorch:${pytorch_version}-cuda${cuda_version}-cudnn9-${base}
 
@@ -20,17 +20,17 @@ SHELL ["/bin/bash", "-c"]
 
 RUN pip install --no-cache-dir --upgrade pip
 RUN pip install --no-cache-dir uv
-RUN uv pip install --no-cache-dir --system comfy-cli "huggingface_hub[cli]"
+RUN uv pip install --no-cache-dir --system "comfy-cli==1.5.1" "huggingface_hub[cli]"
 
 WORKDIR /opt
 
-ARG comfy_version=0.12.0
+ARG comfy_version=0.19.3
 
 RUN git clone --depth 1 --branch v${comfy_version} https://github.com/comfyanonymous/ComfyUI.git
 
 WORKDIR /opt/ComfyUI
 
-ARG cuda_version=12.6
+ARG cuda_version=12.8
 
 RUN uv pip install --no-cache-dir --system torchaudio --index-url https://download.pytorch.org/whl/cu${cuda_version//./}
 RUN uv pip install --no-cache-dir --system -r requirements.txt

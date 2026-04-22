@@ -7,7 +7,7 @@ RUN npm install -g typescript && npm install --save-dev @types/node
 
 # Copy and compile the server file
 COPY test/file-server.ts ./
-RUN tsc --module commonjs --target es2020 --esModuleInterop --skipLibCheck file-server.ts
+RUN tsc --module commonjs --target es2020 --esModuleInterop --skipLibCheck --types node file-server.ts
 
 # Create storage directory
 RUN mkdir -p /storage
