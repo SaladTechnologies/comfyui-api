@@ -40,6 +40,7 @@ async function linkIfDoesNotExist(
     .catch(async (err: any) => {
       if (err.code === "ENOENT") {
         log.debug(`Linking ${src} to ${dest}`);
+        await fsPromises.mkdir(path.dirname(dest), { recursive: true });
         await fsPromises.symlink(src, dest);
         log.debug(`Linked ${src} to ${dest}`);
       } else {
