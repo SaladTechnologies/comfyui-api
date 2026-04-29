@@ -1,0 +1,24 @@
+name: Build API Docker Images
+
+on:
+  release:
+    types:
+      - published
+  workflow_dispatch: {}
+
+jobs:
+  build-and-push:
+    permissions:
+      contents: read
+      packages: write
+    runs-on: ubuntu-24.04-2core-8gb-75gb
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to GitHub Container Registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Build and push Docker images
+        working-directory: ./docker
+        run: ./build-api-images 0.19.3 2.8.0 12.8
