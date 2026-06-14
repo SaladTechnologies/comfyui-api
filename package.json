@@ -19,7 +19,7 @@
     "@yao-pkg/pkg": "^6.1.0",
     "minimist": "^1.2.8",
     "svix": "^1.78.0",
-    "vitest": "^3.0.0"
+    "vitest": "^4.1.8"
   },
   "bin": {
     "comfyui-api": "dist/src/index.js"
