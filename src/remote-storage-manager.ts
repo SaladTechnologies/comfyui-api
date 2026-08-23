@@ -27,29 +27,67 @@ interface CacheMetadata {
 
 const execFilePromise = promisify(execFile);
 
-async function linkIfDoesNotExist(
+/**
+ * ComfyUI v0.28.0 hardened its input handling (PR #14734, GHSA-779p-m5rp-r4h4).
+ * `folder_paths.is_within_directory()` now calls `os.path.realpath()` on both
+ * operands, so a symlink in the input directory pointing into the cache resolves
+ * outside it, and LoadImage/LoadAudio reject the prompt before it is queued.
+ *
+ * A hard link resolves to itself, so containment holds. Where the cache and the
+ * input directory are on different filesystems, copy instead.
+ *
+ * Only the input directory is containment checked, so everything else - model
+ * files above all, which are frequently many gigabytes - keeps using symlinks.
+ */
+export async function linkIfDoesNotExist(
   src: string,
   dest: string,
   log: FastifyBaseLogger
 ): Promise<void> {
-  return fsPromises
-    .lstat(dest)
-    .then(() => {
+  const isComfyInput = dest.startsWith(config.inputDir + path.sep);
+
+  const existing = await fsPromises.lstat(dest).catch((err: any) => {
+    if (err.code === "ENOENT") {
+      return null;
+    }
+    log.error(`Error staging ${src} at ${dest}: (${err.code}) ${err.message}`);
+    throw err;
+  });
+
+  if (existing) {
+    if (!isComfyInput || !existing.isSymbolicLink()) {
       log.debug(`Link target ${dest} already exists, skipping link`);
-    })
-    .catch(async (err: any) => {
-      if (err.code === "ENOENT") {
-        log.debug(`Linking ${src} to ${dest}`);
-        await fsPromises.mkdir(path.dirname(dest), { recursive: true });
-        await fsPromises.symlink(src, dest);
-        log.debug(`Linked ${src} to ${dest}`);
-      } else {
-        log.error(
-          `Error linking ${src} to ${dest}: (${err.code}) ${err.message}`
-        );
-        throw err;
-      }
-    });
+      return;
+    }
+    /**
+     * A symlink written by an older version, or one whose cache entry has since
+     * been evicted. Either way ComfyUI will now reject it, and the old
+     * "already exists" check would have left it in place forever.
+     */
+    log.debug(`Replacing symlink at ${dest}`);
+    await fsPromises.unlink(dest);
+  }
+
+  await fsPromises.mkdir(path.dirname(dest), { recursive: true });
+
+  if (!isComfyInput) {
+    await fsPromises.symlink(src, dest);
+    log.debug(`Linked ${src} to ${dest}`);
+    return;
+  }
+
+  try {
+    await fsPromises.link(src, dest);
+    log.debug(`Hard linked ${src} to ${dest}`);
+  } catch (err: any) {
+    if (err.code !== "EXDEV") {
+      log.error(`Error staging ${src} at ${dest}: (${err.code}) ${err.message}`);
+      throw err;
+    }
+    // Cache and input directory are on different filesystems.
+    await fsPromises.copyFile(src, dest, fs.constants.COPYFILE_FICLONE);
+    log.debug(`Copied ${src} to ${dest}`);
+  }
 }
 
 async function getFileByPrefix(
