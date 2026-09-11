@@ -25,20 +25,38 @@ nine days old at this check, so this update uses 2.13.0/CUDA 13.0.
 The Dockerfile constrains the installed Torch packages so subsequent dependency
 installation cannot silently change the versions in the image tag.
 
-CUDA 13 requires [NVIDIA driver 580 or newer](https://docs.nvidia.com/deploy/cuda-compatibility/minor-version-compatibility.html).
+These CUDA 13 images require [NVIDIA driver 580 or newer](https://docs.nvidia.com/deploy/cuda-compatibility/minor-version-compatibility.html)
+and Turing or newer GPUs; [CUDA 13 libraries dropped Maxwell, Pascal, and Volta](https://docs.nvidia.com/cuda/cuda-toolkit-release-notes/index.html#cufft-release-13-0).
 Validate the target Salad GPU/driver pool and customer custom nodes before rollout.
+Keep incompatible pools on their previous pinned images until a compatible image
+has been separately built and validated.
 Input hard links keep their bytes alive after cache eviction; copied inputs also
 consume space outside `CACHE_DIR`. Account for `INPUT_DIR` storage in long-lived
 containers; `LRU_CACHE_SIZE_GB` only manages the cache.
 
 ## Validate the candidate
 
-Validation recorded September 11: TypeScript compilation and all 83 unit tests
-passed. The runtime base image and standalone API binary built successfully; the
-binary started with ComfyUI 0.35.0, and CUDA detected the RTX 4060 Ti. GPU workflow
-validation was interrupted by WSL crashes before warmup completed. The integration
-suite and development image build are therefore **not yet validated**. Complete
-those checks on a stable GPU host before publishing this candidate.
+Validation recorded September 11:
+
+- TypeScript compilation and all **87 unit tests passed**.
+- **56 integration tests passed** against the standalone binary and ComfyUI
+  0.35.0 on an RTX 4060 Ti: image generation, HTTP/S3/Azure inputs and outputs,
+  synchronous and webhook responses, format conversion, custom workflow endpoints,
+  downloads, system events, and built-in MP4/FLAC output workflows.
+- **15 integration tests were excluded**: 13 Hugging Face cases needing the test
+  repositories/credentials, and two workflows that download additional external
+  models. `HF_TOKEN` was not configured. These cases remain unvalidated.
+- Both runtime and development base images, and the standalone API binary,
+  built successfully. The development image passed package-version checks,
+  PyTorch GPU execution, and compilation/execution of a CUDA kernel with `nvcc`.
+
+The integration run exposed an existing Azure Blob download hang: its stream
+completion handler returned the resolver instead of calling it. Downloads now use
+the stream pipeline, which completes correctly and propagates stream errors. Four
+unit regression cases and the Azure integration cases cover this fix.
+
+The completed GPU tests used WSL2 with NVIDIA CDI support, a 4-CPU/12-GiB container
+limit, and separate cache/input filesystems to exercise the input-copy fallback.
 
 From a clean checkout of the release branch:
 
@@ -50,6 +68,8 @@ npm run build-binary
 
 docker build -f docker/comfyui.dockerfile \
   -t comfyui-api-candidate:base docker
+docker build -f docker/comfyui.dockerfile --build-arg base=devel \
+  -t comfyui-api-candidate:devel docker
 COMFYUI_TEST_IMAGE=comfyui-api-candidate:base \
   docker compose -f test/docker-compose.integration.yml up -d --build
 

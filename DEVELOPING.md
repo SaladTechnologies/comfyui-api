@@ -56,6 +56,12 @@ Tests are administered against a locally running instance of the ComfyUI API ser
 Additional services are present in the docker-compose file to provide mock storage services for testing uploads and downloads.
 These services are not required for normal operation of the API server.
 
+Local GPU tests require Docker GPU access through the
+[NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).
+The supplied Compose file uses NVIDIA GPU reservations; hosts configured only for
+native CDI need a Compose override using `devices: ["nvidia.com/gpu=all"]` instead.
+On WSL, verify GPU access inside Docker before starting the tests.
+
 ### Running Tests
 
 In one terminal, start the test server:
