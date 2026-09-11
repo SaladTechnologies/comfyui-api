@@ -16,6 +16,9 @@ cache symlinks fail those checks. The staging change follows the approach in
 handling for concurrent requests, normalized input paths, and atomic copies when
 the cache and input directory are on different filesystems. Existing input
 symlinks are repaired when reused. Model files still use symlinks.
+When upgrading a customer image to this ComfyUI base, also upgrade its API binary
+to 1.19.0 (or backport the input-staging fix). Older binaries without that fix
+cannot reliably submit downloaded inputs to ComfyUI 0.28 and newer.
 
 [ComfyUI's installation guidance](https://github.com/Comfy-Org/ComfyUI/blob/v0.35.0/README.md#manual-install-windows-linux)
 requires CUDA 13 or newer PyTorch builds for NVIDIA 20-series and newer GPUs and
@@ -110,6 +113,9 @@ docker compose -f test/docker-compose.integration.yml down
 
    This publishes the versioned `runtime` and `devel` base images and updates
    `ghcr.io/saladtechnologies/comfyui-api:base`.
+   Coordinate this alias change with customers who rebuild from `:base`: their
+   API binary needs the input-staging fix too. Use versioned base tags for a
+   controlled migration.
 
 3. Run **Create Release**. It reads `package.json` and creates a **draft** release
    with the standalone Linux x64 binary:
