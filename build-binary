@@ -1,6 +1,6 @@
 #! /usr/bin/env bash
 set -e
 
-npm install
+npm ci
 npx tsc
 npx pkg --options "stack-size=65500" .

@@ -1,0 +1,60 @@
+name: comfyui-api-integration
+
+services:
+  comfyui:
+    cpus: ${COMFYUI_TEST_CPUS:-4}
+    mem_limit: ${COMFYUI_TEST_MEMORY_LIMIT:-12g}
+    memswap_limit: ${COMFYUI_TEST_MEMORY_LIMIT:-12g}
+    build:
+      context: ..
+      dockerfile: test/docker-image/Dockerfile.integration
+      args:
+        comfy_image: ${COMFYUI_TEST_IMAGE:-ghcr.io/saladtechnologies/comfyui-api:comfy0.35.0-torch2.13.0-cuda13.0-runtime}
+    volumes:
+      - ${COMFYUI_TEST_BINARY_DIR:-../bin}:/test-bin:ro
+      - ../cache/dreamshaper_8.safetensors:/opt/ComfyUI/models/checkpoints/dreamshaper_8.safetensors:ro
+      - ../cache/dreamshaper5.safetensors:/opt/ComfyUI/models/checkpoints/dreamshaper5.safetensors:ro
+    ports:
+      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:8188:8188"
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    environment:
+      LOG_LEVEL: info
+      AWS_ENDPOINT_URL: http://localstack:4566
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_REGION: us-east-1
+      HF_TOKEN: ${HF_TOKEN:-}
+      AZURE_STORAGE_CONNECTION_STRING: "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;"
+      SYSTEM_WEBHOOK_URL: http://host.docker.internal:1234/system
+      SYSTEM_WEBHOOK_EVENTS: all
+      WEBHOOK_SECRET: testsecret
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: [gpu]
+              count: 1
+  localstack:
+    image: localstack/localstack:4.14.0
+    ports:
+      - "127.0.0.1:4566:4566"
+    environment:
+      SERVICES: s3
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:3.35.0
+    ports:
+      - "127.0.0.1:10000:10000"
+    command: azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --skipApiVersionCheck
+  file-server:
+    build:
+      context: ..
+      dockerfile: test/Dockerfile.file-server
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      PORT: "8080"
+      STORAGE_DIR: /storage
+      REQUIRE_AUTH: "false"

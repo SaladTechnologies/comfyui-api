@@ -1,14 +1,14 @@
 {
   "name": "comfyui-api",
-  "version": "1.18.0",
+  "version": "1.19.0",
   "description": "Wraps comfyui to make it easier to use as a stateless web service",
   "main": "dist/src/index.js",
   "scripts": {
     "test": "vitest run",
-    "unit-test": "vitest run test/utils.spec.ts",
+    "unit-test": "vitest run --exclude test/core.spec.ts",
     "build": "tsc",
     "build-binary": "./build-binary",
-    "postinstall": "npm install --cpu=wasm32 sharp"
+    "postinstall": "npm install --ignore-scripts --no-save --no-audit --no-fund --force @img/sharp-wasm32@$(node -p \"require('sharp/package.json').version\")"
   },
   "author": "Shawn Rushefsky",
   "license": "MIT",
