@@ -21,4 +21,4 @@ jobs:
 
       - name: Build and push Docker images
         working-directory: ./docker
-        run: ./build-api-images 0.35.0 2.8.0 12.8
+        run: ./build-api-images 0.35.0 2.13.0 13.0

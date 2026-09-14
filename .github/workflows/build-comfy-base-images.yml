@@ -10,11 +10,11 @@ on:
       torch_version:
         description: PyTorch version
         required: true
-        default: "2.8.0"
+        default: "2.13.0"
       cuda_version:
         description: CUDA version
         required: true
-        default: "12.8"
+        default: "13.0"
 
 jobs:
   build-and-push:
