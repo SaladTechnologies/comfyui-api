@@ -10,8 +10,8 @@ system_prompt=$(jq -R -s '{"text": .}' claude-endpoint-creation-prompt.md | jq .
 input_prompt=$(jq @json $input_prompt_json)
 
 # Select LLM provider based on available API keys.
-# Anthropic (Claude) is preferred when both keys are set.
-# MiniMax is used as a fallback via its OpenAI-compatible API.
+# Anthropic (Claude), then MiniMax, are preferred when multiple keys are set.
+# MiniMax and Atlas Cloud are used as fallbacks via OpenAI-compatible APIs.
 if [ -n "$ANTHROPIC_API_KEY" ]; then
   provider="anthropic"
   api_key="$ANTHROPIC_API_KEY"
@@ -23,14 +23,20 @@ elif [ -n "$MINIMAX_API_KEY" ]; then
   api_key="$MINIMAX_API_KEY"
   api_url="https://api.minimax.io/v1/chat/completions"
   model_id="MiniMax-M2.7"
+  temperature="0.01"
+elif [ -n "$ATLASCLOUD_API_KEY" ]; then
+  provider="atlascloud"
+  api_key="$ATLASCLOUD_API_KEY"
+  api_url="https://api.atlascloud.ai/v1/chat/completions"
+  model_id="openai/gpt-4.1-mini"
+  temperature="0"
 else
-  echo "Please set the ANTHROPIC_API_KEY or MINIMAX_API_KEY environment variable" >&2
+  echo "Please set ANTHROPIC_API_KEY, MINIMAX_API_KEY, or ATLASCLOUD_API_KEY" >&2
   exit 1
 fi
 
-if [ "$provider" = "minimax" ]; then
-  # MiniMax uses the OpenAI-compatible API format.
-  # temperature must be in (0.0, 1.0] for MiniMax; 0.01 gives near-deterministic output.
+if [ "$provider" != "anthropic" ]; then
+  # MiniMax and Atlas Cloud use the OpenAI-compatible API format.
   api_body=$(
     cat <<EOF
 {
@@ -40,7 +46,7 @@ if [ "$provider" = "minimax" ]; then
     {"role": "user", "content": $input_prompt}
   ],
   "max_tokens": 8192,
-  "temperature": 0.01
+  "temperature": $temperature
 }
 EOF
   )
