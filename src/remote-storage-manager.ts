@@ -5,7 +5,6 @@ import fsPromises from "fs/promises";
 import path from "path";
 import { execFile } from "child_process";
 import { promisify } from "util";
-import { randomUUID } from "crypto";
 import storageProviders from "./storage-providers";
 import { StorageProvider, Upload, DownloadOptions } from "./types";
 import { sendSystemWebhook } from "./event-emitters";
@@ -27,71 +26,30 @@ interface CacheMetadata {
 }
 
 const execFilePromise = promisify(execFile);
-const activeFileLinks = new Map<string, Promise<void>>();
 
-export async function linkIfDoesNotExist(
+async function linkIfDoesNotExist(
   src: string,
   dest: string,
   log: FastifyBaseLogger
 ): Promise<void> {
-  const destination = path.resolve(dest);
-  const pending = activeFileLinks.get(destination);
-  if (pending) return pending;
-
-  // Requests can share a cache download and arrive here simultaneously.
-  const staging = stageCachedFile(src, destination, log);
-  activeFileLinks.set(destination, staging);
-  try {
-    await staging;
-  } finally {
-    activeFileLinks.delete(destination);
-  }
-}
-
-async function stageCachedFile(
-  src: string,
-  dest: string,
-  log: FastifyBaseLogger
-): Promise<void> {
-  const relative = path.relative(path.resolve(config.inputDir), dest);
-  const isComfyInput = relative !== "" && relative !== ".." &&
-    !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
-  const existing = await fsPromises.lstat(dest).catch((err: any) => {
-    if (err.code === "ENOENT") return null;
-    throw err;
-  });
-  if (existing) {
-    if (!isComfyInput || !existing.isSymbolicLink()) {
+  return fsPromises
+    .lstat(dest)
+    .then(() => {
       log.debug(`Link target ${dest} already exists, skipping link`);
-      return;
-    }
-    // Repair input symlinks left by older versions, including dangling ones.
-    await fsPromises.unlink(dest);
-  }
-  await fsPromises.mkdir(path.dirname(dest), { recursive: true });
-
-  if (!isComfyInput) {
-    await fsPromises.symlink(src, dest);
-    return;
-  }
-
-  // ComfyUI >= 0.28 resolves real paths and rejects input symlinks into the
-  // cache. Hard links satisfy containment; large model files retain symlinks.
-  try {
-    await fsPromises.link(src, dest);
-  } catch (err: any) {
-    if (err.code !== "EXDEV") throw err;
-    // Separate cache/input mounts cannot share hard links. Publish a complete
-    // copy atomically so another request cannot see a partially copied input.
-    const temporary = `${dest}.${randomUUID()}.tmp`;
-    try {
-      await fsPromises.copyFile(src, temporary, fs.constants.COPYFILE_FICLONE);
-      await fsPromises.rename(temporary, dest);
-    } finally {
-      await fsPromises.rm(temporary, { force: true });
-    }
-  }
-  log.debug(`Staged input ${src} at ${dest}`);
+    })
+    .catch(async (err: any) => {
+      if (err.code === "ENOENT") {
+        log.debug(`Linking ${src} to ${dest}`);
+        await fsPromises.mkdir(path.dirname(dest), { recursive: true });
+        await fsPromises.symlink(src, dest);
+        log.debug(`Linked ${src} to ${dest}`);
+      } else {
+        log.error(
+          `Error linking ${src} to ${dest}: (${err.code}) ${err.message}`
+        );
+        throw err;
+      }
+    });
 }
 
 async function getFileByPrefix(

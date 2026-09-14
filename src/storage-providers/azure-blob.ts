@@ -10,7 +10,6 @@ import {
   StorageSharedKeyCredential,
 } from "@azure/storage-blob";
 import fs, { ReadStream } from "fs";
-import { pipeline } from "node:stream/promises";
 
 export class AzureBlobStorageProvider implements StorageProvider {
   log: FastifyBaseLogger;
@@ -167,10 +166,12 @@ export class AzureBlobStorageProvider implements StorageProvider {
       outputDir,
       filenameOverride || path.basename(blobName)
     );
-    await pipeline(
-      downloadResponse.readableStreamBody,
-      fs.createWriteStream(downloadedFilePath)
-    );
+    const writableStream = fs.createWriteStream(downloadedFilePath);
+    downloadResponse.readableStreamBody.pipe(writableStream);
+    await new Promise((resolve, reject) => {
+      writableStream.on("finish", () => resolve);
+      writableStream.on("error", reject);
+    });
     return downloadedFilePath;
   }
 }

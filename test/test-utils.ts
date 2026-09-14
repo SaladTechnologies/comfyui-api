@@ -51,7 +51,7 @@ export async function createWebhookListener(
     }
     res.send({ success: true });
   });
-  await app.listen({ port: 1234, host: "0.0.0.0" });
+  await app.listen({ port: 1234 });
   await app.ready();
   /**
    * TODO: There is some kind of race condition here I can't figure out.
@@ -140,17 +140,15 @@ export async function checkImage(
 }
 
 export async function waitForServerToBeReady(): Promise<void> {
-  const deadline = Date.now() + 120_000;
-  while (Date.now() < deadline) {
+  while (true) {
     try {
       const resp = await fetch(`http://localhost:3000/ready`);
       if (resp.ok) {
-        return;
+        break;
       }
     } catch (e) {}
     await sleep(100);
   }
-  throw new Error("ComfyUI API did not become ready at localhost:3000 within 120 seconds");
 }
 
 const webhook = new Webhook("testsecret");

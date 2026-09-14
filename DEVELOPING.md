@@ -43,31 +43,24 @@ npm install
 npm run build-binary
 ```
 
-This will create a `comfyui-api` binary in the `bin/` directory, which is mounted into the Docker container when you run Docker Compose.
+This will create a `comfyui-api` binary in the `dist/` directory, which is mounted into the Docker container when you run `docker compose up`.
 
 Whenever you make changes, you will need to re-run `npm run build-binary` to rebuild the binary, and then restart the Docker container to see your changes.
 
 ## Testing Procedures
 
-This project uses [Vitest](https://vitest.dev/) for testing. Run `npm run unit-test`
-for tests that do not need a GPU or external services.
+This project uses [mocha](https://mochajs.org/) and [earl](https://earl.fun/) for testing.
 Tests are administered against a locally running instance of the ComfyUI API server, which can be started with Docker Compose, and actual images are generated during the tests.
 
 Additional services are present in the docker-compose file to provide mock storage services for testing uploads and downloads.
 These services are not required for normal operation of the API server.
-
-Local GPU tests require Docker GPU access through the
-[NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).
-The supplied Compose file uses NVIDIA GPU reservations; hosts configured only for
-native CDI need a Compose override using `devices: ["nvidia.com/gpu=all"]` instead.
-On WSL, verify GPU access inside Docker before starting the tests.
 
 ### Running Tests
 
 In one terminal, start the test server:
 
 ```shell
-docker compose -f test/docker-compose.integration.yml up --build
+docker compose up --build
 ```
 
 > --build is only needed the first time, or if you make changes to the file-server code.
@@ -75,33 +68,12 @@ docker compose -f test/docker-compose.integration.yml up --build
 In another terminal, run the tests:
 
 ```shell
-npm test
+npm run quick-test
 ```
 
 This will take several minutes, but can be done with very modest hardware.
-The integration suite uses SD1.5 models. Put `dreamshaper_8.safetensors` and
-`dreamshaper5.safetensors` in `cache/` first; their download URLs are in
-[the manifest](./manifest.yml). The dedicated Compose file mounts these model files
-read-only and includes the workflow endpoint fixtures, LocalStack, Azurite, and an
-HTTP file server. It uses ports 3000, 8188, 4566, 10000, and 8080; tests listen on
-port 1234 for webhooks.
-
-The ComfyUI test container is limited to 4 CPUs and 12 GiB of host memory, with
-container swap disabled. Adjust `COMFYUI_TEST_CPUS` and `COMFYUI_TEST_MEMORY_LIMIT`
-if needed. On WSL, check Windows host-drive free space as well as Linux `df`;
-unused space inside the virtual disk does not imply free space on the host.
-
-Hugging Face upload tests require `HF_TOKEN` with write access to the integration
-testing repositories. To run the local integration coverage without those uploads
-or the workflows that download additional Civitai/Hugging Face models:
-
-```shell
-npm test -- --testNamePattern='^(?!.*(?:HuggingFace|hf image|hf url|non-interrelated)).*$' --testTimeout=120000 --hookTimeout=180000
-```
-
-To test an unpublished ComfyUI base image, set `COMFYUI_TEST_IMAGE` to its local
-tag when starting Compose. `COMFYUI_TEST_BINARY_DIR` can point to a separate
-directory containing the candidate binary. See [RELEASING.md](./RELEASING.md).
+All tests in the `quick-test` suite use SD1.5 models, which are small and fast to run.
+The models used are defined in [the manifest](./manifest.yml), as well in a couple [test workflows](./test/workflows/)
 
 ## Generating New Workflow Endpoints
 

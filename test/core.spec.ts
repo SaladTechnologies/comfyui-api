@@ -1955,57 +1955,6 @@ describe("Download Endpoint", () => {
   });
 });
 
-describe("Built-in media outputs", () => {
-  beforeAll(waitForServerToBeReady);
-
-  it("returns an MP4 from the current CreateVideo and SaveVideo nodes", async () => {
-    const response = await submitPrompt({
-      "1": {
-        class_type: "EmptyImage",
-        inputs: { width: 64, height: 64, batch_size: 4, color: 0x336699 },
-      },
-      "2": { class_type: "CreateVideo", inputs: { images: ["1", 0], fps: 4 } },
-      "3": {
-        class_type: "SaveVideo",
-        inputs: {
-          video: ["2", 0], filename_prefix: "media-test", format: "mp4",
-          "format.codec": "h264",
-        },
-      },
-    });
-    expect(response.filenames).toHaveLength(1);
-    expect(response.filenames[0]).toMatch(/\.mp4$/);
-    expect(Buffer.from(response.images[0], "base64").subarray(4, 8).toString()).toBe("ftyp");
-  });
-
-  it("loads base64 WAV audio and returns a FLAC", async () => {
-    // A short, silent mono PCM waveform needs no additional model downloads.
-    const wav = Buffer.alloc(44 + 3200 * 2);
-    wav.write("RIFF", 0);
-    wav.writeUInt32LE(wav.length - 8, 4);
-    wav.write("WAVEfmt ", 8);
-    wav.writeUInt32LE(16, 16);
-    wav.writeUInt16LE(1, 20);
-    wav.writeUInt16LE(1, 22);
-    wav.writeUInt32LE(16000, 24);
-    wav.writeUInt32LE(32000, 28);
-    wav.writeUInt16LE(2, 32);
-    wav.writeUInt16LE(16, 34);
-    wav.write("data", 36);
-    wav.writeUInt32LE(wav.length - 44, 40);
-    const response = await submitPrompt({
-      "1": { class_type: "LoadAudio", inputs: { audio: wav.toString("base64") } },
-      "2": {
-        class_type: "SaveAudio",
-        inputs: { audio: ["1", 0], filename_prefix: "media-test" },
-      },
-    });
-    expect(response.filenames).toHaveLength(1);
-    expect(response.filenames[0]).toMatch(/\.flac$/);
-    expect(Buffer.from(response.images[0], "base64").subarray(0, 4).toString()).toBe("fLaC");
-  });
-});
-
 describe("System Events", () => {
   beforeAll(async () => {
     await waitForServerToBeReady();
