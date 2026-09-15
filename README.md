@@ -78,7 +78,7 @@ If you have your own ComfyUI dockerfile, you can add the comfyui-api server to i
 
 ```dockerfile
 # Change this to the version you want to use
-ARG api_version=1.18.1
+ARG api_version=1.19.0
 
 # Download the comfyui-api binary, and make it executable
 ADD https://github.com/SaladTechnologies/comfyui-api/releases/download/${api_version}/comfyui-api .
@@ -1523,6 +1523,17 @@ The following are the schemas for the event data that will be sent to the webhoo
 ```
 
 ## Prebuilt Docker Images
+
+The current build targets ComfyUI **0.35.0**, PyTorch **2.13.0**, and CUDA **13.0**.
+Pair this base with API **1.19.0** or newer: ComfyUI 0.28+ rejects the cache
+symlinks used for downloaded inputs by older API binaries. API 1.19.0 stages
+inputs using hard links or atomic copies and repairs existing input symlinks.
+Staged inputs retain their data after cache eviction, so account for `INPUT_DIR`
+storage separately from the cache limit.
+
+These CUDA 13 images require Turing or newer GPUs (RTX 20-series or newer) and
+[NVIDIA driver 580 or newer](https://docs.nvidia.com/deploy/cuda-compatibility/minor-version-compatibility.html).
+Validate the target GPU pool and customer workflows before rolling out the new image.
 
 You can find ready-to-go docker images under [Packages](https://github.com/orgs/SaladTechnologies/packages?repo_name=comfyui-api) in this repository.
 
