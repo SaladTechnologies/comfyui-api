@@ -8,7 +8,7 @@ on:
 jobs:
   publish:
     if: github.repository == 'SaladTechnologies/comfyui-api'
-    runs-on: ubuntu-24.04-2core-8gb-75gb
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
       contents: read
@@ -21,6 +21,19 @@ jobs:
         shell: bash
 
     steps:
+      - name: Free unused SDK space on the disposable runner
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_ACTIONS:-}" != true || "${RUNNER_ENVIRONMENT:-}" != github-hosted ]]; then
+            echo "::error::Refusing cleanup outside a GitHub-hosted Actions job." >&2
+            exit 1
+          fi
+          docker_root=$(docker info --format '{{.DockerRootDir}}')
+          df -h "$docker_root"
+          sudo rm -rf -- /usr/local/lib/android /usr/share/dotnet /usr/local/.ghcup \
+            /opt/ghc /usr/share/miniconda /opt/hostedtoolcache
+          df -h "$docker_root"
+
       - name: Download and verify the tested release binary
         env:
           GH_TOKEN: ${{ github.token }}
