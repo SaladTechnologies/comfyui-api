@@ -15,7 +15,6 @@ jobs:
       packages: write
     env:
       IMAGE_REF: ghcr.io/saladtechnologies/comfyui-api:comfy0.35.0-api1.19.0-torch2.13.0-cuda13.0-runtime
-      BINARY_SHA256: 7bda8a25368f2aebcc97b7ab18565301f321232d9129e8ada427c12926fcf47d
     defaults:
       run:
         shell: bash
@@ -30,20 +29,40 @@ jobs:
           fi
           docker_root=$(docker info --format '{{.DockerRootDir}}')
           df -h "$docker_root"
-          sudo rm -rf -- /usr/local/lib/android /usr/share/dotnet /usr/local/.ghcup \
-            /opt/ghc /usr/share/miniconda /opt/hostedtoolcache
+          available_kib=$(df -Pk "$docker_root" | awk 'NR == 2 {print $4}')
+          if (( available_kib < 32 * 1024 * 1024 )); then
+            sudo rm -rf -- /usr/local/lib/android /usr/share/dotnet /usr/local/.ghcup \
+              /opt/ghc /usr/share/miniconda /opt/hostedtoolcache
+          fi
           df -h "$docker_root"
 
-      - name: Download and verify the tested release binary
+      - name: Check out the release source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: 0d20f06b4e10260f202986461b466b9c69b3e5a9
+          path: source
+          persist-credentials: false
+
+      - name: Set up the release build's Node.js version
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "20"
+
+      - name: Build the API binary and run unit tests
+        working-directory: source
         env:
-          GH_TOKEN: ${{ github.token }}
+          WORKFLOW_DIR: ${{ runner.temp }}/test-workflows
         run: |
           set -euo pipefail
+          node -e 'if (require("./package.json").version !== "1.19.0") process.exit(1)'
+          npm run build-binary
+          npm run unit-test -- --maxWorkers=2 --minWorkers=1
           context="$RUNNER_TEMP/comfyui-runtime"
           mkdir -p "$context"
-          gh api --hostname github.com -H 'Accept: application/octet-stream' \
-            repos/SaladTechnologies/comfyui-api/releases/assets/565886193 > "$context/comfyui-api"
-          printf '%s  %s\n' "$BINARY_SHA256" "$context/comfyui-api" | sha256sum --check
+          cp bin/comfyui-api "$context/comfyui-api"
+          binary_sha256=$(sha256sum "$context/comfyui-api" | awk '{print $1}')
+          printf 'BINARY_SHA256=%s\n' "$binary_sha256" >> "$GITHUB_ENV"
+          sha256sum "$context/comfyui-api"
           cat > "$context/Dockerfile" <<'DOCKERFILE'
           FROM ghcr.io/saladtechnologies/comfyui-api@sha256:5cc4f79f21e61b9da46e94286c29ef8185520117452027a6f5574cf6125c0ff8
           ENV WORKFLOW_DIR=/workflows
@@ -77,6 +96,80 @@ jobs:
               assert m.version(package) == version, (package, m.version(package))
               print(package, version)
           '
+
+      - name: Smoke-test the final image on CPU
+        run: |
+          set -euo pipefail
+          trap 'docker logs runtime-smoke || true; docker rm -f runtime-smoke >/dev/null || true' EXIT
+          docker run --detach --name runtime-smoke --network=none --memory=6g --cpus=2 \
+            --tmpfs /smoke-cache:rw,size=64m \
+            -e CACHE_DIR=/smoke-cache \
+            -e STARTUP_CHECK_MAX_TRIES=120 \
+            -e 'CMD=python3 main.py --cpu --disable-auto-launch --disable-all-custom-nodes' \
+            "$IMAGE_REF"
+          docker exec -i runtime-smoke python3 - <<'PY'
+          import base64
+          import http.server
+          import io
+          import json
+          import os
+          from pathlib import Path
+          import threading
+          import time
+          import urllib.request
+          from PIL import Image
+
+          def request(route, payload=None, timeout=30):
+              data = None if payload is None else json.dumps(payload).encode()
+              req = urllib.request.Request("http://127.0.0.1:3000" + route, data=data,
+                                           headers={"Content-Type": "application/json"})
+              with urllib.request.urlopen(req, timeout=timeout) as response:
+                  assert response.status == 200
+                  return json.load(response)
+
+          deadline = time.monotonic() + 120
+          while True:
+              try:
+                  ready = request("/ready", timeout=2)
+                  break
+              except OSError:
+                  if time.monotonic() >= deadline:
+                      raise
+                  time.sleep(1)
+          assert ready == {"version": "1.19.0", "status": "ready"}, ready
+          assert request("/health") == {"version": "1.19.0", "status": "healthy"}
+
+          fixture = io.BytesIO()
+          Image.new("RGB", (64, 64), (128, 64, 32)).save(fixture, format="PNG")
+          class Handler(http.server.BaseHTTPRequestHandler):
+              def do_GET(self):
+                  assert self.path == "/input.png"
+                  self.send_response(200)
+                  self.send_header("Content-Type", "image/png")
+                  self.end_headers()
+                  self.wfile.write(fixture.getvalue())
+
+          server = http.server.ThreadingHTTPServer(("127.0.0.1", 9187), Handler)
+          threading.Thread(target=server.serve_forever, daemon=True).start()
+          input_dir = Path("/opt/ComfyUI/input")
+          assert os.stat("/smoke-cache").st_dev != input_dir.stat().st_dev
+          existing = set(input_dir.rglob("*"))
+          prompt = {
+              "1": {"class_type": "LoadImage", "inputs": {"image": "http://127.0.0.1:9187/input.png"}},
+              "2": {"class_type": "SaveImage", "inputs": {"images": ["1", 0], "filename_prefix": "ci-runtime-smoke"}},
+          }
+          for name in ("http-input-cross-filesystem", "http-input-cache-reuse"):
+              result = request("/prompt", {"id": name, "prompt": prompt}, timeout=120)
+              assert len(result.get("images", [])) == 1, result
+              output = base64.b64decode(result["images"][0], validate=True)
+              with Image.open(io.BytesIO(output)) as image:
+                  assert image.format == "PNG" and image.size == (64, 64)
+              print(name + ": passed", flush=True)
+          staged = [path for path in input_dir.rglob("*") if path not in existing and path.is_file()]
+          assert staged and all(not path.is_symlink() for path in staged), staged
+          server.shutdown()
+          print("API 1.19.0 health, readiness, HTTP input staging and cache reuse passed on CPU.", flush=True)
+          PY
 
       - name: Push only the versioned runtime tag
         env:
