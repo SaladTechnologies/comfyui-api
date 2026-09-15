@@ -1,0 +1,75 @@
+name: Publish versioned runtime 1.19.0
+
+on:
+  push:
+    branches: [publish/runtime-1.19.0]
+    paths: [.github/workflows/publish-runtime-1.19.0.yml]
+
+jobs:
+  publish:
+    if: github.repository == 'SaladTechnologies/comfyui-api'
+    runs-on: ubuntu-24.04-2core-8gb-75gb
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE_REF: ghcr.io/saladtechnologies/comfyui-api:comfy0.35.0-api1.19.0-torch2.13.0-cuda13.0-runtime
+      BINARY_SHA256: 7bda8a25368f2aebcc97b7ab18565301f321232d9129e8ada427c12926fcf47d
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Download and verify the tested release binary
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          context="$RUNNER_TEMP/comfyui-runtime"
+          mkdir -p "$context"
+          gh api --hostname github.com -H 'Accept: application/octet-stream' \
+            repos/SaladTechnologies/comfyui-api/releases/assets/565886193 > "$context/comfyui-api"
+          printf '%s  %s\n' "$BINARY_SHA256" "$context/comfyui-api" | sha256sum --check
+          cat > "$context/Dockerfile" <<'DOCKERFILE'
+          FROM ghcr.io/saladtechnologies/comfyui-api@sha256:5cc4f79f21e61b9da46e94286c29ef8185520117452027a6f5574cf6125c0ff8
+          ENV WORKFLOW_DIR=/workflows
+          ENV STARTUP_CHECK_MAX_TRIES=30
+          COPY comfyui-api .
+          RUN chmod +x comfyui-api
+          CMD ["./comfyui-api"]
+          DOCKERFILE
+
+      - name: Build the versioned runtime image
+        run: |
+          set -euo pipefail
+          docker build --network=none \
+            --label org.opencontainers.image.source=https://github.com/SaladTechnologies/comfyui-api \
+            --label org.opencontainers.image.revision=0d20f06b4e10260f202986461b466b9c69b3e5a9 \
+            --label org.opencontainers.image.version=1.19.0 \
+            --label org.opencontainers.image.base.digest=sha256:5cc4f79f21e61b9da46e94286c29ef8185520117452027a6f5574cf6125c0ff8 \
+            --tag "$IMAGE_REF" "$RUNNER_TEMP/comfyui-runtime"
+
+      - name: Verify image contents
+        run: |
+          set -euo pipefail
+          docker run --rm --network=none --memory=2g --entrypoint sha256sum \
+            "$IMAGE_REF" /opt/ComfyUI/comfyui-api | \
+            awk -v expected="$BINARY_SHA256" '{print; if ($1 != expected) exit 1}'
+          docker run --rm --network=none --memory=2g --entrypoint python3 "$IMAGE_REF" -c '
+          import importlib.metadata as m
+          import comfyui_version
+          assert comfyui_version.__version__ == "0.35.0"
+          for package, version in {"torch": "2.13.0+cu130", "torchvision": "0.28.0+cu130", "torchaudio": "2.11.0+cu130"}.items():
+              assert m.version(package) == version, (package, m.version(package))
+              print(package, version)
+          '
+
+      - name: Push only the versioned runtime tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          docker push "$IMAGE_REF"
+          docker buildx imagetools inspect "$IMAGE_REF"
