@@ -1,0 +1,78 @@
+name: Promote tested API 1.19.1 runtime to latest
+
+on:
+  push:
+    branches: [publish/latest-1.19.1]
+    paths: [.github/workflows/promote-runtime-1.19.1-latest.yml]
+
+jobs:
+  promote:
+    if: github.repository == 'SaladTechnologies/comfyui-api'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE: ghcr.io/saladtechnologies/comfyui-api
+      VERSIONED_TAG: comfy0.35.0-api1.19.1-torch2.13.0-cuda13.0-runtime
+      SOURCE_DIGEST: sha256:38dc1b6bd1b2adde1afeec689e42128a62daf429cce3ca5bcdcd6ae771c4bc12
+      PREVIOUS_LATEST: sha256:597aa2699776bbc4c24da5b1319fed9908b21a8aa0c1b807d9e1f8a0f6ce0064
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Verify the tested source and current tags
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/verify-promotion.py" <<'PY'
+          import json
+          import os
+          import sys
+          import urllib.parse
+          import urllib.request
+
+          repo = "saladtechnologies/comfyui-api"
+          query = urllib.parse.urlencode({"service": "ghcr.io", "scope": "repository:" + repo + ":pull"})
+          with urllib.request.urlopen("https://ghcr.io/token?" + query, timeout=30) as response:
+              token = json.load(response)["token"]
+          headers = {
+              "Authorization": "Bearer " + token,
+              "Accept": ",".join([
+                  "application/vnd.docker.distribution.manifest.v2+json",
+                  "application/vnd.oci.image.manifest.v1+json",
+                  "application/vnd.docker.distribution.manifest.list.v2+json",
+                  "application/vnd.oci.image.index.v1+json",
+              ]),
+          }
+          expected = {
+              os.environ["VERSIONED_TAG"]: os.environ["SOURCE_DIGEST"],
+              "latest": sys.argv[1],
+              "base": "sha256:5cc4f79f21e61b9da46e94286c29ef8185520117452027a6f5574cf6125c0ff8",
+              "comfy0.35.0-api1.19.0-torch2.13.0-cuda13.0-runtime": "sha256:942a89a79b8e34026e0c52a79ddd6a97e1626a5dabc0b147319c06b3bd0f96a0",
+          }
+          for tag, wanted in expected.items():
+              request = urllib.request.Request("https://ghcr.io/v2/" + repo + "/manifests/" + tag, headers=headers)
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  actual = response.headers["Docker-Content-Digest"]
+              assert actual == wanted, (tag, actual, wanted)
+              print(tag + ": " + actual, flush=True)
+          PY
+          python3 "$RUNNER_TEMP/verify-promotion.py" "$PREVIOUS_LATEST"
+
+      - name: Promote the existing tested image to latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DOCKER_CONFIG: ${{ runner.temp }}/ghcr-promotion-auth
+        run: |
+          set -euo pipefail
+          mkdir -p "$DOCKER_CONFIG"
+          trap 'docker logout ghcr.io >/dev/null 2>&1 || true; rm -rf -- "$DOCKER_CONFIG"' EXIT
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          docker buildx imagetools create --prefer-index=false \
+            --tag "$IMAGE:latest" "$IMAGE@$SOURCE_DIGEST"
+
+      - name: Verify latest matches the tested digest
+        run: |
+          set -euo pipefail
+          python3 "$RUNNER_TEMP/verify-promotion.py" "$SOURCE_DIGEST"
