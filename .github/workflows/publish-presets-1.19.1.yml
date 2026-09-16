@@ -1,0 +1,144 @@
+name: Publish model presets for API 1.19.1
+
+on:
+  push:
+    branches: [publish/presets-1.19.1]
+    paths:
+      - .github/workflows/publish-presets-1.19.1.yml
+      - ci/presets-1.19.1/**
+
+concurrency:
+  group: publish-comfyui-presets-1.19.1
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'SaladTechnologies/comfyui-api'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: true
+      max-parallel: 1
+      matrix:
+        preset: [dreamshaper8, sdxl, flux1schnell, flux1dev, sd35medium]
+    env:
+      PRESET: ${{ matrix.preset }}
+      IMAGE_PREFIX: ghcr.io/saladtechnologies/comfyui-api:comfy0.35.0-api1.19.1-torch2.13.0-cuda13.0
+      BASE_REF: ghcr.io/saladtechnologies/comfyui-api@sha256:38dc1b6bd1b2adde1afeec689e42128a62daf429cce3ca5bcdcd6ae771c4bc12
+      RECIPE_REVISION: 3ebe31f8e867b40bcd959431e0328d3df19883d3
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Free unused SDK space on the disposable runner
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_ACTIONS" == true && "$RUNNER_ENVIRONMENT" == github-hosted ]]
+          docker_root=$(docker info --format '{{.DockerRootDir}}')
+          df -h "$docker_root"
+          available_kib=$(df -Pk "$docker_root" | awk 'NR == 2 {print $4}')
+          if (( available_kib < 32 * 1024 * 1024 )); then
+            sudo rm -rf -- /usr/local/lib/android /usr/share/dotnet /usr/local/.ghcup \
+              /opt/ghc /usr/share/miniconda /opt/hostedtoolcache
+          fi
+          available_kib=$(df -Pk "$docker_root" | awk 'NR == 2 {print $4}')
+          (( available_kib >= 28 * 1024 * 1024 ))
+          df -h "$docker_root"
+
+      - name: Check out publication checks
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Check out the existing preset definitions
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: SaladTechnologies/salad-recipes
+          ref: 3ebe31f8e867b40bcd959431e0328d3df19883d3
+          path: recipe-source
+          sparse-checkout: recipes/comfyui
+          persist-credentials: false
+
+      - name: Verify the base and confirm the destination is unused
+        run: python3 ci/presets-1.19.1/registry_check.py before "$PRESET"
+
+      - name: Build one preset from the tested runtime digest
+        working-directory: recipe-source/recipes/comfyui
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          dockerfile = Path("Dockerfile." + os.environ["PRESET"])
+          lines = dockerfile.read_text().splitlines()
+          assert sum(line.startswith("FROM ") for line in lines) == 1
+          lines = ["FROM " + os.environ["BASE_REF"] if line.startswith("FROM ") else line for line in lines]
+          dockerfile.write_text("\n".join(lines) + "\n")
+          PY
+          docker build --network=none \
+            --build-arg comfy_version=0.35.0 --build-arg api_version=1.19.1 \
+            --build-arg torch_version=2.13.0 --build-arg cuda_version=13.0 \
+            --label org.opencontainers.image.source=https://github.com/SaladTechnologies/comfyui-api \
+            --label org.opencontainers.image.revision="$GITHUB_SHA" \
+            --label org.opencontainers.image.version=1.19.1 \
+            --label org.opencontainers.image.base.digest="${BASE_REF##*@}" \
+            --label com.salad.recipe.source=https://github.com/SaladTechnologies/salad-recipes \
+            --label com.salad.recipe.revision="$RECIPE_REVISION" \
+            --label com.salad.recipe.preset="$PRESET" \
+            --tag "$IMAGE_PREFIX-$PRESET" --file "Dockerfile.$PRESET" .
+
+      - name: Verify versions, model manifests, warmups, and workflow files
+        run: |
+          set -euo pipefail
+          docker run --rm --network=none --memory=2g --entrypoint python3 \
+            -v "$GITHUB_WORKSPACE/ci/presets-1.19.1:/verification:ro" \
+            -v "$GITHUB_WORKSPACE/recipe-source/recipes/comfyui:/recipe-source:ro" \
+            "$IMAGE_PREFIX-$PRESET" /verification/check_contents.py "$PRESET"
+
+      - name: Smoke-test API startup, model listing, custom routes, and image processing on CPU
+        run: |
+          set -euo pipefail
+          docker run --detach --name preset-smoke --network=none --memory=6g --cpus=2 \
+            --tmpfs /smoke-cache:rw,size=64m \
+            -e CACHE_DIR=/smoke-cache -e STARTUP_CHECK_MAX_TRIES=120 \
+            -e 'MANIFEST_JSON={"models":{}}' -e WARMUP_PROMPT_FILE= \
+            -e 'CMD=python3 main.py --cpu --disable-auto-launch --disable-all-custom-nodes' \
+            -v "$GITHUB_WORKSPACE/ci/presets-1.19.1:/verification:ro" \
+            "$IMAGE_PREFIX-$PRESET"
+          docker exec preset-smoke python3 /verification/smoke.py "$PRESET"
+          docker logs preset-smoke
+          if docker logs preset-smoke 2>&1 | grep -F 'Failed to evaluate workflow file'; then
+            exit 1
+          fi
+          docker rm -f preset-smoke
+
+      - name: Push and verify only this versioned preset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 ci/presets-1.19.1/registry_check.py before "$PRESET"
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          docker push "$IMAGE_PREFIX-$PRESET"
+          python3 ci/presets-1.19.1/registry_check.py after "$PRESET"
+
+      - name: Clean up this preset before the next job
+        if: always()
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_ACTIONS" == true && "$RUNNER_ENVIRONMENT" == github-hosted ]]
+          if docker container inspect preset-smoke >/dev/null 2>&1; then
+            docker logs preset-smoke || true
+            docker rm -f preset-smoke
+          fi
+          if docker image inspect "$IMAGE_PREFIX-$PRESET" >/dev/null 2>&1; then
+            docker image rm "$IMAGE_PREFIX-$PRESET"
+          fi
+          docker builder prune --all --force
+          docker image prune --all --force
+          docker logout ghcr.io
+          docker system df
+          df -h "$(docker info --format '{{.DockerRootDir}}')"
