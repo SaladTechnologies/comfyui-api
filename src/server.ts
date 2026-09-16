@@ -50,7 +50,7 @@ import { getProxyDispatcher } from "./proxy-dispatcher";
 
 const { apiVersion: version } = config;
 
-const server = Fastify({
+export const server = Fastify({
   bodyLimit: config.maxBodySize,
   logger: { level: config.logLevel },
   connectionTimeout: 0,
@@ -99,12 +99,8 @@ const WorkflowResponseSchema = PromptResponseSchema.extend({
   input: z.record(z.any()),
 });
 
-const modelSchema: any = {};
-for (const modelType in config.models) {
-  modelSchema[modelType] = z.string().array();
-}
-
-const ModelResponseSchema = z.object(modelSchema);
+// ComfyUI's model categories can differ from the directories found at startup.
+const ModelResponseSchema = z.record(z.array(z.string()));
 type ModelResponse = z.infer<typeof ModelResponseSchema>;
 
 let warm = false;
@@ -205,7 +201,7 @@ server.after(() => {
       schema: {
         summary: "List Models",
         description:
-          "List all available models. This is from the contents of the models directory.",
+          "List available models by the categories reported by ComfyUI.",
         response: {
           200: ModelResponseSchema,
         },
