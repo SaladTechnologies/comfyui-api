@@ -1,0 +1,156 @@
+name: Publish API 1.19.2 security test image
+
+on:
+  push:
+    branches: [publish/security-test-1.19.2]
+
+concurrency:
+  group: publish-comfyui-security-test-1.19.2
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'SaladTechnologies/comfyui-api'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Free unused SDK space on the disposable runner
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_ACTIONS" == true && "$RUNNER_ENVIRONMENT" == github-hosted ]]
+          docker_root=$(docker info --format '{{.DockerRootDir}}')
+          available_kib=$(df -Pk "$docker_root" | awk 'NR == 2 {print $4}')
+          if (( available_kib < 32 * 1024 * 1024 )); then
+            sudo rm -rf -- /usr/local/lib/android /usr/share/dotnet /usr/local/.ghcup \
+              /opt/ghc /usr/share/miniconda /opt/hostedtoolcache
+          fi
+          available_kib=$(df -Pk "$docker_root" | awk 'NR == 2 {print $4}')
+          (( available_kib >= 28 * 1024 * 1024 ))
+          df -h "$docker_root"
+          printf 'ARTIFACT_DIR=%s\n' "$RUNNER_TEMP/comfyui-security-image" >> "$GITHUB_ENV"
+          printf 'WORKFLOW_DIR=%s\n' "$RUNNER_TEMP/test-workflows" >> "$GITHUB_ENV"
+
+      - name: Check out the security test branch
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Use Node.js 20 for the packaged runtime
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "20.20.0"
+
+      - name: Prepare the test tag and verify the reviewed source snapshot
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          root = Path.cwd()
+          output = Path(os.environ["ARTIFACT_DIR"])
+          (output / "context").mkdir(parents=True)
+          files = sorted([p for p in (root / "src").rglob("*") if p.is_file()] +
+                         [root / "package.json", root / "package-lock.json", root / "tsconfig.json"])
+          digest = hashlib.sha256()
+          for p in files:
+              digest.update(p.relative_to(root).as_posix().encode() + b"\0" + p.read_bytes() + b"\0")
+          snapshot = digest.hexdigest()
+          assert snapshot == "c57ddf4c2fffe5367a90ca7e066c77a76cd98af72cde97422413203dbac3c963", snapshot
+          assert json.loads((root / "package.json").read_text())["version"] == "1.19.2"
+          revision = os.environ["GITHUB_SHA"]
+          image = "ghcr.io/saladtechnologies/comfyui-api:comfy0.35.0-api1.19.2-torch2.13.0-cuda13.0-runtime-securitytest-" + revision[:12]
+          metadata = {"image": image, "source_revision": revision, "source_snapshot_sha256": snapshot}
+          (output / "build-metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
+          with open(os.environ["GITHUB_ENV"], "a") as env:
+              env.write("IMAGE_REF=" + image + "\n")
+              env.write("SOURCE_SNAPSHOT_SHA256=" + snapshot + "\n")
+          print(json.dumps(metadata), flush=True)
+          PY
+          python3 ci/security-test-1.19.2/registry_check.py before
+
+      - name: Install locked dependencies including the existing Sharp WASM backend
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm install --cpu=wasm32 --ignore-scripts --no-save --no-audit --no-fund sharp@0.34.5
+          git diff --exit-code -- package.json package-lock.json
+          node -e 'require("@img/sharp-wasm32/sharp.node"); require("ipaddr.js")'
+
+      - name: Compile and run the unit tests
+        run: |
+          set -euo pipefail
+          npm run build
+          npm run unit-test -- --maxWorkers=1 --minWorkers=1 --testTimeout=15000 --hookTimeout=20000
+
+      - name: Package the tested API binary
+        run: |
+          set -euo pipefail
+          ./node_modules/.bin/pkg --options stack-size=65500 --output "$ARTIFACT_DIR/context/comfyui-api" .
+          cp ci/security-test-1.19.2/Dockerfile "$ARTIFACT_DIR/context/Dockerfile"
+          binary_sha256=$(sha256sum "$ARTIFACT_DIR/context/comfyui-api" | awk '{print $1}')
+          printf 'BINARY_SHA256=%s\n' "$binary_sha256" >> "$GITHUB_ENV"
+
+      - name: Build only the runtime test image
+        run: |
+          set -euo pipefail
+          docker build --network=none \
+            --label org.opencontainers.image.source=https://github.com/SaladTechnologies/comfyui-api \
+            --label org.opencontainers.image.revision="$GITHUB_SHA" \
+            --label org.opencontainers.image.version=1.19.2-securitytest \
+            --label org.opencontainers.image.base.digest=sha256:5cc4f79f21e61b9da46e94286c29ef8185520117452027a6f5574cf6125c0ff8 \
+            --label com.salad.api.binary-sha256="$BINARY_SHA256" \
+            --label com.salad.api.source-snapshot-sha256="$SOURCE_SNAPSHOT_SHA256" \
+            --tag "$IMAGE_REF" "$ARTIFACT_DIR/context"
+          python3 - <<'PY'
+          import json, os, subprocess
+          from pathlib import Path
+          file = Path(os.environ["ARTIFACT_DIR"]) / "build-metadata.json"
+          metadata = json.loads(file.read_text())
+          info = json.loads(subprocess.check_output(["docker", "image", "inspect", metadata["image"]]))[0]
+          metadata.update(local_image_id=info["Id"], binary_sha256=os.environ["BINARY_SHA256"])
+          file.write_text(json.dumps(metadata, indent=2) + "\n")
+          print(json.dumps(metadata), flush=True)
+          PY
+
+      - name: Test the container's CPU image processing and security boundaries
+        run: python3 ci/security-test-1.19.2/run_smoke.py isolated
+
+      - name: Test default settings and tiny public HTTP and Hugging Face downloads
+        run: python3 ci/security-test-1.19.2/run_smoke.py public
+
+      - name: Publish only the tested image tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 ci/security-test-1.19.2/registry_check.py before
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          docker push "$IMAGE_REF"
+
+      - name: Verify the public image and unchanged release tags
+        run: python3 ci/security-test-1.19.2/registry_check.py after
+
+      - name: Clean up the disposable runner
+        if: always()
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_ACTIONS" == true && "$RUNNER_ENVIRONMENT" == github-hosted ]]
+          while IFS= read -r container; do
+            [[ -n "$container" ]] || continue
+            docker logs "$container" || true
+            docker rm -f "$container"
+          done < <(docker ps -aq --filter name=comfy-security-1192-)
+          if [[ -n "${IMAGE_REF:-}" ]] && docker image inspect "$IMAGE_REF" >/dev/null 2>&1; then
+            docker image rm "$IMAGE_REF"
+          fi
+          docker builder prune --all --force
+          docker image prune --all --force
+          docker logout ghcr.io
+          docker system df
+          df -h "$(docker info --format '{{.DockerRootDir}}')"
