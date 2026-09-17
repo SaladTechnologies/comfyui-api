@@ -1,3 +1,5 @@
+import { Readable } from "node:stream";
+import { requireNewDownload, saveDownload } from "../download-path";
 import path from "path";
 import fsPromises from "fs/promises";
 import { StorageProvider, Upload } from "../types";
@@ -155,24 +157,14 @@ export class AzureBlobStorageProvider implements StorageProvider {
     const containerName = pathParts[0];
     const blobName = pathParts.slice(1).join("/");
 
+    const filename = filenameOverride ?? path.basename(blobName);
+    await requireNewDownload(outputDir, filename);
     const containerClient = this.client.getContainerClient(containerName);
     const blobClient = containerClient.getBlobClient(blobName);
 
     const downloadResponse = await blobClient.download();
-    if (!downloadResponse.readableStreamBody) {
-      throw new Error("Failed to get readable stream from blob download");
-    }
-    const downloadedFilePath = path.join(
-      outputDir,
-      filenameOverride || path.basename(blobName)
-    );
-    const writableStream = fs.createWriteStream(downloadedFilePath);
-    downloadResponse.readableStreamBody.pipe(writableStream);
-    await new Promise((resolve, reject) => {
-      writableStream.on("finish", () => resolve);
-      writableStream.on("error", reject);
-    });
-    return downloadedFilePath;
+    if (!downloadResponse.readableStreamBody) throw new Error("Failed to get blob download stream");
+    return saveDownload(outputDir, filename, downloadResponse.readableStreamBody as Readable);
   }
 }
 

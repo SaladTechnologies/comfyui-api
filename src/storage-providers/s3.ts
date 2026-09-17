@@ -8,7 +8,8 @@ import {
   HeadObjectCommand,
   S3ClientConfig,
 } from "@aws-sdk/client-s3";
-import { NodeHttpHandler } from "@smithy/node-http-handler";
+import { SafeS3Handler } from "../safe-s3-handler";
+import { requireNewDownload, saveDownload } from "../download-path";
 import config from "../config";
 import { FastifyBaseLogger } from "fastify";
 import { StorageProvider, Upload, DownloadOptions, DownloadAuth } from "../types";
@@ -33,10 +34,7 @@ export class S3StorageProvider implements StorageProvider {
     }
     this.s3 = new S3Client({
       region: config.awsRegion,
-      requestHandler: new NodeHttpHandler({
-        connectionTimeout: 10000, // 10 seconds
-        requestTimeout: 0, // No timeout
-      }),
+      requestHandler: new SafeS3Handler(),
       forcePathStyle: true, // Required for LocalStack or custom S3 endpoints
     });
   }
@@ -104,31 +102,14 @@ export class S3StorageProvider implements StorageProvider {
     options?: DownloadOptions
   ): Promise<string> {
     const { bucket, key } = parseS3Url(s3Url);
+    const filename = filenameOverride ?? path.basename(key);
+    await requireNewDownload(outputDir, filename);
     const { client: s3Client, isPerRequest } = this.getS3ClientWithInfo(options?.auth);
-
     try {
-      const outputPath = path.join(
-        outputDir,
-        filenameOverride || path.basename(key)
-      );
+      const response = await s3Client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+      if (!response.Body) throw new Error("Response body is null");
+      return await saveDownload(outputDir, filename, response.Body as Readable);
 
-      const command = new GetObjectCommand({ Bucket: bucket, Key: key });
-      const response = await s3Client.send(command);
-
-      if (!response.Body) {
-        throw new Error("Response body is null");
-      }
-
-      const fileStream = fs.createWriteStream(outputPath);
-      await new Promise<void>((resolve, reject) => {
-        (response.Body as Readable)
-          .pipe(fileStream)
-          .on("finish", resolve)
-          .on("error", reject);
-      });
-
-      this.log.info(`File downloaded from S3 and saved to ${outputPath}`);
-      return outputPath;
     } catch (error: any) {
       console.error(error);
       this.log.error("Error downloading file from S3:", error);
@@ -160,10 +141,7 @@ export class S3StorageProvider implements StorageProvider {
         // Include session token for temporary credentials (STS)
         ...(auth.session_token && { sessionToken: auth.session_token }),
       },
-      requestHandler: new NodeHttpHandler({
-        connectionTimeout: 10000,
-        requestTimeout: 0,
-      }),
+      requestHandler: new SafeS3Handler(),
       forcePathStyle: true,
     };
 

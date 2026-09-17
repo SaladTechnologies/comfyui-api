@@ -1,3 +1,4 @@
+import { isSafeDownloadFilename } from "./download-path";
 import { z } from "zod";
 import { randomUUID } from "crypto";
 import { RawData } from "ws";
@@ -590,7 +591,7 @@ export interface StorageProvider {
 export const DownloadRequestSchema = z.object({
   url: z.string().url(),
   model_type: z.string(),
-  filename: z.string().optional(),
+  filename: z.string().refine(isSafeDownloadFilename, "Expected a single safe file name").optional(),
   wait: z.boolean().optional().default(false),
   auth: DownloadAuthSchema.optional().describe("Optional authentication for accessing protected resources"),
 });

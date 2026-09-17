@@ -5,9 +5,10 @@ import fs from "fs";
 import { Readable } from "stream";
 import config from "../config";
 import { z } from "zod";
-import { fetch } from "undici";
 import type { Response as UndiciResponse } from "undici";
-import { getProxyDispatcher } from "../proxy-dispatcher";
+import { requireNewDownload, saveDownload } from "../download-path";
+import { canonicalHttpUrl, storagePolicy } from "../storage-policy";
+import { withHttpResponse } from "../safe-http";
 
 export class HTTPStorageProvider implements StorageProvider {
   log: FastifyBaseLogger;
@@ -50,42 +51,15 @@ export class HTTPStorageProvider implements StorageProvider {
    */
   async validateAuth(url: string, options: DownloadOptions): Promise<void> {
     const requestUrl = applyQueryAuth(url, options.auth);
-    const headers = getAuthHeaders(requestUrl, options.auth);
-
-    this.log.debug({ url }, "Validating auth with HEAD request");
-
-    let response = await fetch(requestUrl, {
-      method: "HEAD",
-      headers,
-      dispatcher: getProxyDispatcher(),
-    });
-
-    // If HEAD is not supported, try GET with Range header to minimize data transfer
-    if (response.status === 405) {
-      this.log.debug({ url }, "HEAD not supported, falling back to GET with Range");
-      response = await fetch(requestUrl, {
-        method: "GET",
-        headers: {
-          ...headers,
-          "Range": "bytes=0-0",
-        },
-        dispatcher: getProxyDispatcher(),
-      });
-      // 206 Partial Content is success for range requests
-      if (response.status === 206) {
-        this.log.debug({ url }, "Auth validation successful (via Range request)");
-        return;
-      }
-    }
-
-    if (!response.ok) {
-      if (response.status === 401 || response.status === 403) {
-        throw new Error(`Authentication failed: ${response.status} ${response.statusText}`);
-      }
-      throw new Error(`Auth validation failed: ${response.status} ${response.statusText}`);
-    }
-
-    this.log.debug({ url }, "Auth validation successful");
+    const request = {
+      credentialHeaders: getAuthHeaders(requestUrl, options.auth),
+      credentialQueryParameter: options.auth?.type === "query" ? options.auth.query_param : undefined,
+    };
+    const status = await withHttpResponse(requestUrl, { ...request, method: "HEAD" }, async (response) => response.status);
+    const finalStatus = status === 405
+      ? await withHttpResponse(requestUrl, { ...request, headers: { Range: "bytes=0-0" } }, async (response) => response.status)
+      : status;
+    if (finalStatus < 200 || finalStatus >= 300) throw new Error(`Authentication validation failed (${finalStatus})`);
   }
 
   async downloadFile(
@@ -94,54 +68,21 @@ export class HTTPStorageProvider implements StorageProvider {
     filenameOverride?: string,
     options?: DownloadOptions
   ): Promise<string> {
-    try {
-      // Build headers with auth - per-request auth takes priority over URL-based auth
-      const requestUrl = applyQueryAuth(url, options?.auth);
-      const headers = getAuthHeaders(requestUrl, options?.auth);
-      const response = await fetch(requestUrl, { headers, dispatcher: getProxyDispatcher() });
-
-      if (!response.ok) {
-        throw new Error(`Error downloading file: ${response.statusText}`);
-      }
-
-      let outputPath = path.join(
-        outputDir,
-        filenameOverride || path.basename(new URL(url).pathname)
-      );
-
-      if (path.extname(outputPath) === "") {
-        const ext = getIntendedFileExtensionFromResponse(response) || "";
-        if (ext) {
-          outputPath = outputPath + ext;
-        }
-      }
-
-      // Get the response as a readable stream
-      const body = response.body;
-      if (!body) {
-        throw new Error("Response body is null");
-      }
-
-      this.log.info(`Downloading file to ${outputPath}`);
-
-      // Create a writable stream to save the file
-      const fileStream = fs.createWriteStream(outputPath);
-
-      // Pipe the response to the file
-      await new Promise<void>((resolve, reject) => {
-        Readable.fromWeb(body as any)
-          .pipe(fileStream)
-          .on("finish", () => resolve())
-          .on("error", reject);
-      });
-
-      this.log.info(`File downloaded and saved to ${outputPath}`);
-      return outputPath;
-    } catch (error: any) {
-      this.log.error("Error downloading file:", error);
-      throw error;
-    }
+    let filename = filenameOverride ?? path.basename(new URL(url).pathname);
+    // Validate before resolving DNS, connecting, or opening a file.
+    await requireNewDownload(outputDir, filename);
+    const requestUrl = applyQueryAuth(url, options?.auth);
+    return withHttpResponse(requestUrl, {
+      credentialHeaders: getAuthHeaders(requestUrl, options?.auth),
+      credentialQueryParameter: options?.auth?.type === "query" ? options.auth.query_param : undefined,
+    }, async (response) => {
+      if (!response.ok) throw new Error(`Download failed (${response.status})`);
+      if (!response.body) throw new Error("Response body is null");
+      if (path.extname(filename) === "") filename += getIntendedFileExtensionFromResponse(response) || "";
+      return saveDownload(outputDir, filename, Readable.fromWeb(response.body as any));
+    });
   }
+
 }
 
 class HTTPUpload implements Upload {
@@ -171,11 +112,9 @@ class HTTPUpload implements Upload {
     }
 
     this.abortController = new AbortController();
-
+    let body: Buffer | fs.ReadStream | undefined;
     try {
       this.log.info({ url: this.url }, "Starting upload");
-
-      let body: Buffer | fs.ReadStream;
 
       if (Buffer.isBuffer(this.fileOrPath)) {
         body = this.fileOrPath;
@@ -183,26 +122,16 @@ class HTTPUpload implements Upload {
         body = fs.createReadStream(this.fileOrPath);
       }
 
-      // Parse URL and build headers with auth from URL-embedded credentials
-      const parsedUrl = new URL(this.url);
-      const headers: Record<string, string> = {
-        "Content-Type": this.contentType,
-        ...getAuthHeaders(this.url),
-      };
-
-      const response = await fetch(parsedUrl.toString(), {
+      await withHttpResponse(this.url, {
         method: "PUT",
-        headers,
+        headers: { "Content-Type": this.contentType },
+        credentialHeaders: getAuthHeaders(this.url),
         body: body as any,
+        duplex: "half",
         signal: this.abortController.signal,
-        dispatcher: getProxyDispatcher(),
+      }, async (response) => {
+        if (!response.ok) throw new Error(`Upload failed (${response.status})`);
       });
-
-      if (!response.ok) {
-        throw new Error(
-          `Upload failed with status ${response.status}: ${response.statusText}`
-        );
-      }
 
       this.state = "completed";
       this.log.info({ url: this.url }, "Upload completed successfully");
@@ -216,6 +145,7 @@ class HTTPUpload implements Upload {
         throw error;
       }
     } finally {
+      if (body instanceof fs.ReadStream) body.destroy();
       this.abortController = null;
     }
   }
@@ -315,7 +245,7 @@ function getIntendedFileExtensionFromResponse(
     if (match != null && match[1]) {
       const filename = match[1].replace(/['"]/g, "");
       const ext = path.extname(filename);
-      if (ext) return ext;
+      if (/^\.[a-zA-Z0-9]{1,14}$/.test(ext)) return ext;
     }
   }
 
@@ -325,7 +255,7 @@ function getIntendedFileExtensionFromResponse(
     const pathname = url.pathname;
     const ext = path.extname(pathname);
     // Only use if it looks like a real extension (not empty and reasonable length)
-    if (ext && ext.length <= 15) return ext; // Increased to handle .safetensors
+    if (/^\.[a-zA-Z0-9]{1,14}$/.test(ext)) return ext; // Increased to handle .safetensors
   } catch {
     // Invalid URL, continue to next method
   }
@@ -356,13 +286,13 @@ function applyQueryAuth(url: string, auth?: DownloadAuth): string {
 
 /**
  * Build authentication headers for HTTP requests.
- * Priority: per-request auth > URL-embedded auth > env config auth
+ * Per-request auth takes precedence over origin-bound environment credentials.
  *
  * When per-request auth is provided, URL-embedded credentials are NOT used,
  * even if they exist. This prevents credential mixing and ensures explicit
  * auth takes full precedence.
  */
-function getAuthHeaders(url: string, auth?: DownloadAuth): Record<string, string> {
+export function getAuthHeaders(url: string, auth?: DownloadAuth): Record<string, string> {
   const headers: Record<string, string> = {};
 
   // If per-request auth is provided, use it exclusively (no fallback to URL credentials)
@@ -377,6 +307,9 @@ function getAuthHeaders(url: string, auth?: DownloadAuth): Record<string, string
         return headers;
       }
       case "header":
+        if (/^(host|connection|content-length|transfer-encoding|proxy-.*|upgrade|trailer|te)$/i.test(auth.header_name)) {
+          throw new Error("Authentication header name is not allowed");
+        }
         headers[auth.header_name] = auth.header_value;
         return headers;
       case "query":
@@ -390,19 +323,19 @@ function getAuthHeaders(url: string, auth?: DownloadAuth): Record<string, string
     }
   }
 
-  // No per-request auth provided - fall back to URL-embedded credentials
-  const parsedUrl = new URL(url);
-  if (parsedUrl.username || parsedUrl.password) {
-    const credentials = `${parsedUrl.username}:${parsedUrl.password}`;
-    headers["Authorization"] = `Basic ${Buffer.from(credentials).toString("base64")}`;
-    return headers;
+  // Preserve URL basic auth, but pass the credential through the same redirect
+  // scoping as explicit request auth. The transport removes URL userinfo.
+  const parsed = new URL(url);
+  if (parsed.username || parsed.password) {
+    const credentials = `${decodeURIComponent(parsed.username)}:${decodeURIComponent(parsed.password)}`;
+    return { Authorization: `Basic ${Buffer.from(credentials).toString("base64")}` };
   }
 
-  // Fall back to env-configured auth headers
-  if (Object.keys(config.httpAuthHeader).length > 0) {
+  // A deployer credential is bound to exact origins, never to arbitrary URLs.
+  const origin = canonicalHttpUrl(url).origin;
+  if (storagePolicy.authOrigins.includes(origin)) {
     Object.assign(headers, config.httpAuthHeader);
   }
 
   return headers;
 }
-

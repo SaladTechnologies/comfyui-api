@@ -1,5 +1,6 @@
 import path from "path";
 import fsPromises from "fs/promises";
+import { requireNewDownload, stageDownloadedFile } from "../download-path";
 import { StorageProvider, Upload } from "../types";
 import { FastifyBaseLogger } from "fastify";
 import config from "../config";
@@ -73,28 +74,27 @@ export class HFStorageProvider implements StorageProvider {
     outputDir: string,
     filenameOverride?: string
   ): Promise<string> {
-    const outputPath = path.join(
-      outputDir,
-      filenameOverride || path.basename(new URL(url).pathname)
-    );
+    const filename = filenameOverride ?? path.basename(new URL(url).pathname);
+    await requireNewDownload(outputDir, filename);
+    const parsedUrl = new URL(url);
+    if (parsedUrl.origin !== "https://huggingface.co" || parsedUrl.username || parsedUrl.password) {
+      throw new Error("Invalid Hugging Face origin");
+    }
     const { repo, repoType, revision, filePath } = parseHfUrl(url);
+    // The caller selects a file within a Hub repository, not a local path.
+    if (!filePath || /[\x00-\x1f\x7f\\]/.test(filePath) || /^[A-Za-z]:/.test(filePath) ||
+        filePath.split("/").some((part) => !part || part === "." || part === "..")) {
+      throw new Error("Invalid Hugging Face file path");
+    }
     this.log.info(
       `Using hf CLI to download ${filePath} from ${repo} (${repoType}) at revision ${revision}`
     );
 
-    // For datasets, we need to use --repo-type dataset flag
-    const args =
-      repoType === "dataset"
-        ? [
-            "download",
-            repo,
-            filePath,
-            "--repo-type",
-            "dataset",
-            "--revision",
-            revision,
-          ]
-        : ["download", repo, filePath, "--revision", revision];
+    // Keep CLI/Xet downloads. End option parsing before any caller-selected
+    // positional value so filenames cannot become --local-dir/--cache-dir flags.
+    const args = [
+      "download", "--repo-type", repoType, `--revision=${revision}`, "--", repo, filePath,
+    ];
 
     const downloadResult = await execFilePromise("hf", args, {
       env: process.env,
@@ -114,8 +114,10 @@ export class HFStorageProvider implements StorageProvider {
 
     const downloadedPath = await fsPromises.realpath(resolvedOutput);
 
-    await execFilePromise("mv", [downloadedPath, outputPath]);
-
+    const outputPath = await stageDownloadedFile(outputDir, filename, downloadedPath);
+    // Preserve the existing move semantics without allowing mv to replace a
+    // destination created by another request or to follow a destination symlink.
+    await fsPromises.unlink(downloadedPath);
     return outputPath;
   }
 }

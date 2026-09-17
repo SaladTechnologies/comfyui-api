@@ -432,7 +432,8 @@ const config = {
   hfCLIVersion,
 
   /**
-   * If HTTP_AUTH_HEADER_NAME and HTTP_AUTH_HEADER_VALUE are set, this will be an object to merge with headers when making http requests.
+   * Optional HTTP credential. Storage requests send it only to exact origins in
+   * HTTP_AUTH_ALLOWED_ORIGINS (see storage-policy.ts), never as a global fallback.
    */
   httpAuthHeader:
     HTTP_AUTH_HEADER_NAME && HTTP_AUTH_HEADER_VALUE

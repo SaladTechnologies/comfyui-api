@@ -47,6 +47,8 @@ import { z } from "zod";
 import { WebSocket } from "ws";
 import { fetch } from "undici";
 import { getProxyDispatcher } from "./proxy-dispatcher";
+import { getAuthHeaders } from "./storage-providers/http";
+import { withHttpResponse } from "./safe-http";
 
 const { apiVersion: version } = config;
 
@@ -606,7 +608,7 @@ server.after(() => {
       const outputDir = modelConfig.dir;
       let filename: string;
       try {
-        filename = filenameOverride || path.basename(new URL(url).pathname);
+        filename = filenameOverride ?? path.basename(new URL(url).pathname);
       } catch (err: any) {
         log.error(`Invalid URL: ${err.message}`);
         return reply.code(400).send({
@@ -616,6 +618,13 @@ server.after(() => {
 
       // Build download options with auth if provided
       const downloadOptions = auth ? { auth } : undefined;
+
+      try {
+        await remoteStorageManager.prepareDownload(url, outputDir, filename, downloadOptions);
+      } catch (error) {
+        log.warn({ error }, "Download request rejected");
+        return reply.code(400).send({ error: "Download request is not allowed" });
+      }
 
       if (!wait) {
         log.info(`Starting async download of ${url} to ${outputDir}`);
@@ -666,7 +675,7 @@ server.after(() => {
       } catch (err: any) {
         log.error(`Download failed: ${err.message}`);
         return reply.code(400).send({
-          error: err.message,
+          error: "Download failed",
         });
       }
     }
@@ -871,16 +880,12 @@ async function downloadWarmupPrompt() {
       `Downloading warmup prompt from ${config.warmupPromptUrl}`
     );
     const start = Date.now();
-    const resp = await fetch(config.warmupPromptUrl, {
-      headers: config.httpAuthHeader,
-      dispatcher: getProxyDispatcher(),
+    const content = await withHttpResponse(config.warmupPromptUrl, {
+      credentialHeaders: getAuthHeaders(config.warmupPromptUrl),
+    }, async (response) => {
+      if (!response.ok) throw new Error(`Failed to download warmup prompt (${response.status})`);
+      return response.text();
     });
-    if (!resp.ok) {
-      throw new Error(
-        `Failed to download warmup prompt from ${config.warmupPromptUrl}: ${resp.status} ${resp.statusText}`
-      );
-    }
-    const content = await resp.text();
     setWarmupPrompt(content);
     const duration = (Date.now() - start) / 1000;
     server.log.info(
