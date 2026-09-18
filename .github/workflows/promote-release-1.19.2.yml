@@ -1,4 +1,4 @@
-name: Promote tested API 1.19.2 runtime and DreamShaper
+name: Promote remaining API 1.19.2 presets
 
 on:
   push:
@@ -23,10 +23,6 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       IMAGE: ghcr.io/saladtechnologies/comfyui-api
-      RUNTIME_TAG: comfy0.35.0-api1.19.2-torch2.13.0-cuda13.0-runtime
-      DREAMSHAPER_TAG: comfy0.35.0-api1.19.2-torch2.13.0-cuda13.0-dreamshaper8
-      RUNTIME_DIGEST: sha256:36aa037f13b3cac57457bfbae9d3a019dfebebb811f49c5488775a442b3daef2
-      DREAMSHAPER_DIGEST: sha256:54965e4a62515b7edc4685d8455937da85f3a62134fdc8ce8c2bc4f8b33585af
     defaults:
       run:
         shell: bash
@@ -39,7 +35,7 @@ jobs:
       - name: Verify the release source, tested images, and current tags
         run: python3 ci/release-1.19.2/verify.py before
 
-      - name: Publish stable tags, then promote the runtime to latest
+      - name: Publish stable tags for the four remaining presets
         env:
           DOCKER_CONFIG: ${{ runner.temp }}/ghcr-release-1192-auth
         run: |
@@ -49,16 +45,24 @@ jobs:
           mkdir -p "$DOCKER_CONFIG"
           trap 'docker logout ghcr.io >/dev/null 2>&1 || true; rm -rf -- "$DOCKER_CONFIG"' EXIT
           printf '%s' "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
-          docker buildx imagetools create --prefer-index=false \
-            --tag "$IMAGE:$RUNTIME_TAG" "$IMAGE@$RUNTIME_DIGEST"
-          docker buildx imagetools create --prefer-index=false \
-            --tag "$IMAGE:$DREAMSHAPER_TAG" "$IMAGE@$DREAMSHAPER_DIGEST"
-          python3 ci/release-1.19.2/verify.py versioned
-          docker buildx imagetools create --prefer-index=false \
-            --tag "$IMAGE:latest" "$IMAGE@$RUNTIME_DIGEST"
+          python3 - <<'PY'
+          import runpy
+          import subprocess
+
+          checked = runpy.run_path("ci/release-1.19.2/verify.py")
+          for preset, digest in checked["PRESETS"].items():
+              if preset == "dreamshaper8":
+                  continue
+              image = checked["IMAGE"]
+              tag = checked["PREFIX"] + preset
+              subprocess.run([
+                  "docker", "buildx", "imagetools", "create", "--prefer-index=false",
+                  "--tag", image + ":" + tag, image + "@" + digest,
+              ], check=True)
+          PY
           python3 ci/release-1.19.2/verify.py after
 
-      - name: Confirm promotion left no local images or credentials
+      - name: Confirm credential cleanup and report runner disk use
         if: always()
         run: |
           set -euo pipefail

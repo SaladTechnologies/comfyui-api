@@ -20,13 +20,27 @@ BASE = "sha256:5cc4f79f21e61b9da46e94286c29ef8185520117452027a6f5574cf6125c0ff8"
 BINARY_SHA = "0974f26f1b9b8b150fff93bdb84e6758c64f283cba37eee3a8e0178976eda0c5"
 SOURCE_SHA = "c57ddf4c2fffe5367a90ca7e066c77a76cd98af72cde97422413203dbac3c963"
 PREFIX = "comfy0.35.0-api1.19.2-torch2.13.0-cuda13.0-"
-STABLE = {PREFIX + "runtime": RUNTIME, PREFIX + "dreamshaper8": DREAMSHAPER}
+PRESETS = {
+    "dreamshaper8": DREAMSHAPER,
+    "sdxl": "sha256:6baab3bdae57bc0ba4baa18f67acb38169ce72033b87517d3281877de66bf414",
+    "flux1schnell": "sha256:b691663f1cd7a16b0e472dbac39fc19d947ab36997f7a7c91ded9d1b5dda2b99",
+    "flux1dev": "sha256:29dd6224e6a073b591cfca56e7c4d9dbdbf5b20f6fde30344128fddd3f700fab",
+    "sd35medium": "sha256:ee2bdfc6aa1070c171e8e55182bbfb23ee2cf744a42af76d38da78414f00bc19",
+}
+STABLE = {PREFIX + "runtime": RUNTIME, **{PREFIX + preset: digest for preset, digest in PRESETS.items()}}
 UNCHANGED = {
     "base": BASE,
+    "latest": RUNTIME,
     "comfy0.35.0-api1.19.1-torch2.13.0-cuda13.0-runtime": PREVIOUS_LATEST,
     "comfy0.35.0-api1.19.1-torch2.13.0-cuda13.0-dreamshaper8": "sha256:6da741c9990eb5248944370125cb33eec2210dee9ef5a275679c106baae542d5",
+    "comfy0.35.0-api1.19.1-torch2.13.0-cuda13.0-sdxl": "sha256:85cf88af707b748583298739236174e1082504d5d959579496393581da4ff223",
+    "comfy0.35.0-api1.19.1-torch2.13.0-cuda13.0-flux1schnell": "sha256:f5b583d5d65f90f8df23d405cfcf5cba011b6dafcdfe051e5fb9fab12a377f56",
+    "comfy0.35.0-api1.19.1-torch2.13.0-cuda13.0-flux1dev": "sha256:5fd64354ee9372bf280302cb58b614ca81ae5e547f2f31305b8da4316af3f6ba",
+    "comfy0.35.0-api1.19.1-torch2.13.0-cuda13.0-sd35medium": "sha256:22ee11731ede250d88fd5b5cc214dcba58d350e942dd355f9eb20553f6155c6f",
     PREFIX + "runtime-securitytest-199b1791701a": RUNTIME,
-    PREFIX + "securitytest-f38cb29a1459-dreamshaper8": DREAMSHAPER,
+    PREFIX + "runtime": RUNTIME,
+    PREFIX + "dreamshaper8": DREAMSHAPER,
+    **{PREFIX + "securitytest-f38cb29a1459-" + preset: digest for preset, digest in PRESETS.items()},
 }
 ACCEPT = ",".join((
     "application/vnd.oci.image.index.v1+json",
@@ -51,15 +65,11 @@ def get(url, headers=None):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("stage", choices=("before", "versioned", "after"))
+    parser.add_argument("stage", choices=("before", "after"))
     parser.add_argument("--check-draft", action="store_true")
     args = parser.parse_args()
     stage = args.stage
-    for key, expected in {
-        "IMAGE": IMAGE, "RUNTIME_TAG": PREFIX + "runtime",
-        "DREAMSHAPER_TAG": PREFIX + "dreamshaper8",
-        "RUNTIME_DIGEST": RUNTIME, "DREAMSHAPER_DIGEST": DREAMSHAPER,
-    }.items():
+    for key, expected in {"IMAGE": IMAGE}.items():
         if key in os.environ:
             assert os.environ[key] == expected, key
     assert github("/git/ref/heads/main")["object"]["sha"] == MAIN
@@ -116,16 +126,17 @@ def main():
         return value, labels, env
 
     runtime, runtime_labels, _ = platform(RUNTIME)
-    dreamshaper, dreamshaper_labels, dreamshaper_env = platform(DREAMSHAPER)
     assert runtime_labels["org.opencontainers.image.base.digest"] == BASE
     assert runtime_labels["org.opencontainers.image.revision"] == "199b1791701a3bee1f82b1e8d159fd11f1660aa9"
-    assert dreamshaper_labels["org.opencontainers.image.base.digest"] == RUNTIME
-    assert dreamshaper_labels["org.opencontainers.image.revision"] == "f38cb29a14593e7e93fa29c25080bd76d90c7113"
-    assert dreamshaper_labels["com.salad.recipe.preset"] == "dreamshaper8"
-    assert dreamshaper_labels["com.salad.recipe.revision"] == "3ebe31f8e867b40bcd959431e0328d3df19883d3"
-    assert dreamshaper_env["MANIFEST"] == "/app/manifest.yml"
-    assert dreamshaper_env["WARMUP_PROMPT_FILE"] == "warmup.json"
-    assert dreamshaper["layers"][:len(runtime["layers"])] == runtime["layers"]
+    for preset, digest in PRESETS.items():
+        value, labels, env = platform(digest)
+        assert labels["org.opencontainers.image.base.digest"] == RUNTIME
+        assert labels["org.opencontainers.image.revision"] == "f38cb29a14593e7e93fa29c25080bd76d90c7113"
+        assert labels["com.salad.recipe.preset"] == preset
+        assert labels["com.salad.recipe.revision"] == "3ebe31f8e867b40bcd959431e0328d3df19883d3"
+        assert env["MANIFEST"] == "/app/manifest.yml"
+        assert env["WARMUP_PROMPT_FILE"] == "warmup.json"
+        assert value["layers"][:len(runtime["layers"])] == runtime["layers"]
     for ref, expected in UNCHANGED.items():
         _, actual = manifest(ref)
         assert actual == expected, (ref, actual, expected)
@@ -135,7 +146,7 @@ def main():
         assert actual in ((None, expected) if stage == "before" else (expected,)), (tag, actual)
         destinations[tag] = actual
     _, latest = manifest("latest")
-    assert latest in ((RUNTIME,) if stage == "after" else (PREVIOUS_LATEST, RUNTIME)), latest
+    assert latest == RUNTIME, latest
     result = {"stage": stage, "verified": True, "main": MAIN,
               "release_id": RELEASE_ID, "draft_checked": release is not None,
               "release_draft": release["draft"] if release else None,
@@ -144,10 +155,11 @@ def main():
     print(json.dumps(result), flush=True)
     if stage == "after" and "GITHUB_STEP_SUMMARY" in os.environ:
         with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
-            summary.write("Promoted the exact tested images; no rebuild was performed.\n\n")
+            summary.write("Promoted the exact previously built preset images; no rebuild was performed.\n\n")
             for tag, digest in {**STABLE, "latest": RUNTIME}.items():
                 summary.write("- `" + IMAGE + ":" + tag + "` → `" + digest + "`\n")
-            summary.write("\nRelease 1.19.2 and portal recipes were not modified by this workflow.\n")
+            summary.write("\nAll presets passed CPU checks. Only DreamShaper 8 has also passed live GPU inference tests.\n")
+            summary.write("\nRelease 1.19.2, existing stable tags, latest, and portal recipes were not modified by this workflow.\n")
 
 
 if __name__ == "__main__":
