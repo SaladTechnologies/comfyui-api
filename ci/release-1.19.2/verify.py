@@ -52,7 +52,9 @@ def get(url, headers=None):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("stage", choices=("before", "versioned", "after"))
-    stage = parser.parse_args().stage
+    parser.add_argument("--check-draft", action="store_true")
+    args = parser.parse_args()
+    stage = args.stage
     for key, expected in {
         "IMAGE": IMAGE, "RUNTIME_TAG": PREFIX + "runtime",
         "DREAMSHAPER_TAG": PREFIX + "dreamshaper8",
@@ -62,10 +64,16 @@ def main():
             assert os.environ[key] == expected, key
     assert github("/git/ref/heads/main")["object"]["sha"] == MAIN
     assert github("/git/commits/" + MAIN)["tree"]["sha"] == SOURCE_TREE
-    release = github("/releases/" + str(RELEASE_ID))
-    assert release["tag_name"] == "1.19.2" and release["target_commitish"] == MAIN
-    assert any(asset["name"] == "comfyui-api" and asset["size"] > 1000000 for asset in release["assets"])
+    # GitHub restricts draft metadata to tokens with broader repository access.
+    # CI checks the successful release build below; the operator can verify the
+    # draft separately without granting the image-promotion job contents:write.
+    release = None
+    if args.check_draft:
+        release = github("/releases/" + str(RELEASE_ID))
+        assert release["tag_name"] == "1.19.2" and release["target_commitish"] == MAIN
+        assert any(asset["name"] == "comfyui-api" and asset["size"] > 1000000 for asset in release["assets"])
     for run_id, commit in {
+        35361712493: MAIN,
         35214310398: "199b1791701a3bee1f82b1e8d159fd11f1660aa9",
         35258893813: "f38cb29a14593e7e93fa29c25080bd76d90c7113",
     }.items():
@@ -129,7 +137,8 @@ def main():
     _, latest = manifest("latest")
     assert latest in ((RUNTIME,) if stage == "after" else (PREVIOUS_LATEST, RUNTIME)), latest
     result = {"stage": stage, "verified": True, "main": MAIN,
-              "release_id": RELEASE_ID, "release_draft": release["draft"],
+              "release_id": RELEASE_ID, "draft_checked": release is not None,
+              "release_draft": release["draft"] if release else None,
               "destinations": destinations, "latest": latest,
               "anonymous_pull_access": True, "existing_versioned_tags_unchanged": True}
     print(json.dumps(result), flush=True)
