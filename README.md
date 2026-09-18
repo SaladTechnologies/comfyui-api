@@ -738,8 +738,7 @@ For uploads, include the `azure_blob_upload` field in the request body, like:
 ### HTTP
 
 Uses Fetch.
-Supports custom headers via the `HTTP_AUTH_HEADER_NAME` and `HTTP_AUTH_HEADER_VALUE` environment variables.
-Basic auth can be used via the URL, i.e. `https://username:password@your-http-endpoint.com`.
+Supports custom headers via `HTTP_AUTH_HEADER_NAME` and `HTTP_AUTH_HEADER_VALUE`, scoped to the exact origins in `HTTP_AUTH_ALLOWED_ORIGINS`. Without an allowed origin, the configured header is never sent. Basic authentication is supported through per-request `auth` or URL credentials. Credentials are removed from the request URL and sent only to the original origin or same-origin redirects.
 
 For downloads, use any valid http(s) URL that is not matched by the other storage backends.
 
@@ -810,7 +809,7 @@ The server provides a `POST /download` endpoint that allows you to trigger model
 |-------|----------|-------------|
 | `url` | Yes | The URL to download the model from. Supports all [storage backends](#modular-storage-backends). |
 | `model_type` | Yes | The type of model (e.g., `checkpoints`, `loras`, `vae`, `controlnet`, etc.). Must match a subdirectory in your models folder. |
-| `filename` | No | Override the filename. Defaults to the basename from the URL. |
+| `filename` | No | A single leaf filename, up to 255 UTF-8 bytes. Paths, separators, drive prefixes, control characters, dot names and Windows device names are rejected. Defaults to the basename from the URL. |
 | `wait` | No | If `false` (default), returns immediately with `202 Accepted`. If `true`, waits for the download to complete and returns `200 OK` with file stats. |
 | `auth` | No | Authentication credentials for accessing protected resources. See [Authentication Types](#authentication-types) below. |
 
@@ -928,6 +927,19 @@ curl -X POST http://localhost:3000/download \
 
 The download uses the same caching and storage provider infrastructure as [dynamic model loading](#dynamic-model-loading), so downloaded files are cached and deduplicated automatically.
 
+### Download security and migration
+
+API 1.19.2 validates filenames before fetching, uses server-generated cache names, and publishes complete downloads without truncating an existing file or following a destination symlink. Cached models keep their existing symlinks into the cache; input media are staged as regular files for ComfyUI compatibility. Unicode leaf characters are stored unchanged, and names whose Unicode compatibility normalization creates an unsafe path are rejected.
+
+HTTP storage requests allow public HTTP(S) destinations, including public servers on nonstandard ports. Loopback, private, link-local, metadata, multicast and reserved addresses are blocked, including DNS names with any disallowed address. Every redirect is checked, HTTPS downgrades are rejected, and connections use validated IP addresses to prevent DNS rebinding. S3 requests, including caller-provided custom endpoints, use the same destination checks. Hugging Face keeps its CLI/Xet download path and backend-managed networking; callers select a repository and file at the configured Hub service. Azure SDK requests use the account endpoint configured by the operator.
+
+Public model sources require no new settings. For an internal model server, set `HTTP_TRUSTED_ORIGINS` to the exact operator-approved origin. This deliberately permits callers to access that origin, so add only storage services they are authorized to use. The local Docker Compose test setup explicitly trusts its fixture services. This patch adds no download-size or total-transfer-time limit.
+
+If using `HTTP_AUTH_HEADER_NAME`/`HTTP_AUTH_HEADER_VALUE`, add `HTTP_AUTH_ALLOWED_ORIGINS` with exact intended origins before upgrading. Otherwise the header is withheld. The credential header is stripped on every cross-origin redirect, including custom header names. These origins do not bypass private-address restrictions. URL basic authentication and per-request authentication remain supported; their headers are also stripped on cross-origin redirects.
+
+The wrapper does not provide inbound application authentication. Keep it behind an authenticated gateway or reverse proxy, restrict `/download` to authorized model administrators, and prevent direct access around that gateway. Outbound credentials authenticate to storage services; they do not authenticate callers to this API. These download protections do not sandbox arbitrary ComfyUI workflows or custom nodes.
+
+
 ## Server-side image processing
 
 The ComfyUI API server uses the [sharp](https://sharp.pixelplumbing.com/) library to process images. This allows you to return the images in different, more compact formats, such as JPEG or WebP. This can be accomplished by including the `convert_output` object in the request body, which can contain the following fields:
@@ -994,8 +1006,10 @@ If you are using the azure blob storage functionality, make sure to set all of t
 | COMFYUI_PORT_HOST            | "8188"                     | ComfyUI port number                                                                                                                                                                                                                          |
 | DIRECT_ADDRESS               | "127.0.0.1"                | Direct address for ComfyUI                                                                                                                                                                                                                   |
 | HOST                         | "::"                       | Wrapper host address                                                                                                                                                                                                                         |
-| HTTP_AUTH_HEADER_NAME        | (not set)                  | If set, the server will include this header name with the value from HTTP_AUTH_HEADER_VALUE in all outgoing HTTP requests for uploading and downloading files. This can be used to add basic auth or bearer tokens to requests.              |
-| HTTP_AUTH_HEADER_VALUE       | (not set)                  | The value to use for the HTTP_AUTH_HEADER_NAME header in all outgoing HTTP requests for uploading and downloading files.                                                                                                                     |
+| HTTP_AUTH_HEADER_NAME        | (not set)                  | Header name for HTTP uploads/downloads to exact origins listed in HTTP_AUTH_ALLOWED_ORIGINS. No global fallback to other origins.              |
+| HTTP_AUTH_HEADER_VALUE       | (not set)                  | Credential value for HTTP_AUTH_HEADER_NAME; sent only to origins in HTTP_AUTH_ALLOWED_ORIGINS.                                                                                                                     |
+| HTTP_AUTH_ALLOWED_ORIGINS | (not set) | Comma-separated exact HTTP(S) origins permitted to receive the configured auth header, e.g. `https://huggingface.co`. No paths or wildcards. |
+| HTTP_TRUSTED_ORIGINS | (not set) | Operator-approved exceptions for private addresses in HTTP/S3 storage requests. Exact scheme, host and port; no paths or wildcards. Does not grant access to the configured auth header. |
 | INPUT_DIR                    | "/opt/ComfyUI/input"       | Directory for input files                                                                                                                                                                                                                    |
 | LOG_LEVEL                    | "info"                     | Log level for the application. One of "trace", "debug", "info", "warn", "error", "fatal".                                                                                                                                                    |
 | LRU_CACHE_SIZE_GB            | "0"                        | Maximum size of the LRU cache in GB. If set to 0, this feature is disabled.                                                                                                                                                                  |
@@ -1019,6 +1033,8 @@ If you are using the azure blob storage functionality, make sure to set all of t
 | WARMUP_PROMPT_URL            | (not set)                  | URL to download warmup prompt from (optional). Allows using a remote warmup workflow without building a custom Docker image. Downloaded and parsed at startup before ComfyUI launches.                                                       |
 | WEBHOOK_SECRET               | (empty string)             | If set, the server will sign webhook_v2 requests with this secret.                                                                                                                                                                           |
 | WORKFLOW_DIR                 | "/workflows"               | Directory for workflow files                                                                                                                                                                                                                 |
+
+HTTP storage transfers support HTTP(S) CONNECT proxies and `NO_PROXY`. The proxy receives a validated destination IP while the request retains the original hostname for HTTP and TLS. Proxies must allow CONNECT to IP addresses; hostname-only proxy rules may need adjustment. SOCKS proxies are rejected for storage transfers. Internal ComfyUI requests and webhook transport keep their existing proxy behavior.
 
 #### Kubernetes Deployment: Proxy Environment Variables
 
