@@ -1,0 +1,66 @@
+name: Promote tested API 1.19.2 runtime and DreamShaper
+
+on:
+  push:
+    branches: [publish/release-1.19.2]
+    paths:
+      - .github/workflows/promote-release-1.19.2.yml
+      - ci/release-1.19.2/**
+
+concurrency:
+  group: promote-comfyui-release-1.19.2
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    if: github.repository == 'SaladTechnologies/comfyui-api'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      IMAGE: ghcr.io/saladtechnologies/comfyui-api
+      RUNTIME_TAG: comfy0.35.0-api1.19.2-torch2.13.0-cuda13.0-runtime
+      DREAMSHAPER_TAG: comfy0.35.0-api1.19.2-torch2.13.0-cuda13.0-dreamshaper8
+      RUNTIME_DIGEST: sha256:36aa037f13b3cac57457bfbae9d3a019dfebebb811f49c5488775a442b3daef2
+      DREAMSHAPER_DIGEST: sha256:54965e4a62515b7edc4685d8455937da85f3a62134fdc8ce8c2bc4f8b33585af
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out the promotion checks
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Verify the release source, tested images, and current tags
+        run: python3 ci/release-1.19.2/verify.py before
+
+      - name: Publish stable tags, then promote the runtime to latest
+        env:
+          DOCKER_CONFIG: ${{ runner.temp }}/ghcr-release-1192-auth
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_ACTIONS" == true && "$RUNNER_ENVIRONMENT" == github-hosted ]]
+          [[ "$DOCKER_CONFIG" == "$RUNNER_TEMP/ghcr-release-1192-auth" ]]
+          mkdir -p "$DOCKER_CONFIG"
+          trap 'docker logout ghcr.io >/dev/null 2>&1 || true; rm -rf -- "$DOCKER_CONFIG"' EXIT
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          docker buildx imagetools create --prefer-index=false \
+            --tag "$IMAGE:$RUNTIME_TAG" "$IMAGE@$RUNTIME_DIGEST"
+          docker buildx imagetools create --prefer-index=false \
+            --tag "$IMAGE:$DREAMSHAPER_TAG" "$IMAGE@$DREAMSHAPER_DIGEST"
+          python3 ci/release-1.19.2/verify.py versioned
+          docker buildx imagetools create --prefer-index=false \
+            --tag "$IMAGE:latest" "$IMAGE@$RUNTIME_DIGEST"
+          python3 ci/release-1.19.2/verify.py after
+
+      - name: Confirm promotion left no local images or credentials
+        if: always()
+        run: |
+          set -euo pipefail
+          test ! -e "$RUNNER_TEMP/ghcr-release-1192-auth"
+          docker system df
