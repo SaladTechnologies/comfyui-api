@@ -1,3 +1,5 @@
+import { downloadDestination, requireCachedFile, validateDownloadFilename } from "./download-path";
+import { prepareHttpDestination } from "./safe-http";
 import config from "./config";
 import { FastifyBaseLogger } from "fastify";
 import fs from "fs";
@@ -53,9 +55,12 @@ async function stageCachedFile(
   dest: string,
   log: FastifyBaseLogger
 ): Promise<void> {
-  const relative = path.relative(path.resolve(config.inputDir), dest);
-  const isComfyInput = relative !== "" && relative !== ".." &&
-    !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
+  const inputRoots = [path.resolve(config.inputDir), await fsPromises.realpath(config.inputDir).catch(() => path.resolve(config.inputDir))];
+  const isComfyInput = inputRoots.some((root) => {
+    const relative = path.relative(root, dest);
+    return relative !== "" && relative !== ".." &&
+      !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
+  });
   const existing = await fsPromises.lstat(dest).catch((err: any) => {
     if (err.code === "ENOENT") return null;
     throw err;
@@ -129,7 +134,13 @@ async function readCacheMetadata(cachedFilePath: string): Promise<CacheMetadata 
  */
 async function writeCacheMetadata(cachedFilePath: string, metadata: CacheMetadata): Promise<void> {
   const metaPath = getMetaFilePath(cachedFilePath);
-  await fsPromises.writeFile(metaPath, JSON.stringify(metadata, null, 2));
+  const temporary = path.join(path.dirname(metaPath), `.metadata-${randomUUID()}.partial`);
+  try {
+    await fsPromises.writeFile(temporary, JSON.stringify(metadata, null, 2), { flag: "wx", mode: 0o600 });
+    await fsPromises.rename(temporary, metaPath);
+  } finally {
+    await fsPromises.rm(temporary, { force: true });
+  }
 }
 
 /**
@@ -212,9 +223,12 @@ class RemoteStorageManager {
       [];
 
     const dirFiles = await fsPromises.readdir(this.cacheDir);
-    const statsPromises = dirFiles.map(async (file) => {
+    const activePrefixes = Object.keys(this.activeDownloads).map(hashUrlBase64);
+    const statsPromises = dirFiles.filter((file) =>
+      !file.startsWith(".") && !file.endsWith(".meta") && !activePrefixes.some((prefix) => file.startsWith(prefix))
+    ).map(async (file) => {
       const filePath = path.join(this.cacheDir, file);
-      const stats = await fsPromises.stat(filePath);
+      const stats = await fsPromises.lstat(filePath);
       if (stats.isFile()) {
         totalSize += stats.size;
         files.push({
@@ -286,23 +300,57 @@ class RemoteStorageManager {
     return freedSpace;
   }
 
+  /** Preflight also runs before accepting asynchronous downloads. */
+  async prepareDownload(url: string, outputDir: string, filename?: string, options?: DownloadOptions): Promise<void> {
+    if (filename !== undefined) validateDownloadFilename(filename);
+    const provider = this.storageProviders.find((candidate) => candidate.downloadFile && candidate.testUrl(url));
+    if (!provider) throw new Error("Unsupported download URL");
+    if (filename !== undefined) {
+      const destination = await downloadDestination(outputDir, filename);
+      await this.validateModelDestination(destination);
+    }
+    if (/^https?:/i.test(url)) await prepareHttpDestination(url);
+    if (options?.auth?.type === "s3" && options.auth.endpoint) await prepareHttpDestination(options.auth.endpoint);
+  }
+
+  private async validateModelDestination(destination: string): Promise<void> {
+    const existing = await fsPromises.lstat(destination).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return null;
+      throw error;
+    });
+    if (!existing) return;
+    if (existing.isSymbolicLink()) {
+      // Model symlinks into our cache are intentional; other symlinks are not.
+      const target = path.resolve(path.dirname(destination), await fsPromises.readlink(destination));
+      await requireCachedFile(await fsPromises.realpath(this.cacheDir), target);
+    } else if (!existing.isFile()) {
+      throw new Error("Invalid download destination");
+    }
+  }
+
+  private async stageDownload(cachedPath: string, outputDir: string, filename?: string): Promise<string> {
+    await requireCachedFile(await fsPromises.realpath(this.cacheDir), cachedPath);
+    const destination = await downloadDestination(outputDir, filename ?? path.basename(cachedPath));
+    await this.validateModelDestination(destination);
+    await linkIfDoesNotExist(cachedPath, destination, this.log);
+    return destination;
+  }
+
   async downloadFile(
     url: string,
     outputDir: string,
     filenameOverride?: string,
     options?: DownloadOptions
   ): Promise<string> {
+    await this.prepareDownload(url, outputDir, filenameOverride, options);
+    this.cacheDir = await fsPromises.realpath(this.cacheDir);
     const hasAuth = !!options?.auth;
 
     // Check in-memory cache first
     if (this.cache[url]) {
       const cachedPath = this.cache[url];
       await this.validateCacheAccess(url, cachedPath, options);
-      const finalLocation = path.join(
-        outputDir,
-        filenameOverride || path.basename(cachedPath)
-      );
-      await linkIfDoesNotExist(cachedPath, finalLocation, this.log);
+      const finalLocation = await this.stageDownload(cachedPath, outputDir, filenameOverride);
       this.log.debug(`Using cached file for ${url}`);
       return finalLocation;
     }
@@ -312,32 +360,32 @@ class RemoteStorageManager {
       this.log.info(`Awaiting in-progress download for ${url}`);
       const cachedPath = await this.activeDownloads[url];
       await this.validateCacheAccess(url, cachedPath, options);
-      const finalLocation = path.join(
-        outputDir,
-        filenameOverride || path.basename(cachedPath)
-      );
-      await linkIfDoesNotExist(cachedPath, finalLocation, this.log);
+      const finalLocation = await this.stageDownload(cachedPath, outputDir, filenameOverride);
       return finalLocation;
     }
 
     // Check disk cache
     const hashedUrl = hashUrlBase64(url);
     const preDownloadedFile = await getFileByPrefix(this.cacheDir, hashedUrl);
+    // Another request may have started while readdir was pending. Wait for its
+    // metadata too, rather than treating a just-published file as an old cache hit.
+    if (url in this.activeDownloads) {
+      const cachedPath = await this.activeDownloads[url];
+      await this.validateCacheAccess(url, cachedPath, options);
+      return this.stageDownload(cachedPath, outputDir, filenameOverride);
+    }
     if (preDownloadedFile) {
       this.log.debug(`Found ${preDownloadedFile} for ${url} in cache dir`);
       await this.validateCacheAccess(url, preDownloadedFile, options);
       this.cache[url] = preDownloadedFile;
-      const finalLocation = path.join(
-        outputDir,
-        filenameOverride || path.basename(preDownloadedFile)
-      );
-      await linkIfDoesNotExist(preDownloadedFile, finalLocation, this.log);
+      const finalLocation = await this.stageDownload(preDownloadedFile, outputDir, filenameOverride);
       return finalLocation;
     }
 
     // No cache hit - need to download
     const start = Date.now();
-    const ext = path.extname(new URL(url).pathname);
+    const urlExtension = path.extname(new URL(url).pathname);
+    const ext = /^\.[a-zA-Z0-9]{1,14}$/.test(urlExtension) ? urlExtension : "";
     const tempFilename = `${hashedUrl}${ext}`;
 
     // Find appropriate provider and start download
@@ -347,9 +395,9 @@ class RemoteStorageManager {
           `Downloading ${url} using provider ${provider.constructor.name}`
         );
         this.activeDownloads[url] = provider
-          .downloadFile(url, this.cacheDir, filenameOverride || tempFilename, options)
+          .downloadFile(url, this.cacheDir, tempFilename, options)
           .then(async (outputLocation: string) => {
-            this.cache[url] = outputLocation;
+            await requireCachedFile(this.cacheDir, outputLocation);
             // Write metadata to track if auth was required
             // Sanitize URL to prevent credentials from being written to disk
             const metadata: CacheMetadata = {
@@ -358,6 +406,7 @@ class RemoteStorageManager {
               cachedAt: new Date().toISOString(),
             };
             await writeCacheMetadata(outputLocation, metadata);
+            this.cache[url] = outputLocation;
             return outputLocation;
           })
           .finally(() => {
@@ -370,11 +419,7 @@ class RemoteStorageManager {
       throw new Error(`No storage provider found for URL: ${url}`);
     }
     const outputPath = await this.activeDownloads[url];
-    const finalLocation = path.join(
-      outputDir,
-      filenameOverride || path.basename(this.cache[url])
-    );
-    await linkIfDoesNotExist(outputPath, finalLocation, this.log);
+    const finalLocation = await this.stageDownload(outputPath, outputDir, filenameOverride);
 
     const duration = (Date.now() - start) / 1000;
     const size = (await fsPromises.stat(await fsPromises.realpath(outputPath)))
@@ -424,6 +469,7 @@ class RemoteStorageManager {
     cachedPath: string,
     options?: DownloadOptions
   ): Promise<void> {
+    await requireCachedFile(this.cacheDir, cachedPath);
     const metadata = await readCacheMetadata(cachedPath);
 
     // If no metadata or auth not required, allow access

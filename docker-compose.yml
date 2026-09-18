@@ -16,6 +16,8 @@ services:
       - "8188:8188"
     environment:
       LOG_LEVEL: "debug"
+      # Local integration fixtures are explicit exceptions to public-only storage requests.
+      HTTP_TRUSTED_ORIGINS: "http://localstack:4566,http://azurite:10000,http://file-server:8080"
       AWS_ENDPOINT_URL: "http://localstack:4566"
       AWS_ACCESS_KEY_ID: "test"
       AWS_SECRET_ACCESS_KEY: "test"
