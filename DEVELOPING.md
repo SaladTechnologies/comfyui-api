@@ -302,15 +302,16 @@ A [system prompt](./claude-endpoint-creation-prompt.md) to do this is included i
 ./generate-workflow <inputFile> <outputFile>
 ```
 
-The script supports two LLM providers and picks one based on your environment:
+The script supports three LLM providers and picks one based on your environment:
 
 | Provider | Environment variable | Model used |
 |---|---|---|
 | Anthropic (default) | `ANTHROPIC_API_KEY` | `claude-sonnet-4-20250514` |
 | [MiniMax](https://www.minimax.io/) | `MINIMAX_API_KEY` | `MiniMax-M2.7` (204 K context) |
+| [Atlas Cloud](https://www.atlascloud.ai/) | `ATLASCLOUD_API_KEY` | `openai/gpt-4.1-mini` |
 
-When both variables are set, Anthropic is preferred.
-MiniMax uses the OpenAI-compatible endpoint (`https://api.minimax.io/v1`) so no extra dependencies are needed.
+Provider priority is Anthropic, MiniMax, then Atlas Cloud when multiple variables are set.
+MiniMax and Atlas Cloud use OpenAI-compatible endpoints, so no extra dependencies are needed.
 
 Where `<inputFile>` is the JSON prompt graph, and `<outputFile>` is the output file to write the generated workflow to.
 

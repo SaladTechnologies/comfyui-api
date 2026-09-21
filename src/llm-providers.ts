@@ -4,6 +4,7 @@
  * Supported providers:
  * - Anthropic (Claude): set ANTHROPIC_API_KEY
  * - MiniMax: set MINIMAX_API_KEY (uses OpenAI-compatible API)
+ * - Atlas Cloud: set ATLASCLOUD_API_KEY (uses OpenAI-compatible API)
  */
 
 export interface LLMProviderConfig {
@@ -74,9 +75,36 @@ export const minimaxProvider: LLMProviderConfig = {
   },
 };
 
+export const atlasCloudProvider: LLMProviderConfig = {
+  name: "atlascloud",
+  apiUrl: "https://api.atlascloud.ai/v1/chat/completions",
+  model: "openai/gpt-4.1-mini",
+  temperature: 0,
+  authHeaders(apiKey) {
+    return { Authorization: `Bearer ${apiKey}` };
+  },
+  buildRequestBody(systemPrompt, userPrompt) {
+    return {
+      model: this.model,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      max_tokens: 8192,
+      temperature: this.temperature,
+    };
+  },
+  parseResponse(response) {
+    const r = response as {
+      choices?: Array<{ message?: { content?: string } }>;
+    };
+    return r.choices?.[0]?.message?.content ?? "";
+  },
+};
+
 /**
  * Selects an LLM provider based on available environment variables.
- * Prefers Anthropic when both keys are set.
+ * Prefers Anthropic, then MiniMax, when multiple keys are set.
  *
  * @param anthropicKey - value of ANTHROPIC_API_KEY (if set)
  * @param minimaxKey   - value of MINIMAX_API_KEY (if set)
@@ -85,12 +113,14 @@ export const minimaxProvider: LLMProviderConfig = {
  */
 export function selectProvider(
   anthropicKey?: string,
-  minimaxKey?: string
+  minimaxKey?: string,
+  atlasCloudKey?: string
 ): LLMProviderConfig {
   if (anthropicKey) return anthropicProvider;
   if (minimaxKey) return minimaxProvider;
+  if (atlasCloudKey) return atlasCloudProvider;
   throw new Error(
-    "Please set ANTHROPIC_API_KEY or MINIMAX_API_KEY environment variable"
+    "Please set ANTHROPIC_API_KEY, MINIMAX_API_KEY, or ATLASCLOUD_API_KEY environment variable"
   );
 }
 

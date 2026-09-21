@@ -1,10 +1,48 @@
 import { expect, describe, it } from "vitest";
 import {
+  atlasCloudProvider,
   anthropicProvider,
   minimaxProvider,
   selectProvider,
   stripCodeFences,
 } from "../src/llm-providers";
+
+describe("LLM Providers - Atlas Cloud", () => {
+  it("should use the OpenAI-compatible endpoint and model", () => {
+    expect(atlasCloudProvider.apiUrl).toEqual(
+      "https://api.atlascloud.ai/v1/chat/completions"
+    );
+    expect(atlasCloudProvider.model).toEqual("openai/gpt-4.1-mini");
+  });
+
+  it("should return a Bearer auth header", () => {
+    expect(atlasCloudProvider.authHeaders("atlas-key")).toEqual({
+      Authorization: "Bearer atlas-key",
+    });
+  });
+
+  it("should build and parse OpenAI-compatible payloads", () => {
+    const body = atlasCloudProvider.buildRequestBody(
+      "system instructions",
+      "user message"
+    ) as any;
+
+    expect(body).toMatchObject({
+      model: "openai/gpt-4.1-mini",
+      messages: [
+        { role: "system", content: "system instructions" },
+        { role: "user", content: "user message" },
+      ],
+      temperature: 0,
+    });
+    expect(
+      atlasCloudProvider.parseResponse({
+        choices: [{ message: { content: "generated workflow" } }],
+      })
+    ).toEqual("generated workflow");
+    expect(atlasCloudProvider.parseResponse({})).toEqual("");
+  });
+});
 
 describe("LLM Providers - Anthropic", () => {
   it("should have the correct API URL", () => {
@@ -116,19 +154,29 @@ describe("selectProvider", () => {
     expect(provider.name).toEqual("minimax");
   });
 
-  it("should prefer anthropic when both keys are set", () => {
-    const provider = selectProvider("sk-ant-key", "mm-key");
+  it("should return atlasCloudProvider when only ATLASCLOUD_API_KEY is set", () => {
+    const provider = selectProvider(undefined, undefined, "atlas-key");
+    expect(provider.name).toEqual("atlascloud");
+  });
+
+  it("should prefer MiniMax over Atlas Cloud", () => {
+    const provider = selectProvider(undefined, "mm-key", "atlas-key");
+    expect(provider.name).toEqual("minimax");
+  });
+
+  it("should prefer anthropic when all keys are set", () => {
+    const provider = selectProvider("sk-ant-key", "mm-key", "atlas-key");
     expect(provider.name).toEqual("anthropic");
   });
 
   it("should throw when neither key is set", () => {
-    expect(() => selectProvider(undefined, undefined)).toThrow(
-      /ANTHROPIC_API_KEY|MINIMAX_API_KEY/
+    expect(() => selectProvider(undefined, undefined, undefined)).toThrow(
+      /ANTHROPIC_API_KEY|MINIMAX_API_KEY|ATLASCLOUD_API_KEY/
     );
   });
 
   it("should throw when both keys are empty strings", () => {
-    expect(() => selectProvider("", "")).toThrow();
+    expect(() => selectProvider("", "", "")).toThrow();
   });
 });
 
