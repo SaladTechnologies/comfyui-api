@@ -29,6 +29,8 @@ import { getProxyDispatcher } from "./proxy-dispatcher";
 import { z } from "zod";
 
 const commandExecutor = new CommandExecutor();
+const completedOutputPollInterval = 30;
+const completedOutputPollMaxTries = 100;
 
 export function launchComfyUI() {
   const cmdAndArgs = config.comfyLaunchCmd.split(" ");
@@ -112,7 +114,8 @@ export async function queuePrompt(prompt: ComfyPrompt): Promise<string> {
 
 export async function getPromptOutputs(
   promptId: string,
-  log: FastifyBaseLogger
+  log: FastifyBaseLogger,
+  onCompleted?: () => void,
 ): Promise<Record<string, Buffer> | null> {
   const resp = await fetch(`${config.comfyURL}/history/${promptId}`, {
     dispatcher: getProxyDispatcher(),
@@ -125,12 +128,14 @@ export async function getPromptOutputs(
   const body = (await resp.json()) as ComfyHistoryResponse;
   const allOutputs: Record<string, Buffer> = {};
   const fileLoadPromises: Promise<void>[] = [];
+  let missingOutput = false;
   if (!body[promptId]) {
     log.debug(`Prompt ${promptId} not found in history endpoint response`);
     return null;
   }
   const { status, outputs } = body[promptId];
   if (status.completed) {
+    onCompleted?.();
     for (const nodeId in outputs) {
       const node = outputs[nodeId];
       for (const outputType in node) {
@@ -154,11 +159,17 @@ export async function getPromptOutputs(
               })
               .catch((e: any) => {
                 /**
-                 * The most likely reason for this is a node that has an optonal
-                 * output. If the node doesn't produce that output, the file won't
-                 * exist.
+                 * ComfyUI can report a completed prompt before the output file is
+                 * present/readable. Returning the files that happened to be readable
+                 * would expose a partial result, so let the history poller retry the
+                 * complete output set while ENOENT is still transient.
                  */
                 log.warn(`Failed to read file ${filepath}: ${e.message}`);
+                if (e?.code === "ENOENT") {
+                  missingOutput = true;
+                  return;
+                }
+                throw e;
               })
           );
         }
@@ -172,64 +183,91 @@ export async function getPromptOutputs(
     throw new Error("Prompt is not completed");
   }
   await Promise.all(fileLoadPromises);
+  if (missingOutput) {
+    return null;
+  }
   return allOutputs;
 }
 
-async function collectExecutionStats(
+type ExecutionStatsCollector = {
+  promise: Promise<ExecutionStats>;
+  dispose: () => void;
+};
+
+function collectExecutionStats(
   promptId: string,
   log: FastifyBaseLogger
-): Promise<ExecutionStats> {
+): ExecutionStatsCollector {
   let start = Date.now();
-  return new Promise((resolve, reject) => {
-    const stats: ExecutionStats = {
-      comfy_execution: { start, end: 0, duration: 0, nodes: {} },
-    };
-    const handleMessage = (event: MessageEvent) => {
-      const { data } = event;
-      if (typeof data === "string") {
-        const message = JSON.parse(data) as ComfyWSMessage;
-        if (message?.data?.prompt_id !== promptId) return;
-        if (isExecutionStartMessage(message)) {
-          start = Date.now();
-          stats.comfy_execution.start = start;
-          log.info(`Prompt ${promptId} started execution`);
-        } else if (isExecutingMessage(message)) {
-          const nodeId = message.data.node;
-          if (!nodeId) return;
-          stats.comfy_execution.nodes[nodeId] = {
-            start: Date.now(),
-          };
-        } else if (isExecutionSuccessMessage(message)) {
-          stats.comfy_execution.end = Date.now();
-          stats.comfy_execution.duration =
-            stats.comfy_execution.end - stats.comfy_execution.start;
-          wsClient?.removeEventListener("close", onClose);
-          wsClient?.removeEventListener("message", handleMessage);
-          log.info(`Prompt ${promptId} completed execution`);
-          return resolve(stats);
-        } else if (isExecutionErrorMessage(message)) {
-          wsClient?.removeEventListener("close", onClose);
-          wsClient?.removeEventListener("message", handleMessage);
-          return reject(new Error("Prompt execution failed"));
-        } else if (isExecutionInterruptedMessage(message)) {
-          wsClient?.removeEventListener("close", onClose);
-          wsClient?.removeEventListener("message", handleMessage);
-          return reject(new Error("Prompt execution interrupted"));
-        }
-      }
-    };
-
-    const onClose = () => {
-      wsClient?.removeEventListener("message", handleMessage);
-      wsClient?.removeEventListener("close", onClose);
-      return reject(new Error("Websocket closed"));
-    };
+  let resolvePromise!: (stats: ExecutionStats) => void;
+  let rejectPromise!: (error: Error) => void;
+  let settled = false;
+  const stats: ExecutionStats = {
+    comfy_execution: { start, end: 0, duration: 0, nodes: {} },
+  };
+  const cleanup = () => {
+    wsClient?.removeEventListener("close", onClose);
+    wsClient?.removeEventListener("message", handleMessage);
+  };
+  const resolve = (value: ExecutionStats) => {
+    if (settled) return;
+    settled = true;
+    cleanup();
+    resolvePromise(value);
+  };
+  const reject = (error: Error) => {
+    if (settled) return;
+    settled = true;
+    cleanup();
+    rejectPromise(error);
+  };
+  const handleMessage = (event: MessageEvent) => {
+    const { data } = event;
+    if (typeof data !== "string") return;
+    const message = JSON.parse(data) as ComfyWSMessage;
+    if (message?.data?.prompt_id !== promptId) return;
+    if (isExecutionStartMessage(message)) {
+      start = Date.now();
+      stats.comfy_execution.start = start;
+      log.info(`Prompt ${promptId} started execution`);
+    } else if (isExecutingMessage(message)) {
+      const nodeId = message.data.node;
+      if (!nodeId) return;
+      stats.comfy_execution.nodes[nodeId] = {
+        start: Date.now(),
+      };
+    } else if (isExecutionSuccessMessage(message)) {
+      stats.comfy_execution.end = Date.now();
+      stats.comfy_execution.duration =
+        stats.comfy_execution.end - stats.comfy_execution.start;
+      log.info(`Prompt ${promptId} completed execution`);
+      resolve(stats);
+    } else if (isExecutionErrorMessage(message)) {
+      reject(new Error("Prompt execution failed"));
+    } else if (isExecutionInterruptedMessage(message)) {
+      reject(new Error("Prompt execution interrupted"));
+    }
+  };
+  const onClose = () => reject(new Error("Websocket closed"));
+  const promise = new Promise<ExecutionStats>((resolve, reject) => {
+    resolvePromise = resolve;
+    rejectPromise = reject;
     wsClient?.addEventListener("message", handleMessage);
     wsClient?.addEventListener("close", onClose);
   });
+  return {
+    promise,
+    dispose: () => reject(new Error("Prompt execution stats collection disposed")),
+  };
 }
 
 export const comfyIDToApiID: Record<string, string> = {};
+
+function schedulePromptMappingCleanup(promptId: string): void {
+  setTimeout(() => {
+    delete comfyIDToApiID[promptId];
+  }, 1000);
+}
 
 class HistoryEndpointPoller {
   private promptId: string;
@@ -257,7 +295,12 @@ class HistoryEndpointPoller {
           this.currentTries
         } of ${this.getMaxTries()}`
       );
-      const outputs = await getPromptOutputs(this.promptId, this.log);
+      const outputs = await getPromptOutputs(this.promptId, this.log, () => {
+        if (this.maxTries === 0) {
+          this.setMaxTries(completedOutputPollMaxTries);
+          this.setInterval(completedOutputPollInterval);
+        }
+      });
       if (outputs) {
         return outputs;
       }
@@ -337,7 +380,8 @@ export async function runPromptAndGetOutputs(
   /**
    * We also listen to the websocket stream for the prompt to complete.
    */
-  const executionStatsPromise = collectExecutionStats(promptId, log);
+  const executionStats = collectExecutionStats(promptId, log);
+  const executionStatsPromise = executionStats.promise;
 
   /**
    * We wait for either the history endpoint to return the outputs, or the websocket
@@ -361,22 +405,26 @@ export async function runPromptAndGetOutputs(
      * up the history endpoint polling, as it should only need 1-2 tries to get the outputs.
      */
     log.info(`Prompt ${id} completed`);
-    poller.setMaxTries(100);
-    poller.setInterval(30);
-    const outputs = await historyPoll;
-    /**
-     * We delete the comfyIDToApiID mapping after a short delay to prevent
-     * this object from growing indefinitely.
-     */
-    setTimeout(() => {
-      delete comfyIDToApiID[promptId];
-    }, 1000);
+    poller.setMaxTries(completedOutputPollMaxTries);
+    poller.setInterval(completedOutputPollInterval);
+    let outputs: Record<string, Buffer> | null;
+    try {
+      outputs = await historyPoll;
+    } catch (error) {
+      executionStats.dispose();
+      schedulePromptMappingCleanup(promptId);
+      throw error;
+    }
+    schedulePromptMappingCleanup(promptId);
     if (outputs) {
       return { outputs, stats: firstToComplete };
     }
+    executionStats.dispose();
     throw new Error("Failed to get prompt outputs");
   } else if (firstToComplete === null) {
     poller.stop();
+    executionStats.dispose();
+    schedulePromptMappingCleanup(promptId);
     throw new Error("Failed to get prompt outputs");
   }
   /**
@@ -384,16 +432,15 @@ export async function runPromptAndGetOutputs(
    * before the websocket signaled that the prompt had completed. This is unexpected,
    * but fine. We return the outputs and delete the comfyIDToApiID mapping.
    */
-  setTimeout(() => {
-    /**
-     * We delete the comfyIDToApiID mapping after a short delay to prevent
-     * this object from growing indefinitely.
-     */
-    delete comfyIDToApiID[promptId];
-  }, 1000);
+  schedulePromptMappingCleanup(promptId);
   const outputs = firstToComplete as Record<string, Buffer>;
-  const stats = await executionStatsPromise;
-  return { outputs, stats };
+  try {
+    const stats = await executionStatsPromise;
+    return { outputs, stats };
+  } catch (error) {
+    executionStats.dispose();
+    throw error;
+  }
 }
 
 let wsClient: WebSocket | null = null;
